@@ -546,14 +546,33 @@ function updateDupSelectedCount() {
 // Dup controls
 let pendingDupTab=null, pendingDupFiles=[];
 
-async function pauseDupScan(tab) { if(DupState[tab].jobId) await API.post('api/dup/pause',{jobId:DupState[tab].jobId}); }
+async function pauseDupScan(tab) {
+  if(!DupState[tab].jobId) return;
+  const ids=getDupIds(tab);
+  try {
+    await API.post('api/dup/pause',{jobId:DupState[tab].jobId});
+    $(ids.pauseBtn)&&($(ids.pauseBtn).style.display='none');
+    $(ids.resumeBtn)&&($(ids.resumeBtn).style.display='');
+    $(ids.progressText)&&($(ids.progressText).textContent='⏸ 已暂停');
+  } catch(e){showToast('暂停失败: '+e.message,'error');}
+}
 async function resumeDupScan(tab) {
   if(!DupState[tab].jobId) return;
-  await API.post('api/dup/resume',{jobId:DupState[tab].jobId});
-  const ids=getDupIds(tab); $(ids.pauseBtn)&&($(ids.pauseBtn).style.display=''); $(ids.resumeBtn)&&($(ids.resumeBtn).style.display='none');
-  DupState[tab].checking=true; pollDupProgress(tab);
+  try {
+    await API.post('api/dup/resume',{jobId:DupState[tab].jobId});
+    const ids=getDupIds(tab); $(ids.pauseBtn)&&($(ids.pauseBtn).style.display=''); $(ids.resumeBtn)&&($(ids.resumeBtn).style.display='none');
+    DupState[tab].checking=true; pollDupProgress(tab);
+  } catch(e){showToast('恢复失败: '+e.message,'error');}
 }
-async function stopDupScan(tab) { if(DupState[tab].jobId){await API.post('api/dup/stop',{jobId:DupState[tab].jobId});DupState[tab].checking=false;} }
+async function stopDupScan(tab) {
+  if(!DupState[tab].jobId) return;
+  try {
+    await API.post('api/dup/stop',{jobId:DupState[tab].jobId});
+    DupState[tab].checking=false;
+    showToast('已停止扫描','info');
+    finishDupScan(tab, null);
+  } catch(e){showToast('停止失败: '+e.message,'error');}
+}
 
 function showDupDeleteModal(tab) {
   const ids=getDupIds(tab); const dl=$(ids.dupList); if(!dl)return;
