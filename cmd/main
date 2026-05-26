@@ -1,0 +1,40 @@
+#!/bin/bash
+# FnClearup Node.js lifecycle script
+APP_DIR="/var/apps/fnclearup/target"
+PID_FILE="/var/run/fnclearup.pid"
+LOG_FILE="${TMPDIR:-/tmp}/fnclearup.log"
+SOCKET_PATH="${TRM_PKGVAR:-$APP_DIR/data}/fnclearup.sock"
+
+case $1 in
+start)
+    mkdir -p "$(dirname "$SOCKET_PATH")" 2>/dev/null
+    cd "$APP_DIR/app/ui" || exit 1
+    nohup node server.js >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    sleep 1
+    if kill -0 $(cat "$PID_FILE" 2>/dev/null) 2>/dev/null; then
+        echo "started"
+        exit 0
+    else
+        echo "start failed, check $LOG_FILE"
+        exit 1
+    fi
+    ;;
+stop)
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        kill "$PID" 2>/dev/null; sleep 1
+        kill -0 "$PID" 2>/dev/null && kill -9 "$PID" 2>/dev/null
+        rm -f "$PID_FILE"
+    fi
+    echo "stopped"; exit 0
+    ;;
+status)
+    if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE" 2>/dev/null) 2>/dev/null; then
+        echo "running"; exit 0
+    else
+        echo "stopped"; exit 1
+    fi
+    ;;
+*) exit 1 ;;
+esac

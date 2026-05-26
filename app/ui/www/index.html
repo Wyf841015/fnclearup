@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="FnOS 清理精灵 - Node.js 版本">
+  <link rel="icon" type="image/png" href="/app/fnclearup/ICON.PNG">
+  <link rel="stylesheet" href="css/style.css">
+  <title>清理精灵-FnOS系统清理工具</title>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="header-left">
+      <h1>FnOS 系统清理</h1>
+      <p class="subtitle">智能扫描系统，精准识别已卸载应用残留、Docker 未使用资源、临时文件和重复文件，一键安全清理</p>
+    </div>
+    <div class="header-controls">
+      <button type="button" class="sponsor-btn" onclick="showSponsorModal()" title="赞助作者"><span>❤️</span><span>赞助</span></button>
+      <button type="button" class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题"><span>☀️</span><span>主题</span></button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab-list" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="app" onclick="switchTab('app')" role="tab" aria-selected="true">📦 应用</button>
+      <button type="button" class="tab-btn" data-tab="disk" onclick="switchTab('disk')" role="tab" aria-selected="false">💿 网盘</button>
+      <button type="button" class="tab-btn" data-tab="docker" onclick="switchTab('docker')" role="tab" aria-selected="false">🐳 Docker</button>
+      <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false">🕐 tmp</button>
+      <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false">📋 重复</button>
+    </div>
+
+    <!-- Tab 1: 应用残余 -->
+    <div class="tab-panel active" data-panel="app">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon">📦</div><div class="kpi-body"><div class="kpi-label">安装应用</div><div class="kpi-value" id="installed-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">🗑️</div><div class="kpi-body"><div class="kpi-label">残余目录</div><div class="kpi-value" id="orphan-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">受影响卷</div><div class="kpi-value" id="vol-count">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span>📋</span><span>应用列表</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" onclick="doScan()"><span>🔍</span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmDelete()" disabled id="deleteBtn"><span>🗑️</span><span>删除选中</span></button>
+          </div>
+          <div id="select-info" class="select-info" style="display:none"></div>
+        </div>
+        <div id="app-status"></div>
+        <div id="app-list" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- Tab 2: 网盘残余 -->
+    <div class="tab-panel" data-panel="disk">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon">📂</div><div class="kpi-body"><div class="kpi-label">目录总数</div><div class="kpi-value" id="vol02-total-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">🔗</div><div class="kpi-body"><div class="kpi-label">网盘挂载</div><div class="kpi-value" id="mounts-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">残余目录</div><div class="kpi-value" id="vol02-count">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span>💿</span><span>网盘挂载目录</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" onclick="loadDiskMounts(true)"><span>🔍</span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteVol02()" disabled id="deleteVol02Btn"><span>🗑️</span><span>删除选中</span></button>
+          </div>
+          <div id="disk-select-info" class="select-info" style="display:none"></div>
+        </div>
+        <div id="disk-status"></div>
+        <div id="disk-list" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Docker -->
+    <div class="tab-panel" data-panel="docker">
+      <div class="inner-tabs">
+        <div class="inner-tab-list">
+          <button type="button" class="inner-tab-btn active" data-inner-tab="images" onclick="switchInnerTab('images')"><span>🖼️</span><span>镜像</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="volumes" onclick="switchInnerTab('volumes')"><span>💾</span><span>卷</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="networks" onclick="switchInnerTab('networks')"><span>🌐</span><span>网络</span></button>
+        </div>
+
+        <div class="inner-panel active" data-inner-panel="images">
+          <div class="kpi-row">
+            <div class="kpi-card"><div class="kpi-icon">🖼️</div><div class="kpi-body"><div class="kpi-label">总镜像</div><div class="kpi-value" id="images-total-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">使用中</div><div class="kpi-value" id="images-used-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">未使用</div><div class="kpi-value" id="images-unused-count">-</div></div></div>
+          </div>
+          <div class="card">
+            <div class="section-header"><h2><span>🖼️</span><span>Docker 镜像</span></h2>
+              <div class="section-actions">
+                <button type="button" class="btn btn-primary" onclick="doImagesScan()"><span>🔍</span><span>扫描镜像</span></button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteImages()" disabled id="deleteImagesBtn"><span>🗑️</span><span>删除选中</span></button>
+              </div>
+              <div id="images-select-info" class="select-info" style="display:none"></div>
+            </div>
+            <div id="images-status"></div><div id="images-list" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <div class="inner-panel" data-inner-panel="volumes">
+          <div class="kpi-row">
+            <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">所有卷</div><div class="kpi-value" id="docker-total-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">在用卷</div><div class="kpi-value" id="docker-inuse-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">孤立卷</div><div class="kpi-value" id="docker-orphan-count">-</div></div></div>
+          </div>
+          <div class="card">
+            <div class="section-header"><h2><span>💾</span><span>Docker 卷</span></h2>
+              <div class="section-actions">
+                <button type="button" class="btn btn-primary" onclick="doDockerScan()"><span>🔍</span><span>扫描目录</span></button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteDocker()" disabled id="deleteDockerBtn"><span>🗑️</span><span>删除选中</span></button>
+              </div>
+              <div id="docker-select-info" class="select-info" style="display:none"></div>
+            </div>
+            <div id="docker-orphan-status"></div><div id="docker-volumes-list" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <div class="inner-panel" data-inner-panel="networks">
+          <div class="kpi-row">
+            <div class="kpi-card"><div class="kpi-icon">🌐</div><div class="kpi-body"><div class="kpi-label">总网络数</div><div class="kpi-value" id="networks-total-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">使用中</div><div class="kpi-value" id="networks-used-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">未使用</div><div class="kpi-value" id="networks-unused-count">-</div></div></div>
+          </div>
+          <div class="card">
+            <div class="section-header"><h2><span>🌐</span><span>Docker 网络</span></h2>
+              <div class="section-actions">
+                <button type="button" class="btn btn-primary" onclick="doNetworksScan()"><span>🔍</span><span>扫描网络</span></button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteNetworks()" disabled id="deleteNetworksBtn"><span>🗑️</span><span>删除选中</span></button>
+              </div>
+              <div id="networks-select-info" class="select-info" style="display:none"></div>
+            </div>
+            <div id="networks-status"></div><div id="networks-list" style="margin-top:12px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: tmp -->
+    <div class="tab-panel" data-panel="temp">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon">📁</div><div class="kpi-body"><div class="kpi-label">临时目录</div><div class="kpi-value" id="temp-dirs-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">📄</div><div class="kpi-body"><div class="kpi-label">过期文件</div><div class="kpi-value" id="temp-files-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">总大小</div><div class="kpi-value" id="temp-total-size">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header"><h2><span>🕐</span><span>临时文件</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" onclick="doTempScan()"><span>🔍</span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteTemp()" disabled id="deleteTempBtn"><span>🗑️</span><span>删除选中</span></button>
+          </div>
+          <div id="temp-select-info" class="select-info" style="display:none"></div>
+        </div>
+        <div id="temp-status"></div><div id="temp-list" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- Tab 5: 重复文件 -->
+    <div class="tab-panel" data-panel="dup">
+      <div class="dup-inner-tabs">
+        <div class="dup-inner-tab-list">
+          <button type="button" class="dup-inner-tab-btn active" data-dup-tab="music" onclick="switchDupInnerTab('music')">🎵 音乐重复</button>
+          <button type="button" class="dup-inner-tab-btn" data-dup-tab="files" onclick="switchDupInnerTab('files')">📄 文件重复</button>
+        </div>
+
+        <div class="dup-inner-panel active" data-dup-panel="music">
+          <div class="dup-scan-section">
+            <h2>🎵 音乐文件去重</h2>
+            <p class="dup-desc">扫描指定目录中的音乐文件（MP3/FLAC/WAV/AAC/OGG/M4A），通过文件哈希和 ID3 标签分析重复项。</p>
+            <div class="dup-scan-input-row">
+              <input type="text" id="musicPath" class="dup-path-input" placeholder="如 /vol1/music" value="/vol1/1000/music">
+              <div class="dup-scan-btns" id="musicScanBtns">
+                <button type="button" class="btn btn-primary" id="musicScanBtn" onclick="startDupScan('music')">🔍 开始扫描</button>
+                <button type="button" class="btn btn-warning" id="musicPauseBtn" onclick="pauseDupScan('music')" style="display:none">⏸ 暂停</button>
+                <button type="button" class="btn btn-primary" id="musicResumeBtn" onclick="resumeDupScan('music')" style="display:none">▶ 继续</button>
+                <button type="button" class="btn btn-danger" id="musicStopBtn" onclick="stopDupScan('music')" style="display:none">⏹ 停止</button>
+              </div>
+            </div>
+            <div class="dup-progress-section" id="musicProgress">
+              <div class="dup-progress-track"><div class="dup-progress-fill" id="musicProgressBar"></div></div>
+              <div class="dup-progress-info"><span id="musicProgressText">准备中...</span><span id="musicProgressCount">0 / 0</span></div>
+              <div class="dup-progress-current" id="musicCurrentFile"></div>
+              <div class="dup-progress-status" id="musicStatus"><span class="dup-spinner"></span> 扫描中...</div>
+            </div>
+          </div>
+          <div id="musicResults" style="display:none">
+            <div class="dup-stats-row" id="musicStats"></div>
+            <div class="dup-action-bar" id="musicActions">
+              <span class="dup-action-info">已选 <strong id="musicSelectedCount">0</strong> 个文件（<span id="musicSelectedSize">0 B</span>）</span>
+              <button type="button" class="btn btn-danger btn-sm" onclick="showDupDeleteModal('music')" disabled id="musicDeleteBtn">🗑 删除选中</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="exportDup('music')" disabled id="musicExportBtn">📤 导出报告</button>
+            </div>
+            <div id="musicDupList"></div>
+          </div>
+          <div class="dup-empty-state" id="musicEmpty"><div class="dup-empty-icon">🎶</div><h3>尚未开始扫描</h3><p>输入目录路径，点击开始扫描查找重复音乐文件。</p></div>
+        </div>
+
+        <div class="dup-inner-panel" data-dup-panel="files">
+          <div class="dup-scan-section">
+            <h2>📁 文件去重</h2>
+            <p class="dup-desc">扫描指定目录中的所有文件，通过 SHA-256 哈希值精确识别重复文件。</p>
+            <div class="dup-scan-input-row">
+              <input type="text" id="filesPath" class="dup-path-input" placeholder="如 /vol1/downloads" value="/vol1/1000">
+              <div class="dup-scan-btns" id="filesScanBtns">
+                <button type="button" class="btn btn-primary" id="filesScanBtn" onclick="startDupScan('files')">🔍 开始扫描</button>
+                <button type="button" class="btn btn-warning" id="filesPauseBtn" onclick="pauseDupScan('files')" style="display:none">⏸ 暂停</button>
+                <button type="button" class="btn btn-primary" id="filesResumeBtn" onclick="resumeDupScan('files')" style="display:none">▶ 继续</button>
+                <button type="button" class="btn btn-danger" id="filesStopBtn" onclick="stopDupScan('files')" style="display:none">⏹ 停止</button>
+              </div>
+            </div>
+            <div class="dup-progress-section" id="filesProgress">
+              <div class="dup-progress-track"><div class="dup-progress-fill" id="filesProgressBar"></div></div>
+              <div class="dup-progress-info"><span id="filesProgressText">准备中...</span><span id="filesProgressCount">0 / 0</span></div>
+              <div class="dup-progress-current" id="filesCurrentFile"></div>
+              <div class="dup-progress-status" id="filesStatus"><span class="dup-spinner"></span> 扫描中...</div>
+            </div>
+          </div>
+          <div id="filesResults" style="display:none">
+            <div class="dup-stats-row" id="filesStats"></div>
+            <div class="dup-action-bar" id="filesActions">
+              <span class="dup-action-info">已选 <strong id="filesSelectedCount">0</strong> 个文件（<span id="filesSelectedSize">0 B</span>）</span>
+              <button type="button" class="btn btn-danger btn-sm" onclick="showDupDeleteModal('files')" disabled id="filesDeleteBtn">🗑 删除选中</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="exportDup('files')" disabled id="filesExportBtn">📤 导出报告</button>
+            </div>
+            <div id="filesDupList"></div>
+          </div>
+          <div class="dup-empty-state" id="filesEmpty"><div class="dup-empty-icon">📂</div><h3>尚未开始扫描</h3><p>输入目录路径，点击开始扫描查找重复文件。</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除确认弹窗 -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal">
+      <h3><span>⚠️</span><span>确认删除</span></h3>
+      <p>即将删除以下 <strong id="confirmCount">0</strong> 个目录：</p>
+      <div class="paths-preview" id="confirmPaths"></div>
+      <label class="modal-checkbox"><input type="checkbox" id="deleteUsersCheckbox"><span>同步删除关联系统用户</span></label>
+      <label class="modal-checkbox"><input type="checkbox" id="deleteAppshareCheckbox"><span>删除 @appshare 目录残余文件</span></label>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+        <button type="button" class="btn btn-danger" onclick="doDelete()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dup 删除确认弹窗 -->
+  <div class="modal-overlay" id="dupDeleteModal">
+    <div class="modal">
+      <h3><span>⚠️</span><span>确认删除</span></h3>
+      <p id="dupDeleteModalDesc">确定删除 <strong id="dupDeleteCount">0</strong> 个重复文件</p>
+      <div class="delete-mode-select">
+        <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="trash" checked><span>放到回收站<small>文件移至卷回收站，可恢复</small></span></label>
+        <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="permanent"><span>永久删除<small>直接删除文件，不可恢复</small></span></label>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideDupDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" onclick="confirmDupDelete()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 赞助弹窗 -->
+  <div id="sponsorModal" class="sponsor-modal-overlay" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="sponsor-modal-content" onclick="event.stopPropagation()">
+      <div class="sponsor-header"><h3><span>❤️</span><span>感谢您的支持</span></h3><button type="button" class="sponsor-modal-close" onclick="document.getElementById('sponsorModal').classList.remove('show')">✕</button></div>
+      <p>您的赞助是我持续开发的最大动力</p>
+      <div class="sponsor-qr-row">
+        <div class="sponsor-qr-item"><p>支付宝</p><img src="images/sponsor_alipay.png" alt="支付宝" onclick="showSponsorImgFull(this)"></div>
+        <div class="sponsor-qr-item"><p>微信</p><img src="images/sponsor_wechat.png" alt="微信" onclick="showSponsorImgFull(this)"></div>
+      </div>
+    </div>
+  </div>
+  <div id="sponsorImgOverlay" class="sponsor-img-full-overlay" onclick="if(event.target===this)this.classList.remove('show')"><img id="sponsorImgFull" alt="大图" onclick="event.stopPropagation()"></div>
+
+  <div class="footer"><p>Copyright©2026 <a href="https://gitee.com/wyf1015" target="_blank">一零一二</a> · 清理精灵</p></div>
+</div>
+<script src="js/utils.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
