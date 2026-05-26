@@ -1,11 +1,11 @@
 import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, renameSync, cpSync } from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { readdir, stat, writeFile, readFile } from 'node:fs/promises';
-import { join, extname, basename, dirname, resolve } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { sendJSON, execCmd, parseBody, formatBytes } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
+import { getHashPool } from '../../dup_hash_pool.js';
 
 export const dupJobs = new Map();
 let DUP_STATE_DIR = '';
@@ -72,17 +72,25 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
     state.status = 'hashing';
     state.progress.total = allFiles.length;
     update();
+
+    // Use worker thread pool for parallel streaming hash (no memory accumulation)
+    const pool = getHashPool(4);
+    const batchSize = 20;
     const fileHashes = [];
-    for (let i = 0; i < allFiles.length; i++) {
-      if (state._aborted) { state.status = 'aborted'; update(); return; }
-      state.progress.processed = i + 1;
-      state.progress.currentFile = allFiles[i];
-      try {
-        const fh = await hashFile(allFiles[i]);
-        if (fh) fileHashes.push(fh);
-      } catch {}
-      if ((i + 1) % 20 === 0) update();
+
+    for (let i = 0; i < allFiles.length; i += batchSize) {
+      if (state._aborted) { state.status = 'aborted'; update(); await pool.terminate(); return; }
+      const batch = allFiles.slice(i, i + batchSize);
+      const results = await pool.hashFiles(batch);
+      for (const r of results) {
+        if (r) fileHashes.push(r);
+      }
+      state.progress.processed = Math.min(i + batchSize, allFiles.length);
+      state.progress.currentFile = batch[batch.length - 1];
+      if ((i + batchSize) % 50 === 0 || i + batchSize >= allFiles.length) update();
     }
+    await pool.terminate();
+
     const groups = new Map();
     for (const f of fileHashes) {
       if (!groups.has(f.hash)) groups.set(f.hash, []);
@@ -116,49 +124,6 @@ async function* walkDir(dirPath, extensions) {
     if (e.isDirectory()) yield* walkDir(fp, extensions);
     else if (e.isFile() && (!extensions || extensions.has(extname(e.name).toLowerCase()))) yield fp;
   }
-}
-
-async function hashFile(fp) {
-  const hash = createHash('sha256');
-  try {
-    const stream = createReadStream(fp, { highWaterMark: 256 * 1024 });
-    for await (const chunk of stream) hash.update(chunk);
-    const digest = hash.digest('hex');
-    const st = statSync(fp);
-    let id3 = null;
-    if (fp.toLowerCase().endsWith('.mp3')) id3 = readId3Tags(fp);
-    return { path: fp, size: st.size, hash: digest, ext: extname(fp).toLowerCase(), id3 };
-  } catch { return null; }
-}
-
-function readId3Tags(fp) {
-  const tags = { title: '', artist: '', album: '' };
-  try {
-    const buf = Buffer.alloc(10240);
-    const fd = createReadStream(fp, { start: 0, end: 10239 });
-    let bytesRead = 0;
-    fd.on('data', chunk => { chunk.copy(buf, bytesRead); bytesRead += chunk.length; });
-    fd.on('end', () => {
-      if (bytesRead >= 10 && buf.slice(0, 3).toString() === 'ID3') {
-        const headerSize = (buf[6] << 21) | (buf[7] << 14) | (buf[8] << 7) | buf[9];
-        const end = Math.min(10 + headerSize, bytesRead);
-        let pos = 10;
-        while (pos + 10 <= end) {
-          const fid = buf.slice(pos, pos + 4).toString();
-          const fsize = buf.readUInt32BE(pos + 4);
-          if (fid === '\x00\x00\x00\x00' || fsize === 0) break;
-          if (['TIT2', 'TPE1', 'TALB'].includes(fid) && pos + 10 + fsize <= end) {
-            const val = buf.slice(pos + 11, pos + 10 + fsize).toString('utf-8').replace(/\x00/g, '').trim();
-            if (fid === 'TIT2') tags.title = val;
-            else if (fid === 'TPE1') tags.artist = val;
-            else if (fid === 'TALB') tags.album = val;
-          }
-          pos += 10 + fsize;
-        }
-      }
-    });
-  } catch {}
-  return tags;
 }
 
 // GET /api/dup/status?jobId=xxx

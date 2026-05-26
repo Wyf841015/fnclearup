@@ -15,7 +15,7 @@ import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleD
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
 const TARGET_DIR = dirname(UI_DIR);
 const PKGVAR = process.env.TRM_PKGVAR || null;
-const DATA_DIR = PKGVAR ? join(PKVAR, 'data') : join(TARGET_DIR, 'data');
+const DATA_DIR = PKGVAR ? join(PKGVAR, 'data') : join(TARGET_DIR, 'data');
 const PORT = parseInt(process.env.PORT || '47938', 10);
 const SOCK_PATH = join(TARGET_DIR, 'fnclearup.sock');
 const DUP_STATE_DIR = join(DATA_DIR, 'dup');
