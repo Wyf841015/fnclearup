@@ -856,9 +856,18 @@ async function handle(req, res) {
 
 // ── HTTP server (direct access) ──
 const httpServer = createServer(handle);
-httpServer.on('error', (e) => { console.error('[FATAL] HTTP server error:', e.message); process.exit(1); });
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`fnclearup HTTP listening on ${PORT}`);
+let httpPort = PORT;
+httpServer.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.warn(`[http] port ${httpPort} in use, trying ${httpPort + 1}...`);
+    httpPort++;
+    httpServer.listen(httpPort, '0.0.0.0');
+  } else {
+    console.error('[FATAL] HTTP server error:', e.message);
+  }
+});
+httpServer.listen(httpPort, '0.0.0.0', () => {
+  console.log(`fnclearup HTTP listening on ${httpPort}`);
 });
 
 // ── UNIX socket server (fnOS gateway proxy) ──
