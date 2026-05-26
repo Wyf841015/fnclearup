@@ -135,6 +135,18 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
 .list-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
 #app-list,#disk-list,#docker-volumes-list,#images-list,#networks-list,#temp-list{margin-top:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
 
+/* Data Table */
+.data-table{width:100%;border-collapse:collapse;font-size:13px;min-width:500px}
+.data-table th{text-align:left;padding:6px 8px;font-size:12px;font-weight:600;color:var(--color-text-secondary);background:var(--color-bg);border-bottom:2px solid var(--color-border);white-space:nowrap}
+.data-table td{padding:7px 8px;border-bottom:1px solid var(--color-border);vertical-align:middle}
+.data-table tbody tr:hover{background:var(--color-hover-bg)}
+.data-table tbody tr:last-child td{border-bottom:none}
+.data-table input[type="checkbox"]{width:16px;height:16px;cursor:pointer;vertical-align:middle}
+.data-table input[type="checkbox"]:disabled{cursor:not-allowed;opacity:.4}
+.paths-cell pre{max-height:60px;overflow-y:auto;background:var(--color-bg);border-radius:4px;padding:4px 6px;line-height:1.5;font-size:12px}
+.paths-cell pre::-webkit-scrollbar{width:3px}
+.paths-cell pre::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:2px}
+
 /* Modal */
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 .modal-overlay.visible{display:flex}
@@ -304,4 +316,10 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   .sponsor-btn,.theme-toggle{padding:8px 14px;font-size:13px}
   .sponsor-qr-row{flex-direction:column;align-items:center}
   .sponsor-qr-item img{width:120px;height:120px}
+  /* Mobile table */
+  .data-table{min-width:auto;font-size:12px}
+  .data-table th,.data-table td{padding:5px 4px}
+  .data-table td:nth-child(3),.data-table th:nth-child(3){max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .paths-cell pre{max-height:36px;font-size:11px}
+  #app-table .paths-cell{display:none}
 }

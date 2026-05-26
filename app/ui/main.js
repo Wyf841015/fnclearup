@@ -26,6 +26,8 @@ const API = {
 
 const $ = id => document.getElementById(id);
 
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 // Theme
 function applyTheme(dark) { document.documentElement.classList.toggle('dark', dark); }
 function toggleTheme() { applyTheme(!document.documentElement.classList.contains('dark')); }
@@ -43,7 +45,27 @@ function showToast(msg, type='info') {
 function showSponsorModal() { $('#sponsorModal')?.classList.add('show'); }
 function showSponsorImgFull(img) { const o=$('#sponsorImgOverlay'); if(o){o.classList.add('show');$('#sponsorImgFull').src=img.src;} }
 
+// ── Helper: selectAll for any table ──
+function selectAllHandler(tableId, checkboxClass) {
+  const tbl = $(tableId);
+  if (!tbl) return;
+  tbl.addEventListener('change', function(e) {
+    if (e.target && e.target.classList.contains('select-all-cb')) {
+      document.querySelectorAll('#'+tableId+' .'+checkboxClass+':not(:disabled)').forEach(cb => cb.checked = e.target.checked);
+      // Call the appropriate update function
+      if (checkboxClass === 'app-cb') updateSelectInfo();
+      else if (checkboxClass === 'disk-cb') updateDiskSelectInfo();
+      else if (checkboxClass === 'docker-cb') updateDockerSelectInfo();
+      else if (checkboxClass === 'image-cb') updateImagesSelectInfo();
+      else if (checkboxClass === 'network-cb') updateNetworkSelectInfo();
+      else if (checkboxClass === 'temp-cb') updateTempSelectInfo();
+    }
+  });
+}
+
+// ════════════════════════════════
 // Tab switching
+// ════════════════════════════════
 async function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.toggle('active',b.dataset.tab===tabName);b.setAttribute('aria-selected',b.dataset.tab===tabName?'true':'false');});
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.dataset.panel===tabName));
@@ -53,7 +75,9 @@ async function switchTab(tabName) {
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
 }
 
-// ── App Scan ──
+// ════════════════════════════════
+// App Scan
+// ════════════════════════════════
 async function doScan() {
   const btn=$('scanBtn')||$('scanTrigger'); const status=$('app-status'); const list=$('app-list');
   if(btn){btn.disabled=true;btn.innerHTML='<span>⏳</span><span>扫描中...</span>';}
@@ -81,30 +105,49 @@ async function doScan() {
       const m=p.match(/^\/(vol\d+)/); if(m)vols.add(m[1]);
     }
     if($('vol-count'))$('vol-count').textContent=vols.size;
-    // Build merged rows: installed apps first, then orphan-only
+    // Build merged rows
     const rows=[];
     const installedSet = new Set(App.installedApps.map(a=>typeof a==='object'?a.appname:a));
     for(const app of App.installedApps) {
       const appname=typeof app==='object'?app.appname:app;
+      const displayName=typeof app==='object'?app.display_name:app;
       const isO=orphanNames.has(appname);
-      rows.push({status:isO?'orphan':'installed',appname:appname,paths:App.orphanData[appname]||[],isOrphan:isO});
+      rows.push({status:isO?'orphan':'installed',appname:appname,displayName:displayName,paths:App.orphanData[appname]||[],isOrphan:isO});
     }
     for(const sn of orphanNames) {
-      if(!installedSet.has(sn)) rows.push({status:'orphan',appname:sn,paths:App.orphanData[sn]||[],isOrphan:true});
+      if(!installedSet.has(sn)) rows.push({status:'orphan',appname:sn,displayName:sn,paths:App.orphanData[sn]||[],isOrphan:true});
     }
-    // Render
-    let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">应用</span><span style="width:56px;flex-shrink:0">状态</span><span class="file-vol">卷</span></div>';
-    for(const row of rows) {
-      const badge=row.status==='installed'?'<span class="file-badge" style="background:#dcfce7;color:#059669">已安装</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">残余</span>';
-      const disabledAttr=row.status==='installed'?'disabled':'';
-      const rowStyle=row.status==='installed'?'style="opacity:0.6"':'';
-      const firstPath=(row.paths[0]||'');
-      const volMatch=firstPath.match(/^\/(vol\d+)/);
-      const cbId='cb_'+row.appname.replace(/[^a-zA-Z0-9]/g,'_');
-      html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="file-checkbox" id="${cbId}" data-path="${escHtml(firstPath)}" data-app="${escHtml(row.appname)}" onchange="updateSelectInfo()" ${disabledAttr}><span class="file-path" style="font-weight:500">${escHtml(row.appname)}</span>${badge}<span class="file-vol">${volMatch?volMatch[1]:'-'}</span></div>`;
+    // Render table
+    if(rows.length===0) {
+      if(list)list.innerHTML='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">🎉 无残留</div>';
+    } else {
+      let html='<div class="list-scroll"><table class="data-table" id="app-table"><thead><tr>'+
+        '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllApp(this)"></th>'+
+        '<th style="width:44px">状态</th><th>应用</th><th style="min-width:100px">显示名称</th><th style="width:50px">所在卷</th><th>路径</th>'+
+        '</tr></thead><tbody>';
+      for(const row of rows) {
+        const badge=row.status==='installed'
+          ?'<span class="file-badge" style="background:#dcfce7;color:#059669">已安装</span>'
+          :'<span class="file-badge" style="background:#fff7ed;color:#ea580c">残余</span>';
+        const disabled=row.status==='installed';
+        const rowStyle=disabled?'style="opacity:0.6"':'';
+        const cbId='cb_'+row.appname.replace(/[^a-zA-Z0-9]/g,'_');
+        const firstPath=row.paths[0]||'';
+        const volMatch=firstPath.match(/^\/(vol\d+)/);
+        const volsUsed=[...new Set(row.paths.map(p=>{const m=p.match(/^\/(vol\d+)/);return m?m[1]:'';}).filter(Boolean))].join(', ');
+        const pathsStr=row.paths.join('\n');
+        html+=`<tr ${rowStyle}>
+          <td><input type="checkbox" class="app-cb" id="${cbId}" data-app="${escHtml(row.appname)}" data-firstpath="${escHtml(firstPath)}" onchange="updateSelectInfo()" ${disabled?'disabled':''}></td>
+          <td>${badge}</td>
+          <td style="font-family:monospace;font-size:13px;white-space:nowrap">${escHtml(row.appname)}</td>
+          <td style="font-size:13px">${escHtml(row.displayName)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(volsUsed||'-')}</td>
+          <td class="paths-cell" title="${escHtml(pathsStr)}"><pre style="margin:0;white-space:pre-wrap;font-size:12px">${escHtml(pathsStr)}</pre></td>
+        </tr>`;
+      }
+      html+='</tbody></table></div>';
+      if(list)list.innerHTML=html;
     }
-    if(rows.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">🎉 无残留</div>';
-    if(list)list.innerHTML=html;
     if(status){status.className='success';status.textContent=`✅ 已安装 ${App.installedApps.length} 个应用，发现 ${totalOrphan} 个残余`;}
   } catch(e) {
     if(status){status.className='error';status.textContent='❌ 扫描失败: '+e.message;}
@@ -113,38 +156,66 @@ async function doScan() {
     if(btn){btn.disabled=false;btn.innerHTML='<span>🔍</span><span>扫描目录</span>';}
   }
 }
-function toggleSelectAll() {}
+
+function selectAllApp(el) {
+  document.querySelectorAll('#app-table .app-cb:not(:disabled)').forEach(cb => cb.checked = el.checked);
+  updateSelectInfo();
+}
+
 function updateSelectInfo() {
-  const cbs=document.querySelectorAll('#app-list .file-checkbox:checked');
+  const cbs=document.querySelectorAll('#app-list .app-cb:checked');
   const db=$('deleteBtn'); const si=$('select-info');
-  if(cbs.length>0){if(db)db.disabled=false;if(si){si.style.display='';si.textContent=`已选 ${cbs.length} 个`;}}
+  let totalPaths=0;
+  for(const cb of cbs){
+    const appname=cb.dataset.app;
+    totalPaths+=(App.orphanData[appname]||[]).length;
+  }
+  if(cbs.length>0){if(db)db.disabled=false;if(si){si.style.display='';si.textContent=`已选 ${cbs.length} 个应用，共 ${totalPaths} 个路径`;}}
   else{if(db)db.disabled=true;if(si)si.style.display='none';}
 }
+
 function closeModal() { const m=$('confirmModal'); if(m)m.classList.remove('visible'); }
 function confirmDelete() {
-  const cbs=document.querySelectorAll('#app-list .file-checkbox:checked');
+  const cbs=document.querySelectorAll('#app-list .app-cb:checked');
   if(cbs.length===0){showToast('请选择要删除的目录','error');return;}
   const c=$('confirmCount'); if(c)c.textContent=cbs.length;
-  const p=$('confirmPaths'); if(p){
-    p.innerHTML=[...cbs].slice(0,20).map(cb=>`<div>${escHtml(cb.dataset.path)}</div>`).join('');
-    if(cbs.length>20)p.innerHTML+=`<div style="color:var(--color-text-secondary)">...还有 ${cbs.length-20} 个</div>`;
+  // Collect paths
+  const allPaths=[];
+  for(const cb of cbs){
+    const appname=cb.dataset.app;
+    if(App.orphanData[appname]&&App.orphanData[appname].length>0) allPaths.push(...App.orphanData[appname]);
+    else if(cb.dataset.firstpath) allPaths.push(cb.dataset.firstpath);
+  }
+  const p=$('confirmPaths');
+  if(p){
+    p.innerHTML=allPaths.slice(0,20).map(p=>`<div>${escHtml(p)}</div>`).join('');
+    if(allPaths.length>20)p.innerHTML+=`<div style="color:var(--color-text-secondary)">...还有 ${allPaths.length-20} 个</div>`;
   }
   $('confirmModal')?.classList.add('visible');
 }
 async function doDelete() {
-  const cbs=document.querySelectorAll('#app-list .file-checkbox:checked');
-  const paths=[...cbs].map(cb=>cb.dataset.path).filter(Boolean);
+  const cbs=document.querySelectorAll('#app-list .app-cb:checked');
+  const allPaths=[];
+  for(const cb of cbs){
+    const appname=cb.dataset.app;
+    if(App.orphanData[appname]&&App.orphanData[appname].length>0) allPaths.push(...App.orphanData[appname]);
+    else if(cb.dataset.firstpath) allPaths.push(cb.dataset.firstpath);
+  }
   const delUsers=!!$('deleteUsersCheckbox')?.checked;
   const delAppshare=!!$('deleteAppshareCheckbox')?.checked;
   $('confirmModal')?.classList.remove('visible');
   try {
-    const r=await API.post('api/delete',{paths,delete_users:delUsers,delete_appshare_residual:delAppshare});
-    showToast(`已删除 ${r.deleted||0} 个，失败 ${r.failures||0} 个`,'success');
+    const r=await API.post('api/delete',{paths:allPaths,delete_users:delUsers,delete_appshare_residual:delAppshare});
+    const msg=`已删除 ${r.total||0} 个，失败 ${r.failures||0} 个`;
+    if(r.users_deleted&&r.users_deleted.length) msg+=`，已删用户 ${r.users_deleted.join(',')}`;
+    showToast(msg,'success');
     await doScan();
   } catch(e){showToast('删除失败: '+e.message,'error');}
 }
 
-// ── Disk ──
+// ════════════════════════════════
+// Disk Mounts
+// ════════════════════════════════
 async function loadDiskMounts(force) {
   if(App.diskMountsLoaded&&!force) return;
   App.diskMountsLoaded=true;
@@ -154,21 +225,39 @@ async function loadDiskMounts(force) {
   if(status){status.className='loading';status.textContent='⏳ 加载中...';}
   try {
     const [m, v] = await Promise.all([API.get('api/mounts'), API.get('api/vol02')]);
-    const mounts=m.mounts||[]; const allDirs=v.vol02_dirs||[]; const mounted=v.mounted_points||[];
-    if($('mounts-count'))$('mounts-count').textContent=mounts.length;
+    const mounts=m.mounts||[]; const allDirs=v.vol02_dirs||[]; const mountedPts=v.mounted_points||[];
+    const mountedSet=new Set();
+    for(const mp of mountedPts){
+      const name=mp.split('/').pop();
+      if(name) mountedSet.add(name);
+    }
     if($('vol02-total-count'))$('vol02-total-count').textContent=allDirs.length;
-    const residual=allDirs.filter(d=>!mounted.some(mp=>mp.includes(d)));
+    if($('mounts-count'))$('mounts-count').textContent=mountedSet.size;
+    const residual=allDirs.filter(d=>!mountedSet.has(d));
     if($('vol02-count'))$('vol02-count').textContent=residual.length;
     if(list){
-      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">目录</span><span style="width:48px;flex-shrink:0">状态</span></div>';
-      const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-      for(const d of allDirs) {
-        const isMounted=mounted.some(mp=>mp.includes(d));
+      let html='<div class="list-scroll"><table class="data-table" id="disk-table"><thead><tr>'+
+        '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllDisk(this)"></th>'+
+        '<th style="width:44px">状态</th><th>目录名</th><th>挂载点</th><th>网盘类型</th>'+
+        '</tr></thead><tbody>';
+      for(const dirName of allDirs) {
+        const isMounted=mountedSet.has(dirName);
+        const fullPath='/vol02/'+dirName;
+        const mountInfo=mounts.find(mx=>mx.mountPoint&&mx.mountPoint.includes(dirName));
         const badge=isMounted?'<span class="file-badge" style="background:#dcfce7;color:#059669">在用</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">残余</span>';
         const disabledAttr=isMounted?'disabled':'';
         const rowStyle=isMounted?'style="opacity:0.6"':'';
-        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="file-checkbox disk-cb" value="/vol02/${esc(d)}" onchange="updateDiskSelectInfo()" ${disabledAttr}><span class="file-path">/vol02/${esc(d)}</span>${badge}</div>`;
+        const mountDisplay=mountInfo?escHtml(mountInfo.mountPoint||'-'):'-';
+        const cstStr=mountInfo?escHtml(mountInfo.cloudStorageTypeStr||mountInfo.cloudStorageType||'-'):'-';
+        html+=`<tr ${rowStyle}>
+          <td><input type="checkbox" class="disk-cb" value="${escHtml(dirName)}" data-fullpath="${escHtml(fullPath)}" onchange="updateDiskSelectInfo()" ${disabledAttr}></td>
+          <td>${badge}</td>
+          <td style="font-family:monospace;font-size:13px;white-space:nowrap" title="${escHtml(fullPath)}">${escHtml(dirName)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${mountDisplay}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${cstStr}</td>
+        </tr>`;
       }
+      html+='</tbody></table></div>';
       if(allDirs.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">🎉 /vol02 目录为空</div>';
       list.innerHTML=html;
     }
@@ -179,10 +268,16 @@ async function loadDiskMounts(force) {
     if(btn){btn.disabled=false;btn.innerHTML='<span>🔍</span><span>扫描目录</span>';}
   }
 }
+
+function selectAllDisk(el) {
+  document.querySelectorAll('#disk-table .disk-cb:not(:disabled)').forEach(cb => cb.checked = el.checked);
+  updateDiskSelectInfo();
+}
+
 function updateDiskSelectInfo() {
   const cbs=document.querySelectorAll('.disk-cb:checked');
   const db=$('deleteVol02Btn'); const si=$('disk-select-info');
-  (cbs.length>0)?(db.disabled=false):(db.disabled=true);
+  if(db)db.disabled=cbs.length===0;
   if(si){si.style.display=cbs.length>0?'':'none';si.textContent=`已选 ${cbs.length} 个`;}
 }
 function confirmDeleteVol02() {
@@ -193,14 +288,17 @@ function confirmDeleteVol02() {
 }
 async function doDeleteVol02() {
   const cbs=document.querySelectorAll('.disk-cb:checked');
-  for(const cb of cbs){
-    try{ await API.post('api/delete',{paths:[cb.value]}); }catch{}
-  }
-  showToast('删除完成','success');
+  const paths=[...cbs].map(cb=>'/vol02/'+cb.value);
+  try {
+    const r=await API.post('api/delete',{paths});
+    showToast(`已删除 ${r.total||0} 个，失败 ${r.failures||0} 个`,'success');
+  } catch(e){showToast('删除失败: '+e.message,'error');}
   await loadDiskMounts(true);
 }
 
-// ── Docker Inner Tab ──
+// ════════════════════════════════
+// Docker Inner Tab
+// ════════════════════════════════
 function switchInnerTab(tabName) {
   document.querySelectorAll('.inner-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.innerTab===tabName));
   document.querySelectorAll('.inner-panel').forEach(p=>p.classList.toggle('active',p.dataset.innerPanel===tabName));
@@ -208,37 +306,56 @@ function switchInnerTab(tabName) {
   else if(tabName==='volumes'&&!App.dockerVolumesLoaded)loadDockerVolumes();
   else if(tabName==='networks'&&!App.dockerNetworksLoaded){App.dockerNetworksLoaded=true;doNetworksScan();}
 }
+
+// ── Docker Volumes ──
 async function loadDockerVolumes() {
   App.dockerVolumesLoaded=true;
   const status=$('docker-orphan-status'); const list=$('docker-volumes-list');
   try {
     const data=await API.get('api/volumes');
     const v=data.volumes||{};
-    const all=(v.all||[]).map(n=>{const m=v.orphan?.find(o=>o.name===n);return{name:n,driver:m?m.driver:'local',orphan:!!m};});
-    const inUseNames=new Set((v.in_use||[]).map(x=>typeof x==='string'?x:x.name||x));
-    const orphan=v.orphan||[];
+    const inUse=v.in_use||[]; const orphan=v.orphan||[];
+    const all=[...inUse,...orphan];
     if($('docker-total-count'))$('docker-total-count').textContent=all.length;
-    if($('docker-inuse-count'))$('docker-inuse-count').textContent=all.filter(x=>!x.orphan).length;
+    if($('docker-inuse-count'))$('docker-inuse-count').textContent=inUse.length;
     if($('docker-orphan-count'))$('docker-orphan-count').textContent=orphan.length;
     if(list){
-      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">卷名</span><span class="file-size">驱动</span><span style="width:48px;flex-shrink:0">状态</span></div>';
+      let html='<div class="list-scroll"><table class="data-table" id="docker-vol-table"><thead><tr>'+
+        '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllDockerVol(this)"></th>'+
+        '<th style="width:44px">状态</th><th>卷名称</th><th>驱动</th><th>挂载点</th><th>关联容器</th>'+
+        '</tr></thead><tbody>';
       for(const vol of all) {
-        const isInUse=inUseNames.has(vol.name);
-        const badge=isInUse?'<span class="file-badge" style="background:#dcfce7;color:#059669">在用</span>':(vol.orphan?'<span class="file-badge" style="background:#fff7ed;color:#ea580c">孤立</span>':'<span class="file-badge" style="background:#eef2ff;color:#6366f1">正常</span>');
-        const disabledAttr=isInUse?'disabled':'';
-        const rowStyle=isInUse?'style="opacity:0.6"':'';
-        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="docker-cb" value="${escHtml(vol.name)}" onchange="updateDockerSelectInfo()" ${disabledAttr}><span class="file-path">${escHtml(vol.name)}</span><span class="file-size">${escHtml(vol.driver)}</span>${badge}</div>`;
+        const isOrphan=orphan.some(o=>o.name===vol.name);
+        const badge=isOrphan?'<span class="file-badge" style="background:#fff7ed;color:#ea580c">孤立</span>':'<span class="file-badge" style="background:#dcfce7;color:#059669">'+(vol.containers?vol.containers.length+' 个容器':'在用')+'</span>';
+        const disabledAttr=isOrphan?'':'disabled';
+        const rowStyle=isOrphan?'':'style="opacity:0.6"';
+        const containers=(vol.containers||[]).map(c=>escHtml(c)).join(', ')||'-';
+        html+=`<tr ${rowStyle}>
+          <td><input type="checkbox" class="docker-cb" value="${escHtml(vol.name)}" data-volname="${escHtml(vol.name)}" onchange="updateDockerSelectInfo()" ${disabledAttr}></td>
+          <td>${badge}</td>
+          <td style="font-family:monospace;font-size:13px;white-space:nowrap">${escHtml(vol.name)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(vol.driver||'-')}</td>
+          <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(vol.mountpoint||'-')}">${escHtml(vol.mountpoint||'-')}</td>
+          <td style="font-size:13px">${containers}</td>
+        </tr>`;
       }
+      html+='</tbody></table></div>';
       if(all.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">无 Docker 卷</div>';
       list.innerHTML=html;
     }
-    if(status){status.className='success';status.textContent=`✅ ${all.length} 个卷（在用 ${all.filter(x=>!x.orphan).length}，孤立 ${orphan.length}）`;}
+    if(status){status.className='success';status.textContent=`✅ ${all.length} 个卷（在用 ${inUse.length}，孤立 ${orphan.length}）`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
 }
+
+function selectAllDockerVol(el) {
+  document.querySelectorAll('#docker-vol-table .docker-cb:not(:disabled)').forEach(cb => cb.checked = el.checked);
+  updateDockerSelectInfo();
+}
+
 function updateDockerSelectInfo() {
   const cbs=document.querySelectorAll('.docker-cb:checked');
-  ($('deleteDockerBtn')).disabled=cbs.length===0;
-  const si=$('docker-select-info'); si.style.display=cbs.length>0?'':'none'; si.textContent=`已选 ${cbs.length} 个`;
+  const db=$('deleteDockerBtn'); if(db)db.disabled=cbs.length===0;
+  const si=$('docker-select-info'); if(si){si.style.display=cbs.length>0?'':'none';si.textContent=`已选 ${cbs.length} 个卷`;}
 }
 function confirmDeleteDocker() {
   const cbs=document.querySelectorAll('.docker-cb:checked');
@@ -249,12 +366,12 @@ async function doDeleteDocker() {
   const vols=[...document.querySelectorAll('.docker-cb:checked')].map(cb=>cb.value);
   try {
     const r=await API.post('api/volumes/delete',{volumes:vols});
-    showToast(`已删除 ${r.deleted||0} 个卷`,'success');
+    showToast(`已删除 ${r.total||0} 个卷`,'success');
     App.dockerVolumesLoaded=false; await loadDockerVolumes();
   } catch(e){showToast('删除失败: '+e.message,'error');}
 }
 
-// Networks
+// ── Docker Networks ──
 async function doNetworksScan() {
   const status=$('networks-status'); const list=$('networks-list');
   try {
@@ -265,24 +382,40 @@ async function doNetworksScan() {
     if($('networks-used-count'))$('networks-used-count').textContent=all.filter(x=>!x.unused).length;
     if($('networks-unused-count'))$('networks-unused-count').textContent=all.filter(x=>x.unused).length;
     if(list){
-      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">网络名</span><span class="file-size">驱动</span><span style="width:56px;flex-shrink:0">状态</span></div>';
+      let html='<div class="list-scroll"><table class="data-table" id="networks-table"><thead><tr>'+
+        '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllNetworks(this)"></th>'+
+        '<th style="width:44px">状态</th><th>网络名称</th><th>驱动</th><th>范围</th>'+
+        '</tr></thead><tbody>';
       for(const net of all) {
-        const isUsed=!net.unused;
-        const badge=isUsed?'<span class="file-badge" style="background:#dcfce7;color:#059669">使用中</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>';
-        const disabledAttr=isUsed?'disabled':'';
-        const rowStyle=isUsed?'style="opacity:0.6"':'';
-        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="network-cb" value="${escHtml(net.name)}" onchange="updateNetworkSelectInfo()" ${disabledAttr}><span class="file-path">${escHtml(net.name)}</span><span class="file-size">${escHtml(net.driver)}</span>${badge}</div>`;
+        const isUnused=net.unused;
+        const badge=isUnused?'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>':'<span class="file-badge" style="background:#dcfce7;color:#059669">'+(net.containers+' 个容器')+'</span>';
+        const disabledAttr=isUnused?'':'disabled';
+        const rowStyle=isUnused?'':'style="opacity:0.6"';
+        html+=`<tr ${rowStyle}>
+          <td><input type="checkbox" class="network-cb" value="${escHtml(net.name)}" data-netname="${escHtml(net.name)}" onchange="updateNetworkSelectInfo()" ${disabledAttr}></td>
+          <td>${badge}</td>
+          <td style="font-family:monospace;font-size:13px;white-space:nowrap">${escHtml(net.name)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(net.driver)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(net.scope)}</td>
+        </tr>`;
       }
+      html+='</tbody></table></div>';
       if(all.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">无 Docker 网络</div>';
       list.innerHTML=html;
     }
     if(status){status.className='success';status.textContent=`✅ ${all.length} 个网络（使用中 ${all.filter(x=>!x.unused).length}，未使用 ${all.filter(x=>x.unused).length}）`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
 }
+
+function selectAllNetworks(el) {
+  document.querySelectorAll('#networks-table .network-cb:not(:disabled)').forEach(cb => cb.checked = el.checked);
+  updateNetworkSelectInfo();
+}
+
 function updateNetworkSelectInfo() {
   const cbs=document.querySelectorAll('.network-cb:checked');
-  ($('deleteNetworksBtn')).disabled=cbs.length===0;
-  const si=$('networks-select-info'); si.style.display=cbs.length>0?'':'none'; si.textContent=`已选 ${cbs.length} 个`;
+  const db=$('deleteNetworksBtn'); if(db)db.disabled=cbs.length===0;
+  const si=$('networks-select-info'); if(si){si.style.display=cbs.length>0?'':'none';si.textContent=`已选 ${cbs.length} 个网络`;}
 }
 function confirmDeleteNetworks() {
   const cbs=document.querySelectorAll('.network-cb:checked');
@@ -293,12 +426,12 @@ async function doDeleteNetworks() {
   const nets=[...document.querySelectorAll('.network-cb:checked')].map(cb=>cb.value);
   try {
     const r=await API.post('api/networks/delete',{networks:nets});
-    showToast(`已删除 ${r.deleted||0} 个网络`,'success');
+    showToast(`已删除 ${r.total||0} 个网络`,'success');
     await doNetworksScan();
   } catch(e){showToast('删除失败: '+e.message,'error');}
 }
 
-// Images
+// ── Docker Images ──
 async function doImagesScan() {
   const status=$('images-status'); const list=$('images-list');
   try {
@@ -309,24 +442,43 @@ async function doImagesScan() {
     if($('images-used-count'))$('images-used-count').textContent=all.filter(x=>x.used).length;
     if($('images-unused-count'))$('images-unused-count').textContent=all.filter(x=>!x.used&&!x.dangling).length;
     if(list){
-      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">镜像</span><span class="file-size">大小</span><span style="width:48px;flex-shrink:0">状态</span></div>';
+      let html='<div class="list-scroll"><table class="data-table" id="images-table"><thead><tr>'+
+        '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllImages(this)"></th>'+
+        '<th style="width:44px">状态</th><th>镜像名</th><th>Tag</th><th>ID</th><th>大小</th><th>创建时间</th>'+
+        '</tr></thead><tbody>';
       for(const img of all) {
-        const isUsed=img.used;
-        const badge=isUsed?'<span class="file-badge" style="background:#dcfce7;color:#059669">使用中</span>':(img.dangling?'<span class="file-badge" style="background:#fce7f3;color:#db2777">悬空</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>');
-        const disabledAttr=isUsed?'disabled':'';
+        const isUsed=img.used; const isDangling=img.dangling;
+        const badge=isUsed?'<span class="file-badge" style="background:#dcfce7;color:#059669">使用中</span>':(isDangling?'<span class="file-badge" style="background:#fce7f3;color:#db2777">悬空</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>');
+        const isSelectable=!isUsed;
+        const disabledAttr=isSelectable?'':'disabled';
         const rowStyle=isUsed?'style="opacity:0.6"':'';
-        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="image-cb" value="${escHtml(img.id)}" onchange="updateImagesSelectInfo()" ${disabledAttr}><span class="file-path">${escHtml(img.repository||'<none>')}:${escHtml(img.tag||'<none>')}</span><span class="file-size">${escHtml(img.size)}</span>${badge}</div>`;
+        html+=`<tr ${rowStyle}>
+          <td><input type="checkbox" class="image-cb" value="${escHtml(img.id)}" data-imgid="${escHtml(img.id)}" onchange="updateImagesSelectInfo()" ${disabledAttr}></td>
+          <td>${badge}</td>
+          <td style="font-family:monospace;font-size:13px;white-space:nowrap" title="${escHtml(img.repository)}">${escHtml(img.repository)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.tag)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.id)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.size)}</td>
+          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.created)}</td>
+        </tr>`;
       }
+      html+='</tbody></table></div>';
       if(all.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">无 Docker 镜像</div>';
       list.innerHTML=html;
     }
     if(status){status.className='success';status.textContent=`✅ ${all.length} 个镜像（使用中 ${all.filter(x=>x.used).length}，未使用 ${all.filter(x=>!x.used&&!x.dangling).length}）`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
 }
+
+function selectAllImages(el) {
+  document.querySelectorAll('#images-table .image-cb:not(:disabled)').forEach(cb => cb.checked = el.checked);
+  updateImagesSelectInfo();
+}
+
 function updateImagesSelectInfo() {
   const cbs=document.querySelectorAll('.image-cb:checked');
-  ($('deleteImagesBtn')).disabled=cbs.length===0;
-  const si=$('images-select-info'); si.style.display=cbs.length>0?'':'none'; si.textContent=`已选 ${cbs.length} 个`;
+  const db=$('deleteImagesBtn'); if(db)db.disabled=cbs.length===0;
+  const si=$('images-select-info'); if(si){si.style.display=cbs.length>0?'':'none';si.textContent=`已选 ${cbs.length} 个镜像`;}
 }
 function confirmDeleteImages() {
   const cbs=document.querySelectorAll('.image-cb:checked');
@@ -341,9 +493,10 @@ async function doDeleteImages() {
     await doImagesScan();
   } catch(e){showToast('删除失败: '+e.message,'error');}
 }
-function toggleDockerInuseList(btn){}
 
-// ── Temp ──
+// ════════════════════════════════
+// Temp files
+// ════════════════════════════════
 async function doTempScan() {
   const status=$('temp-status'); const list=$('temp-list');
   const btn=$('deleteTempBtn'); if(btn)btn.disabled=true;
@@ -353,18 +506,42 @@ async function doTempScan() {
     if($('temp-files-count'))$('temp-files-count').textContent=data.counts?.files||0;
     if($('temp-total-size'))$('temp-total-size').textContent=data.total_size_str||'0 B';
     if(list){
-      const all=[...(data.dirs||[]),...(data.files||[])];
-      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">路径</span><span class="file-size">大小</span><span style="width:28px;flex-shrink:0">类型</span></div>';
-      html+=all.map(item=>`<div class="file-row"><input type="checkbox" class="temp-cb" value="${escHtml(item.path)}" onchange="updateTempSelectInfo()"><span class="file-path">${escHtml(item.path)}</span><span class="file-size">${escHtml(item.size_str)}</span><span class="file-tag">${item.type==='dir'?'📁':'📄'}</span></div>`).join('');
-      list.innerHTML=html;
+      const allItems=[...(data.dirs||[]),...(data.files||[])];
+      if(allItems.length===0) {
+        list.innerHTML='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">🎉 未发现过期临时文件</div>';
+      } else {
+        let html='<div class="list-scroll"><table class="data-table" id="temp-table"><thead><tr>'+
+          '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllTemp(this)"></th>'+
+          '<th>名称</th><th>位置</th><th>类型</th><th>大小</th><th>未访问</th>'+
+          '</tr></thead><tbody>';
+        for(const item of allItems) {
+          const typeLabel=item.type==='dir'?'<span class="file-badge" style="background:#eef2ff;color:#6366f1">目录</span>':'<span class="file-badge" style="background:#f0fdf4;color:#059669">文件</span>';
+          html+=`<tr>
+            <td><input type="checkbox" class="temp-cb" value="${escHtml(item.path)}" onchange="updateTempSelectInfo()"></td>
+            <td><span title="${escHtml(item.path)}">${escHtml(item.name)}</span></td>
+            <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(item.dir)}</td>
+            <td>${typeLabel}</td>
+            <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(item.size_str||'-')}</td>
+            <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${item.age_hours}h</td>
+          </tr>`;
+        }
+        html+='</tbody></table></div>';
+        list.innerHTML=html;
+      }
     }
     if(status){status.className='success';status.textContent=`✅ ${data.counts?.files||0} 个文件 ${data.counts?.dirs||0} 个目录`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
 }
+
+function selectAllTemp(el) {
+  document.querySelectorAll('#temp-table .temp-cb:not(:disabled)').forEach(cb => cb.checked = el.checked);
+  updateTempSelectInfo();
+}
+
 function updateTempSelectInfo() {
   const cbs=document.querySelectorAll('.temp-cb:checked');
-  ($('deleteTempBtn')).disabled=cbs.length===0;
-  const si=$('temp-select-info'); si.style.display=cbs.length>0?'':'none'; si.textContent=`已选 ${cbs.length} 个`;
+  const db=$('deleteTempBtn'); if(db)db.disabled=cbs.length===0;
+  const si=$('temp-select-info'); if(si){si.style.display=cbs.length>0?'':'none';si.textContent=`已选 ${cbs.length} 项`;}
 }
 function confirmDeleteTemp() {
   const cbs=document.querySelectorAll('.temp-cb:checked');
@@ -380,11 +557,13 @@ async function doDeleteTemp() {
   } catch(e){showToast('删除失败: '+e.message,'error');}
 }
 
-// ═══ Duplicate File Scanning ═══
+// ════════════════════════════════
+// Duplicate File Scanning
+// ════════════════════════════════
 const DupState = { music: { jobId: null, duplicates: [], checking: false }, files: { jobId: null, duplicates: [], checking: false } };
 
 function getDupIds(tab) {
-  return { pathInput: tab + 'Path', scanBtn: tab + 'ScanBtn', pauseBtn: tab + 'PauseBtn', resumeBtn: tab + 'ResumeBtn', stopBtn: tab + 'StopBtn', deleteBtn: tab + 'DeleteBtn', exportBtn: tab + 'ExportBtn', progress: tab + 'Progress', progressBar: tab + 'ProgressBar', progressText: tab + 'ProgressText', progressCount: tab + 'ProgressCount', currentFile: tab + 'CurrentFile', status: tab + 'Status', results: tab + 'Results', stats: tab + 'Stats', dupList: tab + 'DupList', actions: tab + 'Actions', selectedCount: tab + 'SelectedCount', selectedSize: tab + 'SelectedSize', empty: tab + 'Empty' };
+  return { pathInput: tab+'Path', scanBtn: tab+'ScanBtn', pauseBtn: tab+'PauseBtn', resumeBtn: tab+'ResumeBtn', stopBtn: tab+'StopBtn', deleteBtn: tab+'DeleteBtn', exportBtn: tab+'ExportBtn', progress: tab+'Progress', progressBar: tab+'ProgressBar', progressText: tab+'ProgressText', progressCount: tab+'ProgressCount', currentFile: tab+'CurrentFile', status: tab+'Status', results: tab+'Results', stats: tab+'Stats', dupList: tab+'DupList', actions: tab+'Actions', selectedCount: tab+'SelectedCount', selectedSize: tab+'SelectedSize', empty: tab+'Empty' };
 }
 
 function switchDupInnerTab(tabName) {
@@ -395,7 +574,6 @@ function switchDupInnerTab(tabName) {
 
 async function startDupScan(tab) {
   const ids = getDupIds(tab);
-  // Prevent duplicate scan
   if (DupState[tab].checking) { showToast('已有扫描任务进行中', 'error'); return; }
   const scanPath = ($(ids.pathInput)?.value||'').trim();
   if (!scanPath) { showToast('请输入扫描目录路径', 'error'); return; }
@@ -499,132 +677,139 @@ function renderDupList(tab, duplicates) {
     hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span></div><span class="dup-toggle">▼</span>';
     hdr.addEventListener('click', function(e){if(e.target.closest('input'))return;this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');this.querySelector('.dup-toggle').textContent=this.classList.contains('open')?'▼':'▶';});
     const body = document.createElement('div'); body.className='dup-group-body open';
-    body.innerHTML='<div class="select-all-row"><label class="select-all-label"><input type="checkbox" class="group-select-all" checked> 全选本组（保留原始文件）</label></div>';
-    group.files.forEach((file, fi) => {
+    hdr.classList.add('open');
+
+    // Select all for this group
+    const selAll = document.createElement('div'); selAll.className='select-all-row';
+    const selLabel = document.createElement('label'); selLabel.className='select-all-label';
+    const selAllCb = document.createElement('input'); selAllCb.type='checkbox'; selAllCb.className='group-select-all'; selAllCb.checked=true;
+    selAllCb.addEventListener('change', function(){
+      body.querySelectorAll('.dup-file-cb:not(.group-select-all)').forEach(cb=>{cb.checked=this.checked;cb.dispatchEvent(new Event('change'));});
+    });
+    selLabel.appendChild(selAllCb); selLabel.appendChild(document.createTextNode(' 全选本组（保留第一个原始文件）'));
+    selAll.appendChild(selLabel); body.appendChild(selAll);
+
+    group.files.forEach(function(file, fi) {
+      const item = document.createElement('div'); item.className='dup-file-item';
       const isFirst = fi===0; const isChecked = !isFirst;
       if(isChecked){selCount++;selSize+=file.size;}
-      let tagHtml='';
-      if(file.id3){
-        const t=[]; if(file.id3.title)t.push(escHtml(file.id3.title)); if(file.id3.artist)t.push(escHtml(file.id3.artist));
-        if(t.length) tagHtml='<span class="file-tags">'+t.map(x=>'<span class="tag">'+x+'</span>').join('')+'</span>';
-      }
-      const item = document.createElement('div'); item.className='dup-file-item'; item.dataset.filePath=file.path;
-      item.innerHTML='<input type="checkbox" class="file-checkbox" data-group="'+gi+'" data-index="'+fi+'" '+(isChecked?'checked':'')+'><span class="'+(isFirst?'file-original-badge':'file-duplicate-badge')+'">'+(isFirst?'★ 原始':'重复')+'</span><span class="file-path" title="'+escHtml(file.path)+'">'+escHtml(file.path)+'</span><span class="file-size">'+file.sizeHuman+'</span>'+tagHtml;
-      if(isFirst)item.style.opacity='0.6';
-      item.querySelector('.file-checkbox').addEventListener('change', updateDupSelectedCount);
-      body.appendChild(item);
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.className='dup-file-cb';
+      cb.dataset.path=file.path; cb.dataset.size=file.size; cb.checked=isChecked;
+      if(isFirst)cb.disabled=true;
+      cb.addEventListener('change', function(){updateDupSelectedCount();});
+      const label = document.createElement('span'); label.className='dup-file-label';
+      const sizeSpan = document.createElement('span'); sizeSpan.className='dup-file-size'; sizeSpan.textContent=' ('+group.sizeHuman+')';
+      label.textContent=' '+file.path; label.prepend(cb);
+      const tag = document.createElement('span'); tag.className='dup-file-tag'; tag.textContent=isFirst?'原始文件':'重复文件';
+      item.appendChild(label); item.appendChild(sizeSpan); item.appendChild(tag); body.appendChild(item);
     });
     div.appendChild(hdr); div.appendChild(body); container.appendChild(div);
   });
-  container.querySelectorAll('.group-select-all').forEach(cb=>{
-    cb.addEventListener('change', function(){
-      const pb=this.closest('.dup-group-body'); if(!pb)return;
-      pb.querySelectorAll('.file-checkbox').forEach(c=>{const p=c.closest('.dup-file-item'); if(p&&p.querySelector('.file-original-badge'))return;c.checked=this.checked;});
-      updateDupSelectedCount();
-    });
-  });
-  container.querySelectorAll('.group-select-all').forEach(c=>c.checked=true);
-  if($(ids.selectedCount))$(ids.selectedCount).textContent=selCount;
-  if($(ids.selectedSize))$(ids.selectedSize).textContent=formatBytes(selSize);
-  $(ids.actions)?.classList.add('visible');
-  $(ids.deleteBtn)&&($(ids.deleteBtn).disabled=false);
-  $(ids.exportBtn)&&($(ids.exportBtn).disabled=false);
   updateDupSelectedCount();
 }
 
 function updateDupSelectedCount() {
-  const tab=document.querySelector('.dup-inner-tab-btn.active')?.dataset.dupTab||'music';
-  const ids=getDupIds(tab); const dl=$(ids.dupList); if(!dl)return;
-  let count=0, size=0;
-  dl.querySelectorAll('.file-checkbox').forEach(cb=>{
-    if(!cb.checked)return; count++;
-    const gi=parseInt(cb.dataset.group), fi=parseInt(cb.dataset.index);
-    const dup=DupState[tab]?.duplicates?.[gi]; if(dup&&dup.files[fi]) size+=dup.files[fi].size;
+  let count=0,size=0;
+  document.querySelectorAll('.dup-file-cb:checked:not(.group-select-all)').forEach(cb=>{count++;size+=parseInt(cb.dataset.size)||0;});
+  document.querySelectorAll('.dup-group').forEach((g,i)=>{
+    const cbs=g.querySelectorAll('.dup-file-cb:checked:not(.group-select-all)');
+    (cbs.length>0)?g.classList.add('has-selected'):g.classList.remove('has-selected');
   });
-  if($(ids.selectedCount))$(ids.selectedCount).textContent=count;
-  if($(ids.selectedSize))$(ids.selectedSize).textContent=formatBytes(size);
-  if($(ids.deleteBtn))$(ids.deleteBtn).disabled=count===0;
-  if($(ids.exportBtn))$(ids.exportBtn).disabled=count===0;
+  // Update all tab instances
+  ['music','files'].forEach(tab=>{
+    const sc=$(tab+'SelectedCount'); if(sc)sc.textContent=count;
+    const ss=$(tab+'SelectedSize'); if(ss)ss.textContent=formatBytes(size);
+    const db=$(tab+'DeleteBtn'); const eb=$(tab+'ExportBtn');
+    if(db)db.disabled=count===0; if(eb)eb.disabled=count===0;
+  });
 }
 
-// Dup controls
-let pendingDupTab=null, pendingDupFiles=[];
+function formatBytes(b){if(b===0)return'0 B';const u=['B','KB','MB','GB','TB'];const i=Math.floor(Math.log(b)/Math.log(1024));return(b/Math.pow(1024,i)).toFixed(1)+' '+u[i];}
 
-async function pauseDupScan(tab) {
-  if(!DupState[tab].jobId) return;
-  const ids=getDupIds(tab);
-  try {
-    await API.post('api/dup/pause',{jobId:DupState[tab].jobId});
-    $(ids.pauseBtn)&&($(ids.pauseBtn).style.display='none');
-    $(ids.resumeBtn)&&($(ids.resumeBtn).style.display='');
-    $(ids.progressText)&&($(ids.progressText).textContent='⏸ 已暂停');
-  } catch(e){showToast('暂停失败: '+e.message,'error');}
+function pauseDupScan(tab){
+  const jobId=DupState[tab].jobId; if(!jobId)return;
+  API.post('api/dup/pause',{jobId}).then(r=>{if(r.success)showToast('已暂停','info');else showToast(r.error||'暂停失败','error');}).catch(e=>showToast('暂停失败','error'));
 }
-async function resumeDupScan(tab) {
-  if(!DupState[tab].jobId) return;
-  try {
-    await API.post('api/dup/resume',{jobId:DupState[tab].jobId});
-    const ids=getDupIds(tab); $(ids.pauseBtn)&&($(ids.pauseBtn).style.display=''); $(ids.resumeBtn)&&($(ids.resumeBtn).style.display='none');
-    DupState[tab].checking=true; pollDupProgress(tab);
-  } catch(e){showToast('恢复失败: '+e.message,'error');}
+function resumeDupScan(tab){
+  const jobId=DupState[tab].jobId; if(!jobId)return;
+  API.post('api/dup/resume',{jobId}).then(r=>{if(r.success)showToast('已继续','info');else showToast(r.error||'继续失败','error');}).catch(e=>showToast('继续失败','error'));
 }
-async function stopDupScan(tab) {
-  if(!DupState[tab].jobId) return;
-  try {
-    await API.post('api/dup/stop',{jobId:DupState[tab].jobId});
-    DupState[tab].checking=false;
-    showToast('已停止扫描','info');
-    finishDupScan(tab, null);
-  } catch(e){showToast('停止失败: '+e.message,'error');}
+function stopDupScan(tab){
+  const jobId=DupState[tab].jobId; if(!jobId)return;
+  API.post('api/dup/stop',{jobId}).then(r=>{if(r.success){DupState[tab].checking=false;finishDupScan(tab,{status:'aborted'});}else showToast(r.error||'停止失败','error');}).catch(e=>showToast('停止失败','error'));
 }
-
-function showDupDeleteModal(tab) {
-  const ids=getDupIds(tab); const dl=$(ids.dupList); if(!dl)return;
-  const files=[...dl.querySelectorAll('.file-checkbox:checked')].map(cb=>cb.closest('.dup-file-item')).filter(Boolean).map(it=>it.dataset.filePath).filter(Boolean);
-  if(files.length===0){showToast('请选择文件','error');return;}
-  pendingDupTab=tab; pendingDupFiles=files;
-  const d=$('dupDeleteModalDesc'); if(d)d.innerHTML='删除 <strong>'+files.length+'</strong> 个重复文件？';
-  $('dupDeleteModal')?.classList.add('visible');
+function showDupDeleteModal(tab){
+  const cbs=document.querySelectorAll('.dup-file-cb:checked:not(.group-select-all)'); const count=cbs.length;
+  if(count===0){showToast('请选择要删除的文件','error');return;}
+  $('#dupDeleteCount').textContent=count; $('#dupDeleteModal').dataset.tab=tab; $('#dupDeleteModal').classList.add('visible');
 }
-function hideDupDeleteModal(){ $('dupDeleteModal')?.classList.remove('visible'); pendingDupTab=null; pendingDupFiles=[]; }
-async function confirmDupDelete() {
+function hideDupDeleteModal(){$('#dupDeleteModal')?.classList.remove('visible');}
+async function confirmDupDelete(){
+  const tab=$('#dupDeleteModal').dataset.tab; if(!tab)return;
   const mode=document.querySelector('input[name="dupDeleteMode"]:checked')?.value||'trash';
-  const tab=pendingDupTab, files=pendingDupFiles;
-  $('dupDeleteModal')?.classList.remove('visible');
-  if(!tab||!files.length)return;
-  try {
-    const r=await API.post('api/dup/delete',{files,mode});
-    showToast('已'+(mode==='trash'?'回收':'删除')+' '+r.deleted+' 个文件','success');
-    startDupScan(tab);
-  } catch(e){showToast('删除失败: '+e.message,'error');}
-  pendingDupTab=null; pendingDupFiles=[];
+  const paths=[...document.querySelectorAll('.dup-file-cb:checked:not(.group-select-all)')].map(cb=>cb.dataset.path);
+  if(!paths.length){hideDupDeleteModal();return;}
+  hideDupDeleteModal();
+  try{
+    const r=await API.post('api/dup/delete',{paths,mode});
+    showToast(`已删除 ${r.total||0} 个文件`,'success');
+    // Re-fetch results to update UI
+    const ids=getDupIds(tab);
+    const data={status:'complete',duplicates:DupState[tab].duplicates,stats:{}};
+    // Remove deleted files from state
+    const remDups=[];
+    let delCount=0;
+    for(const g of DupState[tab].duplicates){
+      const remaining=g.files.filter(f=>!paths.includes(f.path));
+      if(remaining.length>=2){remDups.push({...g,files:remaining,count:remaining.length});}
+      else delCount++;
+    }
+    DupState[tab].duplicates=remDups;
+    if(remDups.length===0){
+      $(ids.results).style.display='none';$(ids.empty).style.display='';
+      const h3=$(ids.empty).querySelector('h3'); if(h3)h3.textContent='🎉 已清理所有重复项';
+    } else {
+      renderDupList(tab,remDups);
+    }
+  }catch(e){showToast('删除失败: '+e.message,'error');}
 }
-async function exportDup(tab) {
-  const jobId=DupState[tab].jobId, dups=DupState[tab].duplicates;
-  if(!dups||!dups.length){showToast('没有可导出的数据','error');return;}
-  let exp=0;
-  for(const g of dups){try{const r=await API.post('api/dup/export',{hash:g.hash,jobId});if(r.exported)exp++;}catch{}}
-  showToast('已导出 '+exp+' 个重复组','success');
+async function exportDup(tab){
+  const dups=DupState[tab].duplicates; if(!dups||!dups.length){showToast('无重复数据可导出','error');return;}
+  try{
+    const r=await API.post('api/dup/export',{type:tab==='music'?'music':'files',duplicates:dups});
+    if(r.filename)showToast('报告已导出: '+r.filename,'success');
+    else showToast(JSON.stringify(r),'info');
+  }catch(e){showToast('导出失败: '+e.message,'error');}
 }
 
-// Exports
-window.toggleTheme=toggleTheme; window.switchTab=switchTab; window.doScan=doScan;
-window.updateSelectInfo=updateSelectInfo; window.confirmDelete=confirmDelete; window.closeModal=closeModal; window.doDelete=doDelete;
-window.showSponsorModal=showSponsorModal; window.showSponsorImgFull=showSponsorImgFull;
-window.switchInnerTab=switchInnerTab; window.switchDupInnerTab=switchDupInnerTab;
-window.loadDiskMounts=loadDiskMounts; window.updateDiskSelectInfo=updateDiskSelectInfo;
-window.confirmDeleteVol02=confirmDeleteVol02;
-window.loadDockerVolumes=loadDockerVolumes; window.updateDockerSelectInfo=updateDockerSelectInfo;
-window.confirmDeleteDocker=confirmDeleteDocker; window.toggleDockerInuseList=toggleDockerInuseList;
-window.doNetworksScan=doNetworksScan; window.updateNetworkSelectInfo=updateNetworkSelectInfo; window.confirmDeleteNetworks=confirmDeleteNetworks;
-window.doImagesScan=doImagesScan; window.updateImagesSelectInfo=updateImagesSelectInfo; window.confirmDeleteImages=confirmDeleteImages;
-window.doTempScan=doTempScan; window.updateTempSelectInfo=updateTempSelectInfo; window.confirmDeleteTemp=confirmDeleteTemp;
-window.startDupScan=startDupScan; window.pauseDupScan=pauseDupScan; window.resumeDupScan=resumeDupScan; window.stopDupScan=stopDupScan;
-window.showDupDeleteModal=showDupDeleteModal; window.hideDupDeleteModal=hideDupDeleteModal; window.confirmDupDelete=confirmDupDelete;
-window.exportDup=exportDup;
-
-// Auto-init
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>doScan());
+// ════════════════════════════════
+// Init
+// ════════════════════════════════
+// Auto scan on load
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>doScan());
 else doScan();
+
+// Export globals
+window.toggleTheme=toggleTheme;
+window.showSponsorModal=showSponsorModal; window.showSponsorImgFull=showSponsorImgFull;
+window.switchTab=switchTab;
+window.doScan=doScan; window.selectAllApp=selectAllApp; window.updateSelectInfo=updateSelectInfo;
+window.confirmDelete=confirmDelete; window.doDelete=doDelete; window.closeModal=closeModal;
+window.loadDiskMounts=loadDiskMounts; window.selectAllDisk=selectAllDisk; window.updateDiskSelectInfo=updateDiskSelectInfo;
+window.confirmDeleteVol02=confirmDeleteVol02;
+window.switchInnerTab=switchInnerTab; window.loadDockerVolumes=loadDockerVolumes;
+window.selectAllDockerVol=selectAllDockerVol; window.updateDockerSelectInfo=updateDockerSelectInfo;
+window.confirmDeleteDocker=confirmDeleteDocker;
+window.doNetworksScan=doNetworksScan; window.selectAllNetworks=selectAllNetworks;
+window.updateNetworkSelectInfo=updateNetworkSelectInfo; window.confirmDeleteNetworks=confirmDeleteNetworks;
+window.doImagesScan=doImagesScan; window.selectAllImages=selectAllImages;
+window.updateImagesSelectInfo=updateImagesSelectInfo; window.confirmDeleteImages=confirmDeleteImages;
+window.doTempScan=doTempScan; window.selectAllTemp=selectAllTemp; window.updateTempSelectInfo=updateTempSelectInfo;
+window.confirmDeleteTemp=confirmDeleteTemp;
+window.switchDupInnerTab=switchDupInnerTab; window.startDupScan=startDupScan;
+window.pauseDupScan=pauseDupScan; window.resumeDupScan=resumeDupScan; window.stopDupScan=stopDupScan;
+window.showDupDeleteModal=showDupDeleteModal; window.hideDupDeleteModal=hideDupDeleteModal;
+window.confirmDupDelete=confirmDupDelete; window.exportDup=exportDup;
+window.updateDupSelectedCount=updateDupSelectedCount;
 
 })();
