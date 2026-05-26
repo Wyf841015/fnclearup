@@ -217,14 +217,14 @@ describe('API: Static Files', () => {
     assert.ok(data.includes('<html'));
   });
 
-  it('GET /app/fnclearup/js/main.js returns JS', async () => {
-    const { status, data } = await httpRequest('GET', '/app/fnclearup/js/main.js');
+  it('GET /app/fnclearup/main.js returns JS', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/main.js');
     assert.strictEqual(status, 200);
     assert.ok(typeof data === 'string');
   });
 
-  it('GET /app/fnclearup/css/style.css returns CSS', async () => {
-    const { status, data } = await httpRequest('GET', '/app/fnclearup/css/style.css');
+  it('GET /app/fnclearup/styles/style.css returns CSS', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/styles/style.css');
     assert.strictEqual(status, 200);
     assert.ok(typeof data === 'string');
   });
