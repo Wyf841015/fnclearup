@@ -99,7 +99,7 @@ async function handleScan(req, res) {
   if (result.code === 0) {
     for (const line of result.stdout.split('\n')) {
       const parts = line.split('│').map(p => p.trim()).filter(Boolean);
-      if (parts.length >= 3 && parts[0] !== 'APP') {
+      if (parts.length >= 3 && !parts[0].startsWith('APP')) {
         installed.push({ appname: parts[0], display_name: parts[1] });
       }
     }

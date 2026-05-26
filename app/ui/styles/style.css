@@ -132,6 +132,8 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
 .file-badge{font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--color-primary-bg);color:var(--color-primary);flex-shrink:0}
 .file-path{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .file-vol,.file-size,.file-tag{font-size:12px;color:var(--color-text-secondary);flex-shrink:0}
+.list-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+#app-list,#disk-list,#docker-volumes-list,#images-list,#networks-list,#temp-list{margin-top:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
 
 /* Modal */
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
