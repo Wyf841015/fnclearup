@@ -505,7 +505,7 @@ function renderDupList(tab, duplicates) {
         if(t.length) tagHtml='<span class="file-tags">'+t.map(x=>'<span class="tag">'+x+'</span>').join('')+'</span>';
       }
       const item = document.createElement('div'); item.className='dup-file-item'; item.dataset.filePath=file.path;
-      item.innerHTML='<input type="checkbox" class="file-checkbox" data-group="'+gi+'" data-index="'+fi+'" '+(isChecked?'checked':'')+'><span class="'+(isFirst?'file-original-badge':'file-duplicate-badge')+'">'+(isFirst?'★ 原始':'重复')+'</span><span class="file-path" title="'+escHtml(file.path)+'">'+escHtml(file.name||'')+'</span><span class="file-size">'+file.sizeHuman+'</span>'+tagHtml;
+      item.innerHTML='<input type="checkbox" class="file-checkbox" data-group="'+gi+'" data-index="'+fi+'" '+(isChecked?'checked':'')+'><span class="'+(isFirst?'file-original-badge':'file-duplicate-badge')+'">'+(isFirst?'★ 原始':'重复')+'</span><span class="file-path" title="'+escHtml(file.path)+'">'+escHtml(file.path)+'</span><span class="file-size">'+file.sizeHuman+'</span>'+tagHtml;
       if(isFirst)item.style.opacity='0.6';
       item.querySelector('.file-checkbox').addEventListener('change', updateDupSelectedCount);
       body.appendChild(item);
