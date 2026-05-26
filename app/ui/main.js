@@ -142,7 +142,7 @@ async function doScan() {
           <td style="font-family:monospace;font-size:13px;white-space:nowrap">${escHtml(row.appname)}</td>
           <td style="font-size:13px">${escHtml(row.displayName)}</td>
           <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(volsUsed||'-')}</td>
-          <td class="paths-cell" title="${escHtml(pathsStr)}"><pre style="margin:0;white-space:pre-wrap;font-size:12px">${escHtml(pathsStr)}</pre></td>
+          <td class="paths-cell" title="${escHtml(pathsStr)}">${escHtml(firstPath)}${row.paths.length>1?' …':''}</td>
         </tr>`;
       }
       html+='</tbody></table></div>';
