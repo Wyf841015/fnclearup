@@ -535,7 +535,8 @@ window.updateSelectInfo=updateSelectInfo; window.confirmDelete=confirmDelete; wi
 window.showSponsorModal=showSponsorModal; window.showSponsorImgFull=showSponsorImgFull;
 window.switchInnerTab=switchInnerTab; window.switchDupInnerTab=switchDupInnerTab;
 window.loadDiskMounts=loadDiskMounts; window.updateDiskSelectInfo=updateDiskSelectInfo;
-window.doDockerScan=doDockerScan; window.loadDockerVolumes=loadDockerVolumes; window.updateDockerSelectInfo=updateDockerSelectInfo;
+window.confirmDeleteVol02=confirmDeleteVol02;
+window.loadDockerVolumes=loadDockerVolumes; window.updateDockerSelectInfo=updateDockerSelectInfo;
 window.confirmDeleteDocker=confirmDeleteDocker; window.toggleDockerInuseList=toggleDockerInuseList;
 window.doNetworksScan=doNetworksScan; window.updateNetworkSelectInfo=updateNetworkSelectInfo; window.confirmDeleteNetworks=confirmDeleteNetworks;
 window.doImagesScan=doImagesScan; window.updateImagesSelectInfo=updateImagesSelectInfo; window.confirmDeleteImages=confirmDeleteImages;
