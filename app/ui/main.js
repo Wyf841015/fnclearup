@@ -785,31 +785,60 @@ async function exportDup(tab){
 // ════════════════════════════════
 // Init
 // ════════════════════════════════
-// Auto scan on load
-if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>doScan());
-else doScan();
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
+else init();
 
-// Export globals
-window.toggleTheme=toggleTheme;
-window.showSponsorModal=showSponsorModal; window.showSponsorImgFull=showSponsorImgFull;
-window.switchTab=switchTab;
-window.doScan=doScan; window.selectAllApp=selectAllApp; window.updateSelectInfo=updateSelectInfo;
-window.confirmDelete=confirmDelete; window.doDelete=doDelete; window.closeModal=closeModal;
-window.loadDiskMounts=loadDiskMounts; window.selectAllDisk=selectAllDisk; window.updateDiskSelectInfo=updateDiskSelectInfo;
-window.confirmDeleteVol02=confirmDeleteVol02;
-window.switchInnerTab=switchInnerTab; window.loadDockerVolumes=loadDockerVolumes;
-window.selectAllDockerVol=selectAllDockerVol; window.updateDockerSelectInfo=updateDockerSelectInfo;
-window.confirmDeleteDocker=confirmDeleteDocker;
-window.doNetworksScan=doNetworksScan; window.selectAllNetworks=selectAllNetworks;
-window.updateNetworkSelectInfo=updateNetworkSelectInfo; window.confirmDeleteNetworks=confirmDeleteNetworks;
-window.doImagesScan=doImagesScan; window.selectAllImages=selectAllImages;
-window.updateImagesSelectInfo=updateImagesSelectInfo; window.confirmDeleteImages=confirmDeleteImages;
-window.doTempScan=doTempScan; window.selectAllTemp=selectAllTemp; window.updateTempSelectInfo=updateTempSelectInfo;
-window.confirmDeleteTemp=confirmDeleteTemp;
-window.switchDupInnerTab=switchDupInnerTab; window.startDupScan=startDupScan;
-window.pauseDupScan=pauseDupScan; window.resumeDupScan=resumeDupScan; window.stopDupScan=stopDupScan;
-window.showDupDeleteModal=showDupDeleteModal; window.hideDupDeleteModal=hideDupDeleteModal;
-window.confirmDupDelete=confirmDupDelete; window.exportDup=exportDup;
-window.updateDupSelectedCount=updateDupSelectedCount;
+function init() {
+  doScan();
+
+  // Export all functions to window for inline onclick and event delegation
+  const exports = {
+    toggleTheme, showSponsorModal, showSponsorImgFull,
+    switchTab,
+    doScan, selectAllApp, updateSelectInfo,
+    confirmDelete, doDelete, closeModal,
+    loadDiskMounts, selectAllDisk, updateDiskSelectInfo,
+    confirmDeleteVol02,
+    switchInnerTab, loadDockerVolumes,
+    selectAllDockerVol, updateDockerSelectInfo,
+    confirmDeleteDocker,
+    doNetworksScan, selectAllNetworks,
+    updateNetworkSelectInfo, confirmDeleteNetworks,
+    doImagesScan, selectAllImages,
+    updateImagesSelectInfo, confirmDeleteImages,
+    doTempScan, selectAllTemp, updateTempSelectInfo,
+    confirmDeleteTemp,
+    switchDupInnerTab, startDupScan,
+    pauseDupScan, resumeDupScan, stopDupScan,
+    showDupDeleteModal, hideDupDeleteModal,
+    confirmDupDelete, exportDup,
+    updateDupSelectedCount,
+  };
+  Object.assign(window, exports);
+
+  // Convert all inline [onclick] buttons to event listeners (bypass IIFE scope issue)
+  document.querySelectorAll('[onclick]').forEach(el => {
+    const attr = el.getAttribute('onclick');
+    const fnName = attr.replace(/\(.*\)/, '').trim();
+    if (typeof window[fnName] === 'function') {
+      el.removeAttribute('onclick');
+      el.addEventListener('click', function(e) {
+        const match = attr.match(/\(([^)]*)\)/);
+        if (match && match[1].trim()) {
+          const args = match[1].split(',').map(a => a.trim().replace(/^['"]|['"]$/g, ''));
+          window[fnName](...args);
+        } else {
+          window[fnName]();
+        }
+      });
+    }
+  });
+
+  // Direct bind for sponsor button (addEventListener version, bypassing the above in case of issues)
+  const sponsorBtn = document.querySelector('.sponsor-btn');
+  if (sponsorBtn) sponsorBtn.addEventListener('click', function(e) {
+    document.querySelector('#sponsorModal').classList.add('show');
+  });
+}
 
 })();
