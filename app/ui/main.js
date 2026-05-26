@@ -135,6 +135,7 @@ async function loadDiskMounts(force) {
   if(App.diskMountsLoaded&&!force) return;
   App.diskMountsLoaded=true;
   const status=$('disk-status'); const list=$('disk-list'); const btn=$('scanDiskMountsBtn');
+  const delBtn=$('deleteVol02Btn'); if(delBtn)delBtn.disabled=true;
   if(btn){btn.disabled=true;btn.innerHTML='<span>⏳</span><span>扫描中...</span>';}
   if(status){status.className='loading';status.textContent='⏳ 加载中...';}
   try {
@@ -486,6 +487,8 @@ function updateDupSelectedCount() {
   });
   if($(ids.selectedCount))$(ids.selectedCount).textContent=count;
   if($(ids.selectedSize))$(ids.selectedSize).textContent=formatBytes(size);
+  if($(ids.deleteBtn))$(ids.deleteBtn).disabled=count===0;
+  if($(ids.exportBtn))$(ids.exportBtn).disabled=count===0;
 }
 
 // Dup controls
