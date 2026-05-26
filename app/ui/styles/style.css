@@ -271,10 +271,32 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   .sponsor-qr-row{flex-direction:column;align-items:center}
 }
 @media(max-width:480px){
-  h1{font-size:22px}
-  .header{padding:16px}
-  .card{padding:16px}
-  .tab-list{padding:12px 12px 0}
-  .tab-panel{padding:16px}
-  .kpi-row{grid-template-columns:1fr}
+  h1{font-size:18px}
+  .header{padding:12px 16px}
+  .header-left h1::before{font-size:22px;margin-right:4px}
+  .subtitle{font-size:12px;line-height:1.4;margin-bottom:0}
+  .card{padding:12px}
+  .tab-list{padding:8px 8px 0;gap:2px;overflow-x:auto}
+  .tab-btn{padding:8px 10px;font-size:12px;gap:4px}
+  .tab-panel{padding:12px}
+  .kpi-row{grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+  .kpi-card{padding:10px 6px;gap:6px;border-radius:10px}
+  .kpi-icon{width:32px;height:32px;font-size:16px;border-radius:8px;flex-shrink:0}
+  .kpi-card:hover{transform:none}
+  .kpi-card::before{display:none}
+  .kpi-value{font-size:18px;font-weight:700;letter-spacing:-0.5px}
+  .kpi-label{font-size:11px;white-space:nowrap}
+  .section-actions{gap:6px}
+  .section-actions .btn{padding:6px 10px;font-size:12px}
+  .file-row{padding:6px 8px;font-size:12px;gap:6px}
+  .dup-scan-input-row{flex-direction:column}
+  .dup-scan-btns{flex-direction:row;flex-wrap:wrap}
+  .dup-path-input{font-size:13px;padding:8px 10px}
+  .dup-stats-row{grid-template-columns:repeat(2,1fr)}
+  .dup-stat-card{padding:10px}
+  .dup-stat-value{font-size:18px}
+  .modal{padding:16px;max-width:98%}
+  .sponsor-btn,.theme-toggle{padding:8px 14px;font-size:13px}
+  .sponsor-qr-row{flex-direction:column;align-items:center}
+  .sponsor-qr-item img{width:120px;height:120px}
 }
