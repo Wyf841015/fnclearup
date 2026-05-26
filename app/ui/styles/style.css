@@ -126,6 +126,8 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
 .file-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--color-border);transition:var(--transition)}
 .file-row:hover{background:var(--color-hover-bg)}
 .file-row:last-child{border-bottom:none}
+.file-header{background:var(--color-bg);font-size:12px;font-weight:600;color:var(--color-text-secondary);border-bottom:2px solid var(--color-border);padding:6px 10px;cursor:default}
+.file-header:hover{background:var(--color-bg)}
 .file-checkbox{width:16px;height:16px;cursor:pointer;flex-shrink:0}
 .file-badge{font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--color-primary-bg);color:var(--color-primary);flex-shrink:0}
 .file-path{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}

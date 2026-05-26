@@ -93,7 +93,7 @@ async function doScan() {
       if(!installedSet.has(sn)) rows.push({status:'orphan',appname:sn,paths:App.orphanData[sn]||[],isOrphan:true});
     }
     // Render
-    let html='';
+    let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">应用</span><span style="width:56px;flex-shrink:0">状态</span><span class="file-vol">卷</span></div>';
     for(const row of rows) {
       const badge=row.status==='installed'?'<span class="file-badge" style="background:#dcfce7;color:#059669">已安装</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">残余</span>';
       const disabledAttr=row.status==='installed'?'disabled':'';
@@ -160,7 +160,7 @@ async function loadDiskMounts(force) {
     const residual=allDirs.filter(d=>!mounted.some(mp=>mp.includes(d)));
     if($('vol02-count'))$('vol02-count').textContent=residual.length;
     if(list){
-      let html='';
+      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">目录</span><span style="width:48px;flex-shrink:0">状态</span></div>';
       const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       for(const d of allDirs) {
         const isMounted=mounted.some(mp=>mp.includes(d));
@@ -221,7 +221,7 @@ async function loadDockerVolumes() {
     if($('docker-inuse-count'))$('docker-inuse-count').textContent=all.filter(x=>!x.orphan).length;
     if($('docker-orphan-count'))$('docker-orphan-count').textContent=orphan.length;
     if(list){
-      let html='';
+      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">卷名</span><span class="file-size">驱动</span><span style="width:48px;flex-shrink:0">状态</span></div>';
       for(const vol of all) {
         const isInUse=inUseNames.has(vol.name);
         const badge=isInUse?'<span class="file-badge" style="background:#dcfce7;color:#059669">在用</span>':(vol.orphan?'<span class="file-badge" style="background:#fff7ed;color:#ea580c">孤立</span>':'<span class="file-badge" style="background:#eef2ff;color:#6366f1">正常</span>');
@@ -265,7 +265,7 @@ async function doNetworksScan() {
     if($('networks-used-count'))$('networks-used-count').textContent=all.filter(x=>!x.unused).length;
     if($('networks-unused-count'))$('networks-unused-count').textContent=all.filter(x=>x.unused).length;
     if(list){
-      let html='';
+      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">网络名</span><span class="file-size">驱动</span><span style="width:56px;flex-shrink:0">状态</span></div>';
       for(const net of all) {
         const isUsed=!net.unused;
         const badge=isUsed?'<span class="file-badge" style="background:#dcfce7;color:#059669">使用中</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>';
@@ -309,7 +309,7 @@ async function doImagesScan() {
     if($('images-used-count'))$('images-used-count').textContent=all.filter(x=>x.used).length;
     if($('images-unused-count'))$('images-unused-count').textContent=all.filter(x=>!x.used&&!x.dangling).length;
     if(list){
-      let html='';
+      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">镜像</span><span class="file-size">大小</span><span style="width:48px;flex-shrink:0">状态</span></div>';
       for(const img of all) {
         const isUsed=img.used;
         const badge=isUsed?'<span class="file-badge" style="background:#dcfce7;color:#059669">使用中</span>':(img.dangling?'<span class="file-badge" style="background:#fce7f3;color:#db2777">悬空</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>');
@@ -354,7 +354,9 @@ async function doTempScan() {
     if($('temp-total-size'))$('temp-total-size').textContent=data.total_size_str||'0 B';
     if(list){
       const all=[...(data.dirs||[]),...(data.files||[])];
-      list.innerHTML=all.map(item=>`<div class="file-row"><input type="checkbox" class="temp-cb" value="${escHtml(item.path)}" onchange="updateTempSelectInfo()"><span class="file-path">${escHtml(item.path)}</span><span class="file-size">${escHtml(item.size_str)}</span><span class="file-tag">${item.type==='dir'?'📁':'📄'}</span></div>`).join('');
+      let html='<div class="file-row file-header"><span class="file-checkbox" style="visibility:hidden"></span><span class="file-path">路径</span><span class="file-size">大小</span><span style="width:28px;flex-shrink:0">类型</span></div>';
+      html+=all.map(item=>`<div class="file-row"><input type="checkbox" class="temp-cb" value="${escHtml(item.path)}" onchange="updateTempSelectInfo()"><span class="file-path">${escHtml(item.path)}</span><span class="file-size">${escHtml(item.size_str)}</span><span class="file-tag">${item.type==='dir'?'📁':'📄'}</span></div>`).join('');
+      list.innerHTML=html;
     }
     if(status){status.className='success';status.textContent=`✅ ${data.counts?.files||0} 个文件 ${data.counts?.dirs||0} 个目录`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
