@@ -11,9 +11,8 @@ import { once } from 'node:events';
 // ── Config ──
 const UI_DIR     = dirname(fileURLToPath(import.meta.url));
 const TARGET_DIR = dirname(UI_DIR);
-const APP_DIR    = dirname(TARGET_DIR);
 const PKGVAR     = process.env.TRM_PKGVAR || null;
-const DATA_DIR   = PKGVAR ? join(PKGVAR, 'data') : join(APP_DIR, 'data');
+const DATA_DIR   = PKGVAR ? join(PKGVAR, 'data') : join(TARGET_DIR, 'data');
 const PORT       = parseInt(process.env.PORT || '47938', 10);
 const SOCK_NAME  = 'fnclearup.sock';
 const SOCK_PATH  = join(TARGET_DIR, SOCK_NAME);
@@ -25,7 +24,7 @@ const SAFE_PREFIXES = new Set(VOL_GLOBS.map(v => v + '/'));
 const MUSIC_EXTS = new Set(['.mp3','.flac','.wav','.aac','.ogg','.m4a','.wma','.alac','.ape','.dsf']);
 const SYSTEM_NETWORKS = new Set(['bridge','host','none','container']);
 const TEMP_DIRS = ['/tmp', '/var/tmp'];
-const DUP_SCAN_SCRIPT = join(APP_DIR, 'dup_scan.js');
+const DUP_SCAN_SCRIPT = join(TARGET_DIR, 'dup_scan.js');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -823,65 +822,70 @@ async function handle(req, res) {
       return;
     }
 
-    // Static files
-    let filePath = join(UI_DIR, cleanPath);
-    if (cleanPath === '' || cleanPath === '/') filePath = join(UI_DIR, 'www', 'index.html');
-    else if (!existsSync(filePath)) filePath = join(UI_DIR, 'www', cleanPath);
-
-    if (!filePath.startsWith(UI_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
-    if (!existsSync(filePath)) {
-      // SPA fallback
-      const idx = join(UI_DIR, 'www', 'index.html');
-      if (existsSync(idx)) { const c = readFileSync(idx); res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(c); }
-      else { res.writeHead(404); res.end('Not Found'); }
+    // Static file serving (aligned with fnm3u8dl pattern)
+    const staticDir = UI_DIR;
+    let filePath;
+    if (cleanPath === '' || cleanPath === '/') {
+      filePath = 'index.html';
+    } else {
+      filePath = cleanPath.replace(/^\//, '');
+    }
+    // Remove query string
+    filePath = filePath.split('?')[0];
+    // Security: prevent directory traversal
+    if (filePath.includes('..')) { res.writeHead(403); res.end('Forbidden'); return; }
+    const requestedPath = join(staticDir, filePath);
+    if (existsSync(requestedPath) && statSync(requestedPath).isFile()) {
+      const ext = extname(requestedPath).toLowerCase();
+      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+      res.end(readFileSync(requestedPath));
       return;
     }
-    const ext = extname(filePath).toLowerCase();
-    // Try to serve from www/ first, then ui/
-    let served = false;
-    for (const baseDir of [join(UI_DIR, 'www'), UI_DIR]) {
-      const f = cleanPath === '' || cleanPath === '/' ? join(baseDir, 'index.html') : join(baseDir, cleanPath.replace(/^\//, ''));
-      if (f && existsSync(f) && f.startsWith(baseDir)) {
-        const c = readFileSync(f);
-        res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-        res.end(c);
-        served = true;
-        break;
-      }
+    // SPA fallback to index.html
+    const indexPath = join(staticDir, 'index.html');
+    if (existsSync(indexPath)) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(readFileSync(indexPath));
+      return;
     }
-    if (!served) {
-      // Final fallback: try UI_DIR directly
-      const f = join(UI_DIR, cleanPath.replace(/^\//, ''));
-      if (existsSync(f) && f.startsWith(UI_DIR)) {
-        const c = readFileSync(f);
-        res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-        res.end(c);
-      } else {
-        res.writeHead(404); res.end('Not Found');
-      }
-    }
+    res.writeHead(404); res.end('Not Found');
   } catch (e) {
     sendJSON(res, 500, { error: e.message });
   }
 }
 
-// ── Start Server ──
-const server = createServer(handle);
+// ── HTTP server (direct access) ──
+const httpServer = createServer(handle);
+httpServer.on('error', (e) => { console.error('[FATAL] HTTP server error:', e.message); process.exit(1); });
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`fnclearup HTTP listening on ${PORT}`);
+});
 
-// Try HTTP first, then socket
-function start() {
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`fnclearup server listening on http://0.0.0.0:${PORT}`);
-  });
-}
+// ── UNIX socket server (fnOS gateway proxy) ──
+try {
+  if (existsSync(SOCK_PATH)) {
+    try { unlinkSync(SOCK_PATH); console.log('[sock] removed stale socket'); }
+    catch(e) { console.warn('[sock] could not remove stale socket:', e.message); }
+  }
+} catch(e) {}
 
-start();
+const sockServer = createServer(handle);
+sockServer.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.warn('[sock] address in use, cleaning up and retrying...');
+    try { unlinkSync(SOCK_PATH); } catch(e) {}
+    sockServer.listen(SOCK_PATH);
+  } else {
+    console.error('[FATAL] UNIX socket server error:', e.message);
+  }
+});
+sockServer.listen(SOCK_PATH, () => console.log(`fnclearup UNIX socket listening on ${SOCK_PATH}`));
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 3000);
-});
-process.on('SIGINT', () => {
-  server.close(() => process.exit(0));
-});
+function shutdown() {
+  try { httpServer.close(); } catch(e) {}
+  try { sockServer.close(); } catch(e) {}
+  setTimeout(() => process.exit(0), 2000);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

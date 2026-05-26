@@ -4,8 +4,11 @@
             "title": "清理精灵",
             "icon": "images/icon_{0}.png",
             "type": "iframe",
-            "url": "/app/fnclearup/",
-            "allUsers": true
+            "url": "/app/fnclearup",
+            "gatewaySocket": "fnclearup.sock",
+            "gatewayPrefix": "/app/fnclearup",
+            "allUsers": true,
+            "control": {"accessPerm": "editable"}
         }
     }
 }
