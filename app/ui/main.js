@@ -395,6 +395,8 @@ function switchDupInnerTab(tabName) {
 
 async function startDupScan(tab) {
   const ids = getDupIds(tab);
+  // Prevent duplicate scan
+  if (DupState[tab].checking) { showToast('已有扫描任务进行中', 'error'); return; }
   const scanPath = ($(ids.pathInput)?.value||'').trim();
   if (!scanPath) { showToast('请输入扫描目录路径', 'error'); return; }
 

@@ -481,9 +481,10 @@ async function handleDupScan(req, res) {
   // Launch scan in background via dup_scan.js
   if (existsSync(DUP_SCAN_SCRIPT)) {
     const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPath, jobId, DUP_STATE_DIR], {
-      stdio: 'ignore', detached: true,
+      stdio: 'ignore', detached: false,
     });
-    proc.unref();
+    proc.on('exit', () => { dupJobs.delete(jobId); });
+    dupJobs.set(jobId, { stateFile, scanType, scanPath, proc });
   } else {
     // Fallback: run scan inline (separate Promise to not block)
     runDupScanInline(jobId, scanType, scanPath, stateFile).catch(() => {});
@@ -892,6 +893,17 @@ sockServer.listen(SOCK_PATH, () => console.log(`fnclearup UNIX socket listening 
 
 // Graceful shutdown
 function shutdown() {
+  // Kill all active dup scan processes
+  for (const [jobId, job] of dupJobs) {
+    if (job.proc) { try { job.proc.kill(); } catch(e) {} }
+    // Mark state as aborted so it won't be resumed
+    try {
+      const raw = JSON.parse(readFileSync(job.stateFile, 'utf-8'));
+      raw._aborted = true; raw.status = 'aborted';
+      writeFileSync(job.stateFile, JSON.stringify(raw));
+    } catch(e) {}
+  }
+  dupJobs.clear();
   try { httpServer.close(); } catch(e) {}
   try { sockServer.close(); } catch(e) {}
   setTimeout(() => process.exit(0), 2000);
