@@ -256,15 +256,25 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
 
 /* Responsive */
 @media(max-width:768px){
-  .kpi-row{grid-template-columns:repeat(3,1fr);gap:8px}
-  .kpi-card{padding:10px}
-  .kpi-value{font-size:22px}
+  .container{padding:16px 12px}
+  .header{flex-direction:column;align-items:flex-start;gap:16px;padding:20px}
+  .header-controls{width:100%;justify-content:flex-start}
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi-card{padding:16px;gap:12px}
+  .kpi-icon{width:44px;height:44px;font-size:20px;border-radius:12px}
+  .kpi-value{font-size:24px}
   .dup-stats-row{grid-template-columns:repeat(2,1fr)}
-  .tab-btn{padding:8px 12px;font-size:13px}
+  .tab-btn{padding:10px 16px;font-size:13px}
   .dup-scan-input-row{flex-direction:column}
   .dup-scan-btns{flex-direction:row;flex-wrap:wrap}
+  .modal{padding:24px;max-width:95%}
+  .sponsor-qr-row{flex-direction:column;align-items:center}
 }
 @media(max-width:480px){
+  h1{font-size:22px}
+  .header{padding:16px}
+  .card{padding:16px}
+  .tab-list{padding:12px 12px 0}
+  .tab-panel{padding:16px}
   .kpi-row{grid-template-columns:1fr}
-  .header{flex-direction:column;align-items:flex-start}
 }

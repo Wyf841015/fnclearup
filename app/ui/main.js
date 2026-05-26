@@ -72,7 +72,8 @@ async function doScan() {
         App.orphanData[sn].push(item.path);
       }
     } else App.orphanData = data.orphan||{};
-    const totalOrphan = Object.keys(App.orphanData).length;
+    const orphanNames = new Set(Object.keys(App.orphanData));
+    const totalOrphan = orphanNames.size;
     if($('installed-count'))$('installed-count').textContent=App.installedApps.length;
     if($('orphan-count'))$('orphan-count').textContent=totalOrphan;
     const vols=new Set();
@@ -80,18 +81,31 @@ async function doScan() {
       const m=p.match(/^\/(vol\d+)/); if(m)vols.add(m[1]);
     }
     if($('vol-count'))$('vol-count').textContent=vols.size;
+    // Build merged rows: installed apps first, then orphan-only
+    const rows=[];
+    const installedSet = new Set(App.installedApps.map(a=>typeof a==='object'?a.appname:a));
+    for(const app of App.installedApps) {
+      const appname=typeof app==='object'?app.appname:app;
+      const isO=orphanNames.has(appname);
+      rows.push({status:isO?'orphan':'installed',appname:appname,paths:App.orphanData[appname]||[],isOrphan:isO});
+    }
+    for(const sn of orphanNames) {
+      if(!installedSet.has(sn)) rows.push({status:'orphan',appname:sn,paths:App.orphanData[sn]||[],isOrphan:true});
+    }
     // Render
     let html='';
-    let idx=0;
-    for(const [appName, paths] of Object.entries(App.orphanData)) {
-      for(const p of paths) {
-        const volMatch = p.match(/^\/(vol\d+)/);
-        html+=`<div class="file-row"><input type="checkbox" class="file-checkbox" data-path="${escHtml(p)}" data-app="${escHtml(appName)}" data-index="${idx}" onchange="updateSelectInfo()"><span class="file-badge">${escHtml(appName)}</span><span class="file-path">${escHtml(p)}</span><span class="file-vol">${volMatch?volMatch[1]:'-'}</span></div>`;
-        idx++;
-      }
+    for(const row of rows) {
+      const badge=row.status==='installed'?'<span class="file-badge" style="background:#dcfce7;color:#059669">已安装</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">残余</span>';
+      const disabledAttr=row.status==='installed'?'disabled':'';
+      const rowStyle=row.status==='installed'?'style="opacity:0.6"':'';
+      const firstPath=(row.paths[0]||'');
+      const volMatch=firstPath.match(/^\/(vol\d+)/);
+      const cbId='cb_'+row.appname.replace(/[^a-zA-Z0-9]/g,'_');
+      html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="file-checkbox" id="${cbId}" data-path="${escHtml(firstPath)}" data-app="${escHtml(row.appname)}" onchange="updateSelectInfo()" ${disabledAttr}><span class="file-path" style="font-weight:500">${escHtml(row.appname)}</span>${badge}<span class="file-vol">${volMatch?volMatch[1]:'-'}</span></div>`;
     }
+    if(rows.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">🎉 无残留</div>';
     if(list)list.innerHTML=html;
-    if(status){status.className='success';status.textContent=`✅ 扫描完成，发现 ${totalOrphan} 个残余应用`;}
+    if(status){status.className='success';status.textContent=`✅ 已安装 ${App.installedApps.length} 个应用，发现 ${totalOrphan} 个残余`;}
   } catch(e) {
     if(status){status.className='error';status.textContent='❌ 扫描失败: '+e.message;}
     showToast('扫描失败','error');
@@ -140,22 +154,25 @@ async function loadDiskMounts(force) {
   if(status){status.className='loading';status.textContent='⏳ 加载中...';}
   try {
     const [m, v] = await Promise.all([API.get('api/mounts'), API.get('api/vol02')]);
-    const mounts=m.mounts||[]; const vol02=v.vol02_dirs||[]; const mounted=v.mounted_points||[];
+    const mounts=m.mounts||[]; const allDirs=v.vol02_dirs||[]; const mounted=v.mounted_points||[];
     if($('mounts-count'))$('mounts-count').textContent=mounts.length;
-    if($('vol02-total-count'))$('vol02-total-count').textContent=vol02.length;
-    const residual=vol02.filter(d=>!mounted.some(mp=>mp.includes(d)));
+    if($('vol02-total-count'))$('vol02-total-count').textContent=allDirs.length;
+    const residual=allDirs.filter(d=>!mounted.some(mp=>mp.includes(d)));
     if($('vol02-count'))$('vol02-count').textContent=residual.length;
     if(list){
-      if(residual.length===0) list.innerHTML='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">🎉 无网盘残余目录</div>';
-      else {
-        let html='';
-        residual.forEach(d=>{
-          html+=`<div class="file-row"><input type="checkbox" class="file-checkbox disk-cb" value="/vol02/${escHtml(d)}" onchange="updateDiskSelectInfo()"><span class="file-path">/vol02/${escHtml(d)}</span></div>`;
-        });
-        list.innerHTML=html;
+      let html='';
+      const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      for(const d of allDirs) {
+        const isMounted=mounted.some(mp=>mp.includes(d));
+        const badge=isMounted?'<span class="file-badge" style="background:#dcfce7;color:#059669">在用</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">残余</span>';
+        const disabledAttr=isMounted?'disabled':'';
+        const rowStyle=isMounted?'style="opacity:0.6"':'';
+        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="file-checkbox disk-cb" value="/vol02/${esc(d)}" onchange="updateDiskSelectInfo()" ${disabledAttr}><span class="file-path">/vol02/${esc(d)}</span>${badge}</div>`;
       }
+      if(allDirs.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">🎉 /vol02 目录为空</div>';
+      list.innerHTML=html;
     }
-    if(status){status.className='success';status.textContent=`✅ 加载完成，${residual.length} 个残余`;}
+    if(status){status.className='success';status.textContent=`✅ 共 ${allDirs.length} 个目录（在用 ${allDirs.length-residual.length}，残余 ${residual.length}）`;}
   } catch(e){
     if(status){status.className='error';status.textContent='❌ 加载失败: '+e.message;}
   } finally {
@@ -197,12 +214,25 @@ async function loadDockerVolumes() {
   try {
     const data=await API.get('api/volumes');
     const v=data.volumes||{};
-    if($('docker-total-count'))$('docker-total-count').textContent=v.all?.length||0;
-    if($('docker-inuse-count'))$('docker-inuse-count').textContent=v.in_use?.length||0;
+    const all=(v.all||[]).map(n=>{const m=v.orphan?.find(o=>o.name===n);return{name:n,driver:m?m.driver:'local',orphan:!!m};});
+    const inUseNames=new Set((v.in_use||[]).map(x=>typeof x==='string'?x:x.name||x));
     const orphan=v.orphan||[];
+    if($('docker-total-count'))$('docker-total-count').textContent=all.length;
+    if($('docker-inuse-count'))$('docker-inuse-count').textContent=all.filter(x=>!x.orphan).length;
     if($('docker-orphan-count'))$('docker-orphan-count').textContent=orphan.length;
-    if(list)list.innerHTML=orphan.map(o=>`<div class="file-row"><input type="checkbox" class="docker-cb" value="${escHtml(o.name)}" onchange="updateDockerSelectInfo()"><span class="file-path">${escHtml(o.name)}</span><span class="file-size">${escHtml(o.driver)}</span></div>`).join('');
-    if(status){status.className='success';status.textContent=`✅ ${orphan.length} 个孤立卷`;}
+    if(list){
+      let html='';
+      for(const vol of all) {
+        const isInUse=inUseNames.has(vol.name);
+        const badge=isInUse?'<span class="file-badge" style="background:#dcfce7;color:#059669">在用</span>':(vol.orphan?'<span class="file-badge" style="background:#fff7ed;color:#ea580c">孤立</span>':'<span class="file-badge" style="background:#eef2ff;color:#6366f1">正常</span>');
+        const disabledAttr=isInUse?'disabled':'';
+        const rowStyle=isInUse?'style="opacity:0.6"':'';
+        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="docker-cb" value="${escHtml(vol.name)}" onchange="updateDockerSelectInfo()" ${disabledAttr}><span class="file-path">${escHtml(vol.name)}</span><span class="file-size">${escHtml(vol.driver)}</span>${badge}</div>`;
+      }
+      if(all.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">无 Docker 卷</div>';
+      list.innerHTML=html;
+    }
+    if(status){status.className='success';status.textContent=`✅ ${all.length} 个卷（在用 ${all.filter(x=>!x.orphan).length}，孤立 ${orphan.length}）`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
 }
 function updateDockerSelectInfo() {
@@ -230,12 +260,23 @@ async function doNetworksScan() {
   try {
     const data=await API.get('api/networks');
     const n=data.networks||{};
-    if($('networks-total-count'))$('networks-total-count').textContent=n.total||n.all?.length||0;
-    if($('networks-used-count'))$('networks-used-count').textContent=n.used?.length||0;
-    const unused=n.unused||[];
-    if($('networks-unused-count'))$('networks-unused-count').textContent=unused.length;
-    if(list)list.innerHTML=unused.map(net=>`<div class="file-row"><input type="checkbox" class="network-cb" value="${escHtml(net.name)}" onchange="updateNetworkSelectInfo()"><span class="file-path">${escHtml(net.name)}</span><span class="file-size">${escHtml(net.driver)}</span></div>`).join('');
-    if(status){status.className='success';status.textContent=`✅ ${unused.length} 个未使用网络`;}
+    const all=n.all||[];
+    if($('networks-total-count'))$('networks-total-count').textContent=all.length;
+    if($('networks-used-count'))$('networks-used-count').textContent=all.filter(x=>!x.unused).length;
+    if($('networks-unused-count'))$('networks-unused-count').textContent=all.filter(x=>x.unused).length;
+    if(list){
+      let html='';
+      for(const net of all) {
+        const isUsed=!net.unused;
+        const badge=isUsed?'<span class="file-badge" style="background:#dcfce7;color:#059669">使用中</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>';
+        const disabledAttr=isUsed?'disabled':'';
+        const rowStyle=isUsed?'style="opacity:0.6"':'';
+        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="network-cb" value="${escHtml(net.name)}" onchange="updateNetworkSelectInfo()" ${disabledAttr}><span class="file-path">${escHtml(net.name)}</span><span class="file-size">${escHtml(net.driver)}</span>${badge}</div>`;
+      }
+      if(all.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">无 Docker 网络</div>';
+      list.innerHTML=html;
+    }
+    if(status){status.className='success';status.textContent=`✅ ${all.length} 个网络（使用中 ${all.filter(x=>!x.unused).length}，未使用 ${all.filter(x=>x.unused).length}）`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
 }
 function updateNetworkSelectInfo() {
@@ -263,12 +304,23 @@ async function doImagesScan() {
   try {
     const data=await API.get('api/images');
     const imgs=data.images||{};
-    if($('images-total-count'))$('images-total-count').textContent=imgs.all?.length||0;
-    if($('images-used-count'))$('images-used-count').textContent=imgs.used?.length||0;
-    const unused=imgs.unused||[];
-    if($('images-unused-count'))$('images-unused-count').textContent=unused.length;
-    if(list)list.innerHTML=unused.map(img=>`<div class="file-row"><input type="checkbox" class="image-cb" value="${escHtml(img.id)}" onchange="updateImagesSelectInfo()"><span class="file-path">${escHtml(img.repository||'<none>')}:${escHtml(img.tag||'<none>')}</span><span class="file-size">${escHtml(img.size)}</span></div>`).join('');
-    if(status){status.className='success';status.textContent=`✅ ${unused.length} 个未使用镜像`;}
+    const all=imgs.all||[];
+    if($('images-total-count'))$('images-total-count').textContent=all.length;
+    if($('images-used-count'))$('images-used-count').textContent=all.filter(x=>x.used).length;
+    if($('images-unused-count'))$('images-unused-count').textContent=all.filter(x=>!x.used&&!x.dangling).length;
+    if(list){
+      let html='';
+      for(const img of all) {
+        const isUsed=img.used;
+        const badge=isUsed?'<span class="file-badge" style="background:#dcfce7;color:#059669">使用中</span>':(img.dangling?'<span class="file-badge" style="background:#fce7f3;color:#db2777">悬空</span>':'<span class="file-badge" style="background:#fff7ed;color:#ea580c">未使用</span>');
+        const disabledAttr=isUsed?'disabled':'';
+        const rowStyle=isUsed?'style="opacity:0.6"':'';
+        html+=`<div class="file-row" ${rowStyle}><input type="checkbox" class="image-cb" value="${escHtml(img.id)}" onchange="updateImagesSelectInfo()" ${disabledAttr}><span class="file-path">${escHtml(img.repository||'<none>')}:${escHtml(img.tag||'<none>')}</span><span class="file-size">${escHtml(img.size)}</span>${badge}</div>`;
+      }
+      if(all.length===0) html='<div style="text-align:center;padding:30px;color:var(--color-text-secondary)">无 Docker 镜像</div>';
+      list.innerHTML=html;
+    }
+    if(status){status.className='success';status.textContent=`✅ ${all.length} 个镜像（使用中 ${all.filter(x=>x.used).length}，未使用 ${all.filter(x=>!x.used&&!x.dangling).length}）`;}
   } catch(e){if(status){status.className='error';status.textContent='❌ '+e.message;}}
 }
 function updateImagesSelectInfo() {
