@@ -675,7 +675,21 @@ function renderDupList(tab, duplicates) {
     const div = document.createElement('div'); div.className='dup-group';
     const hdr = document.createElement('div'); hdr.className='dup-group-header open';
     hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span></div><span class="dup-toggle">▼</span>';
-    hdr.addEventListener('click', function(e){if(e.target.closest('input'))return;this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');this.querySelector('.dup-toggle').textContent=this.classList.contains('open')?'▼':'▶';});
+    // Per-group delete button
+    (function(t, b){
+      var btn = document.createElement('button');
+      btn.className = 'dup-group-delete-btn';
+      btn.textContent = '\u{1F5D1}';
+      btn.title = '删除本组重复文件（保留第一个原始文件）';
+      btn.onclick = function(e){
+        e.stopPropagation();
+        document.querySelectorAll('.dup-file-cb:not(.group-select-all)').forEach(function(c){c.checked=false;});
+        b.querySelectorAll('.dup-file-cb:not(.group-select-all)').forEach(function(c){c.checked=true;c.dispatchEvent(new Event('change'));});
+        showDupDeleteModal(t);
+      };
+      hdr.appendChild(btn);
+    })(tab, body);
+    hdr.addEventListener('click', function(e){if(e.target.closest('input')||e.target.closest('button'))return;this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');this.querySelector('.dup-toggle').textContent=this.classList.contains('open')?'\u25BC':'\u25B6';});
     const body = document.createElement('div'); body.className='dup-group-body open';
     hdr.classList.add('open');
 
@@ -751,8 +765,8 @@ async function confirmDupDelete(){
   if(!paths.length){hideDupDeleteModal();return;}
   hideDupDeleteModal();
   try{
-    const r=await API.post('api/dup/delete',{paths,mode});
-    showToast(`已删除 ${r.total||0} 个文件`,'success');
+    const r=await API.post('api/dup/delete',{files:paths,mode});
+    showToast(`已删除 ${r.deleted||0} 个文件`,'success');
     // Re-fetch results to update UI
     const ids=getDupIds(tab);
     const data={status:'complete',duplicates:DupState[tab].duplicates,stats:{}};
