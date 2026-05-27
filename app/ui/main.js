@@ -688,7 +688,7 @@ function renderDupList(tab, duplicates) {
       btn.onclick = function(e){
         e.stopPropagation();
         document.querySelectorAll('.dup-file-cb:not(.group-select-all)').forEach(function(c){c.checked=false;});
-        b.querySelectorAll('.dup-file-cb:not(.group-select-all)').forEach(function(c){c.checked=true;c.dispatchEvent(new Event('change'));});
+        b.querySelectorAll('.dup-file-cb:not(.group-select-all):not(:disabled)').forEach(function(c){c.checked=true;c.dispatchEvent(new Event('change'));});
         showDupDeleteModal(t);
       };
       hdr.appendChild(btn);
