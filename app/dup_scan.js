@@ -160,6 +160,10 @@ async function main() {
         processed++;
         if (result && result.hash) {
           // Will be collected in the main results loop
+        } else if (result && result.error) {
+          // File hash failed — record error
+          if (!state.failedFiles) state.failedFiles = [];
+          state.failedFiles.push({ path: filePath, error: result.error });
         }
         state.progress.processed = processed;
         state.progress.currentFile = filePath;

@@ -112,6 +112,10 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
           state.progress.processed = Math.min(state.progress.processed + 1, state.progress.total);
           state.progress.currentFile = filePath;
           state.progress.hashProgress = '';
+          if (result && result.error) {
+            if (!state.failedFiles) state.failedFiles = [];
+            state.failedFiles.push({ path: filePath, error: result.error });
+          }
           update();
         }, function(filePath, bytesRead, totalSize) {
           const pct = totalSize > 0 ? Math.round((bytesRead / totalSize) * 100) : 0;
@@ -194,7 +198,7 @@ export function handleDupStatus(req, res) {
         files: g.files.map(f => ({ path: f.path, name: basename(f.path), size: f.size, sizeHuman: formatBytes(f.size), ext: f.ext, id3: f.id3 })),
       })),
       stats: { totalFiles: stats.totalFiles || 0, duplicateGroups: stats.duplicateGroups || 0, duplicateFiles: stats.duplicateFiles || 0, wastedBytes: stats.wastedBytes || 0, wastedHuman: formatBytes(stats.wastedBytes || 0) },
-      error: raw.error, startTime: raw.startTime,
+      error: raw.error, startTime: raw.startTime, failedFiles: raw.failedFiles || [],
     };
     sendJSON(res, 200, formatted);
   } catch (e) { sendJSON(res, 500, { error: e.message, success: false }); }

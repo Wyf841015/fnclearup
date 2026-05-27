@@ -665,6 +665,8 @@ function finishDupScan(tab, data) {
   $(ids.deleteBtn)&&($(ids.deleteBtn).disabled=false);
   $(ids.exportBtn)&&($(ids.exportBtn).disabled=false);
   showToast('发现 '+dups.length+' 组重复文件','info');
+  // Show failed files warning
+  var failed=data.failedFiles||[]; if(failed.length>0){showToast(failed.length+' 个文件哈希失败, 已跳过','warning');var fl=$(ids.currentFile);if(fl){var fhtml='<span style="color:var(--color-warning)">⚠️ '+failed.length+' 个文件哈希失败:</span><br>';for(var k=0;k<Math.min(failed.length,5);k++){fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">'+escHtml(failed[k].path)+': '+escHtml(failed[k].error)+'</span><br>';}if(failed.length>5)fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">... 还有 '+(failed.length-5)+' 个</span>';fl.innerHTML=fhtml;}}
 }
 
 function renderDupList(tab, duplicates) {
