@@ -855,6 +855,16 @@ function init() {
   if (sponsorBtn) sponsorBtn.addEventListener('click', function(e) {
     document.querySelector('#sponsorModal').classList.add('show');
   });
+  // Sponsor image enlarge
+  document.querySelectorAll('[data-sponsor-img]').forEach(img => {
+    img.addEventListener('click', function(e) {
+      const o = document.getElementById('sponsorImgOverlay');
+      if (o) {
+        document.getElementById('sponsorImgFull').src = this.src;
+        o.classList.add('show');
+      }
+    });
+  });
 }
 
 })();
