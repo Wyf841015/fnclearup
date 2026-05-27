@@ -143,7 +143,9 @@ function shutdown() {
     try {
       const raw = JSON.parse(readFileSync(job.stateFile, 'utf-8'));
       raw._aborted = true; raw.status = 'aborted';
-      writeFileSync(job.stateFile, JSON.stringify(raw));
+      const tmpS = job.stateFile + '.tmp';
+      writeFileSync(tmpS, JSON.stringify(raw));
+      renameSync(tmpS, job.stateFile);
     } catch(e) {}
   }
   try { httpServer.close(); } catch(e) {}

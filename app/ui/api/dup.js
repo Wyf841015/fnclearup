@@ -40,7 +40,10 @@ export async function handleDupScan(req, res) {
     files: [], duplicates: [], stats: { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 },
     error: null, startTime: Date.now(), _aborted: false, _paused: false, _prev_status: 'counting',
   };
-  writeFileSync(stateFile, JSON.stringify(initialState));
+  // Atomic write via temp file + rename
+  const tmpInit = stateFile + '.tmp';
+  writeFileSync(tmpInit, JSON.stringify(initialState));
+  renameSync(tmpInit, stateFile);
 
   if (existsSync(DUP_SCAN_SCRIPT)) {
     const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPath, jobId, DUP_STATE_DIR], {
@@ -58,7 +61,11 @@ export async function handleDupScan(req, res) {
 async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
   const extensions = scanType === 'music' ? MUSIC_EXTS : null;
   const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
-  const update = () => writeFileSync(stateFile, JSON.stringify(state));
+  const update = () => {
+    const tmp = stateFile + '.tmp';
+    writeFileSync(tmp, JSON.stringify(state));
+    renameSync(tmp, stateFile);
+  };
   try {
     state.status = 'counting';
     const allFiles = [];         // {path, size}[]
@@ -308,7 +315,9 @@ export async function handleDupStop(req, res) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     raw._aborted = true;
-    writeFileSync(stateFile, JSON.stringify(raw));
+    const tmp = stateFile + '.tmp';
+    writeFileSync(tmp, JSON.stringify(raw));
+    renameSync(tmp, stateFile);
     sendJSON(res, 200, { success: true, stopped: true });
   } catch { sendJSON(res, 200, { success: false, stopped: false }); }
 }
@@ -323,7 +332,9 @@ export async function handleDupPause(req, res) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     raw._paused = true;
-    writeFileSync(stateFile, JSON.stringify(raw));
+    const tmpP = stateFile + '.tmp';
+    writeFileSync(tmpP, JSON.stringify(raw));
+    renameSync(tmpP, stateFile);
     sendJSON(res, 200, { success: true, paused: true });
   } catch { sendJSON(res, 200, { success: false, paused: false }); }
 }
@@ -338,7 +349,9 @@ export async function handleDupResume(req, res) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     raw._paused = false;
-    writeFileSync(stateFile, JSON.stringify(raw));
+    const tmpR = stateFile + '.tmp';
+    writeFileSync(tmpR, JSON.stringify(raw));
+    renameSync(tmpR, stateFile);
     sendJSON(res, 200, { success: true, resumed: true });
   } catch { sendJSON(res, 200, { success: false, resumed: false }); }
 }
