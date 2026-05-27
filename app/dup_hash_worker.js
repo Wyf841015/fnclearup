@@ -77,9 +77,12 @@ parentPort.on('message', async (msg) => {
   try {
     if (msg.type === 'hash') {
       const results = [];
-      for (const fp of msg.files) {
+      for (let idx = 0; idx < msg.files.length; idx++) {
+        const fp = msg.files[idx];
         const r = await hashFile(fp);
         results.push(r);
+        // Report progress after each file
+        parentPort.postMessage({ type: 'partial', batchId: msg.batchId, index: idx, total: msg.files.length, file: fp, result: r });
       }
       parentPort.postMessage({ type: 'result', batchId: msg.batchId, results });
     } else if (msg.type === 'exit') {

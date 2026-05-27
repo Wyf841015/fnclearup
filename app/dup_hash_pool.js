@@ -25,7 +25,7 @@ export class HashPool {
     this.readyWorkers = [];      // Worker[] (free workers)
     this.pendingBatches = [];    // queued batches
     this.batchIdCounter = 0;
-    this.activeBatches = new Map();  // batchId -> { resolve, reject, timeout, worker }
+    this.activeBatches = new Map();  // batchId -> { resolve, reject, timeout, worker, onProgress }
     this._initialized = false;
     this.initPromise = null;
   }
@@ -63,6 +63,12 @@ export class HashPool {
         }
         this.readyWorkers.push(worker);
         this._processQueue();
+      } else if (msg.type === 'partial') {
+        // Per-file progress update — forward to callback
+        const batch = this.activeBatches.get(msg.batchId);
+        if (batch && typeof batch.onProgress === 'function') {
+          batch.onProgress(msg.index, msg.total, msg.file, msg.result);
+        }
       } else if (msg.type === 'error') {
         console.error('[HashPool] Worker reported error: ' + msg.error);
         const batch = this.activeBatches.get(msg.batchId);
@@ -133,8 +139,10 @@ export class HashPool {
   /**
    * Hash a batch of files. Returns Promise<HashResult[]>
    * Throws on timeout or worker crash.
+   * @param {string[]} files - file paths to hash
+   * @param {function} [onProgress] - called after each file: (index, total, filePath, result)
    */
-  async hashFiles(files) {
+  async hashFiles(files, onProgress) {
     await this._waitInit();
     const batchId = ++this.batchIdCounter;
 
@@ -144,7 +152,7 @@ export class HashPool {
         reject(new Error('Batch ' + batchId + ' timed out after ' + (this.batchTimeoutMs / 1000) + 's (' + files.length + ' files)'));
       }.bind(this), this.batchTimeoutMs);
 
-      this.activeBatches.set(batchId, { resolve: resolve, reject: reject, timeout: timeout, worker: null });
+      this.activeBatches.set(batchId, { resolve: resolve, reject: reject, timeout: timeout, worker: null, onProgress: onProgress || null });
       this.pendingBatches.push({ batchId: batchId, files: files });
       this._processQueue();
     });

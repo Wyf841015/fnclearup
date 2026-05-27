@@ -108,7 +108,11 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
       const paths = batch.map(f => f.path);
       let results;
       try {
-        results = await pool.hashFiles(paths);
+        results = await pool.hashFiles(paths, function(idx, total, filePath, result) {
+          state.progress.processed = Math.min(state.progress.processed + 1, state.progress.total);
+          state.progress.currentFile = filePath;
+          update();
+        });
       } catch (e) {
         console.error('[DupScan] batch ' + i + '-' + (i + batchSize) + ' failed: ' + e.message + ', skipping');
         state.error = state.error || '部分批次失败: ' + e.message;

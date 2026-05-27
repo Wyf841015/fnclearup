@@ -85,7 +85,8 @@ async function main() {
   let sizeGroupCount = 0;      // files that share a size with ≥1 other file
   try {
     const walk = (dir) => {
-      const entries = readdirSync(dir, { withFileTypes: true });
+      let entries;
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
       for (const e of entries) {
         const fp = join(dir, e.name);
         if (e.isDirectory()) walk(fp);
@@ -154,7 +155,16 @@ async function main() {
     const paths = batch.map(f => f.path);
     let results;
     try {
-      results = await pool.hashFiles(paths);
+      results = await pool.hashFiles(paths, function(idx, total, filePath, result) {
+        // Per-file progress: update state immediately
+        processed++;
+        if (result && result.hash) {
+          // Will be collected in the main results loop
+        }
+        state.progress.processed = processed;
+        state.progress.currentFile = filePath;
+        writeState(stateDir, jobId, state);
+      });
     } catch (e) {
       process.stderr.write(`batch ${batchStart}-${batchStart + batchSize} failed: ${e.message}, skipping\n`);
       state.error = state.error || `部分批次失败: ${e.message}`;
@@ -162,11 +172,7 @@ async function main() {
     }
 
     for (let i = 0; i < results.length; i++) {
-      processed++;
       if (results[i]) fileHashes.push(results[i]);
-      state.progress.processed = processed;
-      state.progress.currentFile = batch[i].path;
-      if (processed % 20 === 0) writeState(stateDir, jobId, state);
     }
   }
 
