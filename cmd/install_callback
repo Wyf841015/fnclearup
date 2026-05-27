@@ -1,44 +1,49 @@
 #!/bin/bash
 
 ### This script is called after the user installs the application.
+### 推送安装统计至飞书多维表格
 
 # 如果是升级触发的安装回调，跳过（由upgrade_callback处理）
 if [ -n "${TRIM_OLD_APPVER:-}" ]; then
     exit 0
 fi
 
-WEBHOOK_URL="https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=5BvflmStzMTXGitJ5nWXqcaKbRRe3GJYsLv33v3yt9h1o88s8ip2F8kffD8FMZj47cjwnhgkJXXODtL7AIdURPkflE1CquYSWoUz9FcoOpeK"
+FEISHU_APP_ID="SANITIZED"
+FEISHU_APP_SECRET="SANITIZED"
+FEISHU_APP_TOKEN="XFm9bXzz7aajJhsiTF7cVEF8nze"
+FEISHU_TABLE_ID="tbl7kXYzn3aNCP10"
 APP_NAME="fnclearup"
 APP_VERSION="${TRIM_APPVER}"
-INSTALL_TIMESTAMP=$(date +%s)000
-IP_CITY=$(curl -s "https://ipinfo.io/city" 2>/dev/null || echo "")
-IP_REGION=$(curl -s "https://ipinfo.io/region" 2>/dev/null || echo "")
-IP_COUNTRY=$(curl -s "https://ipinfo.io/country" 2>/dev/null || echo "")
+INSTALL_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+IP_CITY=$(curl -s --connect-timeout 5 "https://ipinfo.io/city" 2>/dev/null || echo "")
+IP_REGION=$(curl -s --connect-timeout 5 "https://ipinfo.io/region" 2>/dev/null || echo "")
+IP_COUNTRY=$(curl -s --connect-timeout 5 "https://ipinfo.io/country" 2>/dev/null || echo "")
 IP_ADDR="${IP_CITY} ${IP_REGION} ${IP_COUNTRY}"
 
-curl -s -X POST "${WEBHOOK_URL}" \
+# 获取飞书 tenant_access_token
+TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
+  -H "Content-Type: application/json" \
+  -d "{\"app_id\":\"${FEISHU_APP_ID}\",\"app_secret\":\"${FEISHU_APP_SECRET}\"}")
+TOKEN=$(echo "${TOKEN_RESP}" | grep -o '"tenant_access_token":"[^"]*"' | cut -d'"' -f4)
+
+if [ -z "${TOKEN}" ]; then
+    echo "[fnclearup] Failed to get Feishu token: ${TOKEN_RESP}" >&2
+    exit 0
+fi
+
+# 写入飞书多维表格
+curl -s -X POST "https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU_APP_TOKEN}/tables/${FEISHU_TABLE_ID}/records" \
+  -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{
-  \"schema\": {
-    \"f04Gwj\": \"应用名称\",
-    \"ftQMc5\": \"版本号\",
-    \"ftk5Tx\": \"旧版本号\",
-    \"ffFwIh\": \"安装日期\",
-    \"fn8TJd\": \"安装状态\",
-    \"fHJmwE\": \"安装位置\"
-  },
-  \"add_records\": [
-    {
-      \"values\": {
-        \"f04Gwj\": \"${APP_NAME}\",
-        \"ftQMc5\": \"${APP_VERSION}\",
-        \"ftk5Tx\": \"\",
-        \"ffFwIh\": \"${INSTALL_TIMESTAMP}\",
-        \"fn8TJd\": \"首次安装成功\",
-        \"fHJmwE\": \"${IP_ADDR}\"
-      }
-    }
-  ]
+  \"fields\": {
+    \"应用名称\": \"${APP_NAME}\",
+    \"版本号\": \"${APP_VERSION}\",
+    \"旧版本号\": \"\",
+    \"安装日期\": \"${INSTALL_TIME}\",
+    \"安装状态\": \"首次安装成功\",
+    \"安装位置\": \"${IP_ADDR}\"
+  }
 }" > /dev/null 2>&1 || true
 
 exit 0

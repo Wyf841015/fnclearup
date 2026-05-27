@@ -1,79 +1,161 @@
-# 清理精灵 (fnclearup)
+# 清理精灵 FnClearup
 
-> 智能扫描系统，精准识别已卸载应用、网盘挂载和 Docker 的残留目录，一键安全清理
+> 智能扫描系统，精准识别已卸载应用、网盘挂载和 Docker 的残留目录及重复文件，一键安全清理 - Node.js 版。
 
-- **应用名**: fnclearup
-- **版本**: v0.7.0
-- **作者**: 一零一二
-- **主页**: [Gitee](https://gitee.com/wyf1015) | [GitHub](https://github.com/Wyf841015/FnDepot)
+![清理精灵 FnClearup](ICON_256.png)
 
-## 功能
+## v0.7.0 更新
 
-| Tab | 功能 | 说明 |
-|-----|------|------|
-| 📦 应用 | 应用残留扫描 | 识别已卸载应用的残留目录，支持批量删除 |
-| 💿 网盘 | 网盘挂载状态 | 扫描 /vol02 目录，标识已卸载的网盘目录 |
-| 🐳 Docker | Docker 清理 | 扫描孤立卷、未使用网络、悬空镜像 |
-| 🕐 tmp | 临时文件清理 | 扫描 /tmp 和 /var/tmp 中 24h+ 未访问的文件 |
-| 📋 去重 | 文件去重 | SHA-256 哈希扫描重复文件（支持音乐 ID3 标签分析） |
+- **去重功能** — 新增文件去重与音乐去重模块，支持 SHA-256/xxhash 多线程哈希比对
+- **目录浏览选择** — 新增目录浏览选择按钮（文件选择器），方便指定扫描路径
+- **去重操作简化** — 移除暂停/继续按钮，仅保留停止按钮，简化去重交互
+- **版本号显示** — 顶部显示当前版本号，启动时自动检查 FnDepot 是否有新版本
+- **回收站路径修复** — 纠正为 `/volX/UID/.@#local/trash/` 规范路径
+- **原子化状态写入** — 状态文件写入改为原子操作，避免并发读导致 JSON 解析失败
+- **赞助图片放大** — 修复 onclick 自动转换导致的 this 丢失问题
 
-## 去重功能
+## 功能特性
 
-### 文件去重
-- SHA-256 流式哈希（256KB 分块），适配大文件（>500MB 使用 4MB 分块）
-- 基于文件大小预分组，唯一大小文件跳过哈希，大幅提升性能
-- 4 线程 Worker Pool 并行哈希，自动容错
-- 单文件哈希进度百分比显示
-- 哈希失败文件自动跳过并在完成后汇总提示
-- 支持暂停/继续/停止（后台扫描控制）
-- 批量删除（移到回收站或永久删除）
-- 导出报告（CSV + README）
+- **自动扫描** — 动态发现系统中所有 vol 卷（`/vol1` ~ `/vol10` 及 `@app*` 目录）
+- **孤立目录检测** — 交叉比对已安装应用列表与实际文件目录，精准识别残留孤立目录
+- **多选删除** — 支持批量勾选，一键清理，附确认弹窗与路径预览
+- **明暗主题** — 支持手动切换与系统主题跟随（`prefers-color-scheme`）
+- **Tab 切换** — 应用 / 网盘 / Docker / tmp / 去重 独立展示
+- **KPI 卡片** — 显示卷总数、已挂载数量、未挂载数量
+- **Docker 卷管理** — 查看在用卷/残余卷，一键批量删除
+- **Docker 网络管理** — 扫描未使用网络，一键批量删除
+- **Docker 镜像管理** — 查看未使用镜像，一键批量删除
+- **tmp 清理** — 扫描 `/tmp` 和 `/var/tmp` 下 24h+ 未访问的文件，一键清理
+- **文件去重** — SHA-256 哈希比对，智能分组显示重复文件
+- **音乐去重** — 基于元数据（ID3/FLAC）的智能重复音乐识别
+- **去重多线程哈希** — 10 线程并行计算文件哈希，动态调度
+- **目录浏览选择** — 内置文件选择器，支持浏览并选择扫描目录
+- **响应式布局** — 适配桌面端与移动端
+- **轻量架构** — 纯 Node.js ESM 实现，零 npm 依赖
 
-### 音乐去重
-- 支持 MP3/FLAC/WAV/AAC/OGG/M4A/WMA/ALAC/APE/DSF 格式
-- ID3 标签（艺术家/标题/专辑）元数据展示
-- 其余同文件去重
+## 技术架构
 
-## v0.7.0 更新说明
-
-### 🎯 新增功能
-- **目录浏览选择**：路径输入框旁添加"📁 浏览"按钮，弹出目录树弹窗，支持逐级导航和选择
-- **版本号显示**：顶部栏右侧显示当前版本号
-- **版本检查**：启动时自动从 FnDepot 检查更新，有新版本时版本号变红脉冲闪烁
-- **哈希进度**：大文件哈希时显示实时百分比进度
-- **哈希失败提示**：失败文件自动跳过，完成后 toast 汇总显示
-
-### 🐛 Bug 修复
-- **去重展示"扫描失败"**：`renderDupList` 中 `const body` 声明在 IIFE 之后导致 TDZ ReferenceError
-- **暂停按钮无效**：`handleDupPause` 未更新 status；`checkPause` 读的是过时内存值而非同步文件
-- **弹窗按钮失效**：`$()` 函数用 `getElementById` 但多处传了 `#id` 前缀 → 返回 null
-- **赞助放大图片不显示**：`this` 在 onclick→addEventListener 转换中变成字符串
-- **回收站路径错误**：双重 1000 路径问题 `/volX/1000/.@#local/trash/1000/...`
-- **组删除选了原始文件**：`querySelectorAll` 未排除 `:disabled` 的 checkbox
-- **文件大小显示(undefined)**：`group.sizeHuman` 不存在，改为 `file.sizeHuman`
-- **删除无错误提示**：API 返回失败时前端只显示"已删除 0 个"
-- **移动端长截断**：自适应布局文本换行修复
-- **扫描状态文件并发**：`writeFileSync` 非原子→rename 原子写入
-
-### ⚡ 性能优化
-- 流式哈希（256KB 分块），大文件 O(1) 内存开销
-- 大小预分组，唯一大小文件跳过 SHA-256
-- 4 线程 Worker Pool，自动容错和超时处理
-- 自适应分块大小（≤100MB/256KB, 100-500MB/1MB, >500MB/4MB）
-
-### 🔧 其他
-- 去重 tab 标签精简：重复→去重，音乐重复/文件重复→音乐/文件
-- 去重模块移除暂停/继续按钮，仅保留停止
-- 移动端工具栏图标化布局
-
-## 安装
-
-通过 FnDepot 应用中心安装：
 ```
-appcenter-cli install FnDepot/fnclearup
+清理精灵 FnClearup (Node.js)
+├── app/ui/                # 前端界面（HTML/CSS/JS）
+│   ├── index.html        # 主页面
+│   ├── main.js           # 前端逻辑
+│   ├── server.js         # HTTP + UNIX Socket 服务器
+│   ├── api/              # API 路由处理器
+│   │   ├── app.js        # 应用扫描/删除
+│   │   ├── disk.js       # 网盘扫描
+│   │   ├── docker.js     # Docker 资源管理
+│   │   ├── temp.js       # 临时文件清理
+│   │   └── dup.js        # 去重引擎
+│   ├── lib/              # 通用工具
+│   │   ├── config.js     # 全局常量（版本、目录等）
+│   │   └── util.js       # 工具函数
+│   ├── styles/           # 样式文件
+│   └── images/           # 图片资源
+├── app/dup_scan.js       # 去重扫描子进程（独立进程）
+├── app/dup_hash_pool.js  # 10线程哈希计算池
+├── app/dup_hash_worker.js# 哈希计算工作线程
+├── cmd/                  # FnOS 生命周期脚本
+├── config/               # 权限配置
+└── wizard/               # 安装向导
 ```
 
-或下载 FPK 手动安装：
-```
-appcenter-cli install-local /path/to/fnclearup.fpk
-```
+- **后端**：Node.js ESM（零 npm 依赖，仅用内置模块）
+- **前端**：原生 HTML/CSS/JS，无框架依赖
+- **通信**：HTTP API 请求 + UNIX Socket（fnOS Gateway 转发）
+- **数据存储**：JSON 文件状态 + 去重结果持久化
+- **fnOS Gateway**：自动挂载 `/app/fnclearup` 前缀
+- **依赖**：需 Node.js v24 运行时
+
+## API 端点
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/version` | GET | 获取版本号 |
+| `/api/ping` | GET/POST | 健康检查 |
+| `/api/scan` | POST | 扫描孤立目录 |
+| `/api/delete` | POST | 删除目录/用户 |
+| `/api/mounts` | GET | 获取网盘挂载列表（含 F5 mount info） |
+| `/api/vol02` | GET | 获取 vol02 目录 |
+| `/api/volumes` | GET | 获取 Docker 卷（含 driver 信息） |
+| `/api/volumes/delete` | POST | 删除 Docker 卷 |
+| `/api/networks` | GET | 扫描 Docker 网络，区分使用中/未使用 |
+| `/api/networks/delete` | POST | 删除 Docker 网络 |
+| `/api/images` | GET | 获取 Docker 镜像 |
+| `/api/images/delete` | POST | 删除 Docker 镜像 |
+| `/api/system` | GET | 系统资源概览（磁盘、内存、Docker 状态） |
+| `/api/temp/scan` | GET | 扫描临时文件 |
+| `/api/temp/delete` | POST | 删除临时文件 |
+| `/api/dup/status` | GET | 获取去重扫描状态 |
+| `/api/jobs` | GET | 获取去重任务列表 |
+| `/api/browse` | GET | 目录浏览（参数：path） |
+| `/api/dup/scan` | POST | 开始去重扫描 |
+| `/api/dup/delete` | POST | 删除去重结果组 |
+| `/api/dup/export` | POST | 导出去重结果 |
+| `/api/dup/stop` | POST | 停止去重扫描 |
+| `/api/dup/pause` | POST | 暂停去重扫描 |
+| `/api/dup/resume` | POST | 继续去重扫描 |
+
+## 版本历史
+
+### v0.7.0 (2026-05-26)
+
+- 新增文件去重模块（SHA-256 哈希比对，10 线程并行计算）
+- 新增音乐去重模块（基于元数据的智能重复识别）
+- 新增目录浏览选择按钮（内置文件选择器）
+- 新增顶部版本号显示，启动时自动检查 FnDepot 是否有新版本
+- 去重模块移除暂停/继续按钮，仅保留停止按钮
+- 去重 Tab 标签精简：重复 → 去重，音乐重复 → 音乐，文件重复 → 文件
+- 回收站路径纠正为 `/volX/UID/.@#local/trash/`
+- 删除失败时显示具体错误信息
+- 修复：组删除排除 disabled 原始文件
+- 修复：暂停/继续功能完善（checkPause 先同步文件再检查）
+- 修复：赞助图片放大 onclick 自动转换导致 this 丢失
+- 修复：状态文件写入改为原子操作，避免并发读导致 JSON 解析失败
+- 修复：移动端长内容截断
+
+### v0.6.0 (2026-05-05)
+
+- Docker 网络清理功能完善（tab 头部删除按钮恢复）
+- 新增系统资源概览 `/api/system` 端点（磁盘分区、内存状态、Docker 基础信息）
+- 应用/网盘选项卡合并表格：状态列+badge，参照 docker 表格样式
+- 移动端 KPI 卡片保持 3 列自适应，缩小图标和文字
+- 修复：每次打开强制重新加载 main.js（添加时间戳参数避免缓存）
+- 修复：应用 tab 和网络 tab 状态文字格式优化
+
+### v0.5.6 (2026-05-03)
+
+- 移动端 KPI 响应式布局（768px 以上 3 列，480px 以下堆叠为 3 行）
+
+### v0.5.5 (2026-05-03)
+
+- 移动端 KPI 恢复 3 列布局
+
+### v0.5.4 (2026-05-03)
+
+- 修复 main.js 语法错误（JS 执行失败导致按钮无效）
+- 修复展开按钮初始无箭头问题
+- 修复数据无法加载问题
+
+### v0.3.0 (2026-05-01)
+
+- 前端全面优化：无障碍修复（aria-label、role="dialog"）、模态框标注、alert 阻塞修复
+- 新增：网盘 Tab 新增"目录总数"KPI 卡片
+- 修复：do_volumes 中 orphan_json 缺少 [] 包裹导致前端 "not iterable" 错误
+
+### v0.2.0 (2026-04-30)
+
+- 新增 Tab 切换：网盘挂载目录 / data/vol02 未挂载目录独立展示
+- 新增 KPI 卡片：显示已挂载数量和未挂载数量
+
+### v0.1.5 (2026-04-30)
+
+- 前端审计修复: XSS防护(innerHTML转义)、label for属性、WCAG AA对比度优化
+
+## 维护者
+
+- 作者：[@再见一零一二](https://gitee.com/wyf1015)
+
+---
+
+> 如果这个项目对您有帮助，欢迎赞助支持 ❤️
