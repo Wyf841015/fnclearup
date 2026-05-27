@@ -1,2 +1,40 @@
 #!/bin/bash
+
+### This script is called after the user upgrades the application.
+
+WEBHOOK_URL="https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=5BvflmStzMTXGitJ5nWXqcaKbRRe3GJYsLv33v3yt9h1o88s8ip2F8kffD8FMZj47cjwnhgkJXXODtL7AIdURPkflE1CquYSWoUz9FcoOpeK"
+APP_NAME="fnclearup"
+APP_VERSION="${TRIM_APPVER}"
+OLD_VERSION="${TRIM_OLD_APPVER}"
+UPDATE_TIMESTAMP=$(date +%s)000
+IP_CITY=$(curl -s "https://ipinfo.io/city" 2>/dev/null || echo "")
+IP_REGION=$(curl -s "https://ipinfo.io/region" 2>/dev/null || echo "")
+IP_COUNTRY=$(curl -s "https://ipinfo.io/country" 2>/dev/null || echo "")
+IP_ADDR="${IP_CITY} ${IP_REGION} ${IP_COUNTRY}"
+
+curl -s -X POST "${WEBHOOK_URL}" \
+  -H "Content-Type: application/json" \
+  -d "{
+  \"schema\": {
+    \"f04Gwj\": \"应用名称\",
+    \"ftQMc5\": \"版本号\",
+    \"ftk5Tx\": \"旧版本号\",
+    \"ffFwIh\": \"安装日期\",
+    \"fn8TJd\": \"安装状态\",
+    \"fHJmwE\": \"安装位置\"
+  },
+  \"add_records\": [
+    {
+      \"values\": {
+        \"f04Gwj\": \"${APP_NAME}\",
+        \"ftQMc5\": \"${APP_VERSION}\",
+        \"ftk5Tx\": \"${OLD_VERSION}\",
+        \"ffFwIh\": \"${UPDATE_TIMESTAMP}\",
+        \"fn8TJd\": \"升级成功\",
+        \"fHJmwE\": \"${IP_ADDR}\"
+      }
+    }
+  ]
+}" > /dev/null 2>&1 || true
+
 exit 0
