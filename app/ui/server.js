@@ -24,6 +24,26 @@ const DUP_SCAN_SCRIPT = join(TARGET_DIR, 'dup_scan.js');
 // Init dup state
 setDupPaths(DUP_STATE_DIR, DUP_SCAN_SCRIPT);
 
+// GET /api/browse?path=/vol2
+function handleBrowse(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const dirPath = url.searchParams.get('path') || '/';
+  try {
+    const st = statSync(dirPath);
+    if (!st.isDirectory()) { sendJSON(res, 400, { error: '不是目录' }); return; }
+    const entries = readdirSync(dirPath, { withFileTypes: true })
+      .filter(e => e.name !== '.' && e.name !== '..')
+      .sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      })
+      .map(e => ({ name: e.name, isDirectory: e.isDirectory(), path: join(dirPath, e.name) }));
+    const parent = dirPath === '/' ? null : join(dirPath, '..');
+    sendJSON(res, 200, { path: dirPath, parent, entries, success: true });
+  } catch (e) { sendJSON(res, 500, { error: e.message }); }
+}
+
 // ── HTTP Router ──
 async function handle(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -52,6 +72,7 @@ async function handle(req, res) {
       if (method === 'GET' && path === '/api/temp/scan') { handleTempScan(req, res); return; }
       if (method === 'GET' && path === '/api/dup/status') { handleDupStatus(req, res); return; }
       if (method === 'GET' && path === '/api/jobs') { handleDupJobs(req, res); return; }
+      if (method === 'GET' && path === '/api/browse') { handleBrowse(req, res); return; }
       // POST
       if (method === 'POST' && path === '/api/scan') { await handleScan(req, res); return; }
       if (method === 'POST' && path === '/api/delete') { await handleDelete(req, res); return; }

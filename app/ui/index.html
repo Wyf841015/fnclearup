@@ -171,6 +171,7 @@
             <p class="dup-desc">扫描指定目录中的音乐文件（MP3/FLAC/WAV/AAC/OGG/M4A），通过文件哈希和 ID3 标签分析重复项。</p>
             <div class="dup-scan-input-row">
               <input type="text" id="musicPath" class="dup-path-input" placeholder="如 /vol1/music" value="/vol1/1000/music">
+              <button type="button" class="btn btn-outline" onclick="showBrowseModal('musicPath')">📁 浏览</button>
               <div class="dup-scan-btns" id="musicScanBtns">
                 <button type="button" class="btn btn-primary" id="musicScanBtn" onclick="startDupScan('music')">🔍 开始扫描</button>
                 <button type="button" class="btn btn-danger" id="musicStopBtn" onclick="stopDupScan('music')" style="display:none">⏹ 停止</button>
@@ -201,6 +202,7 @@
             <p class="dup-desc">扫描指定目录中的所有文件，通过 SHA-256 哈希值精确识别重复文件。</p>
             <div class="dup-scan-input-row">
               <input type="text" id="filesPath" class="dup-path-input" placeholder="如 /vol1/downloads" value="/vol1/1000">
+              <button type="button" class="btn btn-outline" onclick="showBrowseModal('filesPath')">📁 浏览</button>
               <div class="dup-scan-btns" id="filesScanBtns">
                 <button type="button" class="btn btn-primary" id="filesScanBtn" onclick="startDupScan('files')">🔍 开始扫描</button>
                 <button type="button" class="btn btn-danger" id="filesStopBtn" onclick="stopDupScan('files')" style="display:none">⏹ 停止</button>
@@ -255,6 +257,23 @@
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideDupDeleteModal()">取消</button>
         <button type="button" class="btn btn-danger" onclick="confirmDupDelete()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 目录浏览弹窗 -->
+  <div id="browseModal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('visible')">
+    <div class="modal-content modal-md" onclick="event.stopPropagation()">
+      <div class="modal-header"><h3 class="modal-title">📁 选择目录</h3><button type="button" class="modal-close" onclick="hideBrowseModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="browse-current-path" id="browsePath">/</div>
+        <div class="browse-list" id="browseList"></div>
+      </div>
+      <div class="modal-footer">
+        <div class="browse-new-dir-row">
+          <button type="button" class="btn btn-outline" id="browseUpBtn" onclick="browseGoUp()">⬆ 上级目录</button>
+          <button type="button" class="btn btn-primary" onclick="browseSelect()">✅ 选择当前目录</button>
+        </div>
       </div>
     </div>
   </div>

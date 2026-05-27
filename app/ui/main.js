@@ -786,6 +786,54 @@ async function exportDup(tab){
   }catch(e){showToast('导出失败: '+e.message,'error');}
 }
 
+// ── Directory Browser ──
+let _browseTargetId = '';
+function showBrowseModal(inputId) {
+  _browseTargetId = inputId;
+  const input = document.getElementById(inputId);
+  const path = input ? input.value || '/' : '/';
+  document.getElementById('browseModal').classList.add('visible');
+  loadBrowseDir(path);
+}
+function hideBrowseModal() {
+  document.getElementById('browseModal')?.classList.remove('visible');
+}
+async function loadBrowseDir(dirPath) {
+  const list = document.getElementById('browseList');
+  const pathEl = document.getElementById('browsePath');
+  if (pathEl) pathEl.textContent = dirPath;
+  if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-text-secondary);cursor:default">⏳ 加载中...</div>';
+  try {
+    const r = await fetch('/app/fnclearup/api/browse?path=' + encodeURIComponent(dirPath));
+    const data = await r.json();
+    if (!data.success) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + (data.error||'加载失败') + '</div>'; return; }
+    if (list) {
+      let html = '';
+      if (data.parent) html += '<div class="browse-item dir" onclick="browseGoUp()" style="color:var(--color-primary)">⬆ ..</div>';
+      for (const e of data.entries) {
+        if (e.isDirectory) html += '<div class="browse-item dir" onclick="loadBrowseDir(\'' + e.path.replace(/'/g,"\\'") + '\')">📁 ' + escHtml(e.name) + '</div>';
+        else html += '<div class="browse-item file">📄 ' + escHtml(e.name) + '</div>';
+      }
+      if (data.entries.length === 0) html = '<div class="browse-item" style="justify-content:center;color:var(--color-text-secondary);cursor:default">📂 空目录</div>';
+      list.innerHTML = html;
+    }
+  } catch(e) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + e.message + '</div>'; }
+}
+function browseGoUp() {
+  const p = document.getElementById('browsePath');
+  if (!p) return;
+  const cur = p.textContent;
+  const parent = cur === '/' ? null : cur.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/';
+  if (parent) loadBrowseDir(parent);
+}
+function browseSelect() {
+  const p = document.getElementById('browsePath');
+  if (!p || !_browseTargetId) return;
+  const input = document.getElementById(_browseTargetId);
+  if (input) input.value = p.textContent;
+  hideBrowseModal();
+}
+
 // ════════════════════════════════
 // Init
 // ════════════════════════════════
@@ -817,6 +865,7 @@ function init() {
     showDupDeleteModal, hideDupDeleteModal,
     confirmDupDelete, exportDup,
     updateDupSelectedCount,
+    showBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
   };
   Object.assign(window, exports);
 
