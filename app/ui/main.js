@@ -563,7 +563,7 @@ async function doDeleteTemp() {
 const DupState = { music: { jobId: null, duplicates: [], checking: false }, files: { jobId: null, duplicates: [], checking: false } };
 
 function getDupIds(tab) {
-  return { pathInput: tab+'Path', scanBtn: tab+'ScanBtn', pauseBtn: tab+'PauseBtn', resumeBtn: tab+'ResumeBtn', stopBtn: tab+'StopBtn', deleteBtn: tab+'DeleteBtn', exportBtn: tab+'ExportBtn', progress: tab+'Progress', progressBar: tab+'ProgressBar', progressText: tab+'ProgressText', progressCount: tab+'ProgressCount', currentFile: tab+'CurrentFile', status: tab+'Status', results: tab+'Results', stats: tab+'Stats', dupList: tab+'DupList', actions: tab+'Actions', selectedCount: tab+'SelectedCount', selectedSize: tab+'SelectedSize', empty: tab+'Empty' };
+  return { pathInput: tab+'Path', scanBtn: tab+'ScanBtn', stopBtn: tab+'StopBtn', deleteBtn: tab+'DeleteBtn', exportBtn: tab+'ExportBtn', progress: tab+'Progress', progressBar: tab+'ProgressBar', progressText: tab+'ProgressText', progressCount: tab+'ProgressCount', currentFile: tab+'CurrentFile', status: tab+'Status', results: tab+'Results', stats: tab+'Stats', dupList: tab+'DupList', actions: tab+'Actions', selectedCount: tab+'SelectedCount', selectedSize: tab+'SelectedSize', empty: tab+'Empty' };
 }
 
 function switchDupInnerTab(tabName) {
@@ -586,10 +586,8 @@ async function startDupScan(tab) {
   const bar=$(ids.progressBar), txt=$(ids.progressText), cnt=$(ids.progressCount), cur=$(ids.currentFile);
   if(bar) bar.style.width='0%'; if(txt) txt.textContent='正在验证路径...'; if(cnt) cnt.textContent='-'; if(cur) cur.textContent='';
 
-  const scanBtn=$(ids.scanBtn), pauseBtn=$(ids.pauseBtn), resumeBtn=$(ids.resumeBtn), stopBtn=$(ids.stopBtn);
+  const scanBtn=$(ids.scanBtn), stopBtn=$(ids.stopBtn);
   if(scanBtn){scanBtn.disabled=true;scanBtn.style.display='none';}
-  if(pauseBtn){pauseBtn.style.display='none';pauseBtn.disabled=true;}
-  if(resumeBtn){resumeBtn.style.display='none';resumeBtn.disabled=true;}
   if(stopBtn){stopBtn.style.display='none';stopBtn.disabled=true;}
 
   const statusEl=$(ids.status);
@@ -605,7 +603,6 @@ async function startDupScan(tab) {
     }
     DupState[tab].jobId = result.jobId;
     DupState[tab].checking = true;
-    if(pauseBtn){pauseBtn.style.display='';pauseBtn.disabled=false;}
     if(stopBtn){stopBtn.style.display='';stopBtn.disabled=false;}
     pollDupProgress(tab);
   } catch(e) {
@@ -627,7 +624,6 @@ async function pollDupProgress(tab) {
       if(bar) bar.style.width=pct+'%'; if(cnt) cnt.textContent=processed+' / '+total; if(cur) cur.textContent=p.currentFile||'';
       if(data.status==='counting'){if(txt)txt.textContent='正在遍历...（已发现 '+total+' 个）';if(statusEl)statusEl.innerHTML='<span class="dup-spinner"></span> 遍历中 ('+total+' 个)';}
       else if(data.status==='hashing'){if(txt)txt.textContent='正在计算哈希值...';if(statusEl)statusEl.innerHTML='<span class="dup-spinner"></span> 哈希 ('+processed+'/'+total+')';if(cur){var hp=p.hashProgress||'';cur.textContent=p.currentFile+(hp?' ('+hp+')':'');}}
-      else if(data.status==='paused'){if(txt)txt.textContent='⏸ 已暂停';if(statusEl)statusEl.innerHTML='⏸ 已暂停';$(ids.pauseBtn)&&($(ids.pauseBtn).style.display='none');$(ids.resumeBtn)&&($(ids.resumeBtn).style.display='');}
       if(['complete','error','aborted'].includes(data.status)){DupState[tab].checking=false;finishDupScan(tab,data);}
       else setTimeout(poll, 800);
     } catch(e) { DupState[tab].checking=false; finishDupScan(tab, null); }
@@ -637,10 +633,8 @@ async function pollDupProgress(tab) {
 
 function finishDupScan(tab, data) {
   const ids = getDupIds(tab);
-  const btns = {scan:$(ids.scanBtn),pause:$(ids.pauseBtn),resume:$(ids.resumeBtn),stop:$(ids.stopBtn)};
+  const btns = {scan:$(ids.scanBtn),stop:$(ids.stopBtn)};
   if(btns.scan){btns.scan.disabled=false;btns.scan.style.display='';}
-  if(btns.pause){btns.pause.style.display='none';}
-  if(btns.resume){btns.resume.style.display='none';}
   if(btns.stop){btns.stop.style.display='none';}
   $(ids.progress)?.classList.remove('visible');
   const se=$(ids.status);
@@ -742,14 +736,6 @@ function updateDupSelectedCount() {
 
 function formatBytes(b){if(b===0)return'0 B';const u=['B','KB','MB','GB','TB'];const i=Math.floor(Math.log(b)/Math.log(1024));return(b/Math.pow(1024,i)).toFixed(1)+' '+u[i];}
 
-function pauseDupScan(tab){
-  const jobId=DupState[tab].jobId; if(!jobId)return;
-  API.post('api/dup/pause',{jobId}).then(r=>{if(r.success)showToast('已暂停','info');else showToast(r.error||'暂停失败','error');}).catch(e=>showToast('暂停失败','error'));
-}
-function resumeDupScan(tab){
-  const jobId=DupState[tab].jobId; if(!jobId)return;
-  API.post('api/dup/resume',{jobId}).then(r=>{if(r.success)showToast('已继续','info');else showToast(r.error||'继续失败','error');}).catch(e=>showToast('继续失败','error'));
-}
 function stopDupScan(tab){
   const jobId=DupState[tab].jobId; if(!jobId)return;
   API.post('api/dup/stop',{jobId}).then(r=>{if(r.success){DupState[tab].checking=false;finishDupScan(tab,{status:'aborted'});}else showToast(r.error||'停止失败','error');}).catch(e=>showToast('停止失败','error'));
@@ -827,7 +813,7 @@ function init() {
     doTempScan, selectAllTemp, updateTempSelectInfo,
     confirmDeleteTemp,
     switchDupInnerTab, startDupScan,
-    pauseDupScan, resumeDupScan, stopDupScan,
+    stopDupScan,
     showDupDeleteModal, hideDupDeleteModal,
     confirmDupDelete, exportDup,
     updateDupSelectedCount,
