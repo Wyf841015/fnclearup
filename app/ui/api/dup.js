@@ -71,6 +71,7 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
     const allFiles = [];         // {path, size}[]
     for await (const fp of walkDir(scanPath, extensions)) {
       if (state._aborted) { state.status = 'aborted'; update(); return; }
+      if (await checkPause(state, stateFile, update)) { state.status = 'aborted'; update(); return; }
       let st;
       try { st = statSync(fp); } catch { continue; }
       allFiles.push({ path: fp, size: st.size });
@@ -111,6 +112,7 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
 
     for (let i = 0; i < filesToHash.length; i += batchSize) {
       if (state._aborted) { state.status = 'aborted'; update(); await pool.terminate(); return; }
+      if (await checkPause(state, stateFile, update)) { state.status = 'aborted'; update(); await pool.terminate(); return; }
       const batch = filesToHash.slice(i, i + batchSize);
       const paths = batch.map(f => f.path);
       let results;
@@ -177,6 +179,28 @@ async function* walkDir(dirPath, extensions) {
     if (e.isDirectory()) yield* walkDir(fp, extensions);
     else if (e.isFile() && (!extensions || extensions.has(extname(e.name).toLowerCase()))) yield fp;
   }
+}
+
+// Check if scan should pause — re-read state file, wait in loop until resumed
+async function checkPause(state, stateFile, update) {
+  if (!state._paused) return false;
+  state._prev_status = state.status;
+  state.status = 'paused';
+  update();
+  while (state._paused && !state._aborted) {
+    await new Promise(r => setTimeout(r, 1000));
+    try {
+      const fresh = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      state._paused = fresh._paused;
+      state._aborted = fresh._aborted;
+    } catch(e) {}
+  }
+  const wasAborted = state._aborted;
+  if (!wasAborted && state._prev_status) {
+    state.status = state._prev_status;
+    update();
+  }
+  return wasAborted;
 }
 
 // GET /api/dup/status?jobId=xxx
@@ -332,6 +356,8 @@ export async function handleDupPause(req, res) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     raw._paused = true;
+    raw._prev_status = raw.status;
+    raw.status = 'paused';
     const tmpP = stateFile + '.tmp';
     writeFileSync(tmpP, JSON.stringify(raw));
     renameSync(tmpP, stateFile);
@@ -349,6 +375,7 @@ export async function handleDupResume(req, res) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     raw._paused = false;
+    if (raw._prev_status) raw.status = raw._prev_status;
     const tmpR = stateFile + '.tmp';
     writeFileSync(tmpR, JSON.stringify(raw));
     renameSync(tmpR, stateFile);
