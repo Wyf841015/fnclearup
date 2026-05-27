@@ -714,7 +714,7 @@ function renderDupList(tab, duplicates) {
       if(isFirst)cb.disabled=true;
       cb.addEventListener('change', function(){updateDupSelectedCount();});
       const label = document.createElement('span'); label.className='dup-file-label';
-      const sizeSpan = document.createElement('span'); sizeSpan.className='dup-file-size'; sizeSpan.textContent=' ('+group.sizeHuman+')';
+      const sizeSpan = document.createElement('span'); sizeSpan.className='dup-file-size'; sizeSpan.textContent=' ('+file.sizeHuman+')';
       label.textContent=' '+file.path; label.prepend(cb);
       const tag = document.createElement('span'); tag.className='dup-file-tag'; tag.textContent=isFirst?'原始文件':'重复文件';
       item.appendChild(label); item.appendChild(sizeSpan); item.appendChild(tag); body.appendChild(item);
