@@ -298,11 +298,19 @@ export async function handleDupExport(req, res) {
   const jobId = data.jobId;
   const filterHash = data.hash || '';
   const outDir = data.outputDir || join(DUP_STATE_DIR, 'exports');
-  if (!jobId) { sendJSON(res, 400, { error: '缺少 jobId', success: false }); return; }
-  const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
-  if (!existsSync(stateFile)) { sendJSON(res, 404, { error: '任务不存在', success: false }); return; }
-  const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
-  const duplicates = raw.duplicates || [];
+  let duplicates = [];
+  if (data.duplicates && Array.isArray(data.duplicates)) {
+    // Frontend sends raw duplicates data directly
+    duplicates = data.duplicates;
+  } else if (jobId) {
+    // Backend reads from state file
+    const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
+    if (!existsSync(stateFile)) { sendJSON(res, 404, { error: '任务不存在', success: false }); return; }
+    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    duplicates = raw.duplicates || [];
+  } else {
+    sendJSON(res, 400, { error: '缺少 jobId 或 duplicates 数据', success: false }); return;
+  }
   mkdirSync(outDir, { recursive: true });
   let exported = 0;
   for (const g of duplicates) {

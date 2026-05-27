@@ -816,7 +816,7 @@ async function exportDup(tab){
   const dups=DupState[tab].duplicates; if(!dups||!dups.length){showToast('无重复数据可导出','error');return;}
   try{
     const r=await API.post('api/dup/export',{type:tab==='music'?'music':'files',duplicates:dups});
-    if(r.filename)showToast('报告已导出: '+r.filename,'success');
+    if(r.success)showToast('已导出 '+r.exported+' 组报告到 '+r.outputDir,'success');
     else showToast(JSON.stringify(r),'info');
   }catch(e){showToast('导出失败: '+e.message,'error');}
 }
