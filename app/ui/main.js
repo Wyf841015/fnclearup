@@ -24,7 +24,7 @@ const API = {
   }
 };
 
-const $ = id => document.getElementById(id);
+const $ = id => document.getElementById(id.replace(/^#/, ''));
 
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
