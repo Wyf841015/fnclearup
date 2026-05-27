@@ -42,8 +42,14 @@ function readId3Tags(fp) {
 
 async function hashFile(fp) {
   try {
+    const st = statSync(fp);
+    // Adaptive chunk size: 4MB for huge files, 1MB for large, 256KB for small
+    let chunkSize = 256 * 1024;
+    if (st.size > 500 * 1024 * 1024) chunkSize = 4 * 1024 * 1024;       // >500MB
+    else if (st.size > 100 * 1024 * 1024) chunkSize = 1 * 1024 * 1024;  // >100MB
+
     const hash = createHash('sha256');
-    const stream = createReadStream(fp, { highWaterMark: 256 * 1024 });
+    const stream = createReadStream(fp, { highWaterMark: chunkSize });
 
     // Read ID3 tags before hashing (read first 10KB separately, then start hash from byte 0)
     let id3 = null;
@@ -57,7 +63,6 @@ async function hashFile(fp) {
     }
 
     const digest = hash.digest('hex');
-    const st = statSync(fp);
     return { path: fp, size: st.size, hash: digest, ext: extname(fp).toLowerCase(), id3 };
   } catch {
     return null;

@@ -6,7 +6,7 @@
  *
  * Usage: node dup_scan.js <scan_type> <scan_path> <job_id> <state_dir>
  */
-import { existsSync, mkdirSync, readdirSync, writeFileSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, renameSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { getHashPool } from './dup_hash_pool.js';
@@ -79,9 +79,10 @@ async function main() {
     process.exit(1);
   }
 
-  // Phase 1: count files (sequential walk)
+  // Phase 1: count files (sequential walk, record sizes for pre-grouping)
   writeState(stateDir, jobId, state);
-  const allFiles = [];
+  const allFiles = [];         // {path, size}[]
+  let sizeGroupCount = 0;      // files that share a size with ≥1 other file
   try {
     const walk = (dir) => {
       const entries = readdirSync(dir, { withFileTypes: true });
@@ -90,7 +91,9 @@ async function main() {
         if (e.isDirectory()) walk(fp);
         else if (e.isFile()) {
           if (scanType === 'music' && !MUSIC_EXTS.has(extname(e.name).toLowerCase())) continue;
-          allFiles.push(fp);
+          let st;
+          try { st = statSync(fp); } catch { continue; }
+          allFiles.push({ path: fp, size: st.size });
           state.progress.total = allFiles.length;
           state.progress.currentFile = e.name;
           if (allFiles.length % 50 === 0) writeState(stateDir, jobId, state);
@@ -107,10 +110,33 @@ async function main() {
     return;
   }
 
-  // Phase 2: hash files using worker thread pool (4-way parallel)
+  // Phase 1.5: group by file size — only hash files where ≥2 share the same size
+  const sizeMap = new Map();   // size → {path, size}[]
+  for (const f of allFiles) {
+    if (!sizeMap.has(f.size)) sizeMap.set(f.size, []);
+    sizeMap.get(f.size).push(f);
+  }
+  const filesToHash = [];
+  for (const [size, group] of sizeMap) {
+    if (group.length >= 2) filesToHash.push(...group);
+  }
+  const skippedCount = allFiles.length - filesToHash.length;
+  state.progress.currentFile = `大小预分组完成: ${allFiles.length}→${filesToHash.length} 个需要哈希 (${skippedCount} 个唯一大小已跳过)`;
+  writeState(stateDir, jobId, state);
+
+  if (!filesToHash.length) {
+    state.status = 'complete';
+    state.duplicates = [];
+    state.stats = { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 };
+    writeState(stateDir, jobId, state);
+    return;
+  }
+
+  // Phase 2: hash files using worker thread pool (only files sharing a size)
   state.status = 'hashing';
   state._prev_status = 'hashing';
-  state.progress.total = allFiles.length;
+  state.progress.total = filesToHash.length;
+  state.progress.processed = 0;
   writeState(stateDir, jobId, state);
 
   const pool = getHashPool(WORKER_COUNT);
@@ -118,20 +144,21 @@ async function main() {
   const fileHashes = [];
   let processed = 0;
 
-  for (let batchStart = 0; batchStart < allFiles.length; batchStart += batchSize) {
+  for (let batchStart = 0; batchStart < filesToHash.length; batchStart += batchSize) {
     if (!reloadControl(stateDir, jobId, state)) {
       await pool.terminate();
       return;
     }
 
-    const batch = allFiles.slice(batchStart, batchStart + batchSize);
-    const results = await pool.hashFiles(batch);
+    const batch = filesToHash.slice(batchStart, batchStart + batchSize);
+    const paths = batch.map(f => f.path);
+    const results = await pool.hashFiles(paths);
 
     for (let i = 0; i < results.length; i++) {
       processed++;
       if (results[i]) fileHashes.push(results[i]);
       state.progress.processed = processed;
-      state.progress.currentFile = batch[i];
+      state.progress.currentFile = batch[i].path;
       if (processed % 20 === 0) writeState(stateDir, jobId, state);
     }
   }

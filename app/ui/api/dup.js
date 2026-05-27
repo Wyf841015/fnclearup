@@ -61,33 +61,58 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
   const update = () => writeFileSync(stateFile, JSON.stringify(state));
   try {
     state.status = 'counting';
-    const allFiles = [];
+    const allFiles = [];         // {path, size}[]
     for await (const fp of walkDir(scanPath, extensions)) {
       if (state._aborted) { state.status = 'aborted'; update(); return; }
-      allFiles.push(fp);
+      let st;
+      try { st = statSync(fp); } catch { continue; }
+      allFiles.push({ path: fp, size: st.size });
       state.progress.total = allFiles.length;
       if (allFiles.length % 50 === 0) update();
     }
     if (!allFiles.length) { state.status = 'complete'; update(); return; }
+
+    // Phase 1.5: group by file size — only hash files where ≥2 share the same size
+    const sizeMap = new Map();
+    for (const f of allFiles) {
+      if (!sizeMap.has(f.size)) sizeMap.set(f.size, []);
+      sizeMap.get(f.size).push(f);
+    }
+    const filesToHash = [];
+    for (const group of sizeMap.values()) {
+      if (group.length >= 2) filesToHash.push(...group);
+    }
+    const skippedCount = allFiles.length - filesToHash.length;
+    if (!filesToHash.length) {
+      state.status = 'complete';
+      state.files = [];
+      state.duplicates = [];
+      state.stats = { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 };
+      update();
+      return;
+    }
+
     state.status = 'hashing';
-    state.progress.total = allFiles.length;
+    state.progress.total = filesToHash.length;
+    state.progress.processed = 0;
     update();
 
-    // Use worker thread pool for parallel streaming hash (no memory accumulation)
+    // Use worker thread pool for parallel streaming hash (only files sharing a size)
     const pool = getHashPool(4);
     const batchSize = 20;
     const fileHashes = [];
 
-    for (let i = 0; i < allFiles.length; i += batchSize) {
+    for (let i = 0; i < filesToHash.length; i += batchSize) {
       if (state._aborted) { state.status = 'aborted'; update(); await pool.terminate(); return; }
-      const batch = allFiles.slice(i, i + batchSize);
-      const results = await pool.hashFiles(batch);
+      const batch = filesToHash.slice(i, i + batchSize);
+      const paths = batch.map(f => f.path);
+      const results = await pool.hashFiles(paths);
       for (const r of results) {
         if (r) fileHashes.push(r);
       }
-      state.progress.processed = Math.min(i + batchSize, allFiles.length);
-      state.progress.currentFile = batch[batch.length - 1];
-      if ((i + batchSize) % 50 === 0 || i + batchSize >= allFiles.length) update();
+      state.progress.processed = Math.min(i + batchSize, filesToHash.length);
+      state.progress.currentFile = batch[batch.length - 1].path;
+      if ((i + batchSize) % 50 === 0 || i + batchSize >= filesToHash.length) update();
     }
     await pool.terminate();
 
