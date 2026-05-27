@@ -183,6 +183,12 @@ async function* walkDir(dirPath, extensions) {
 
 // Check if scan should pause — re-read state file, wait in loop until resumed
 async function checkPause(state, stateFile, update) {
+  // Re-read from file to detect external pause/abort signals
+  try {
+    const fresh = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    state._paused = fresh._paused;
+    state._aborted = fresh._aborted;
+  } catch(e) {}
   if (!state._paused) return false;
   state._prev_status = state.status;
   state.status = 'paused';
