@@ -43,7 +43,7 @@ function showToast(msg, type='info') {
 
 // Sponsor
 function showSponsorModal() { $('#sponsorModal')?.classList.add('show'); }
-function showSponsorImgFull(img) { const o=$('#sponsorImgOverlay'); if(o){o.classList.add('show');$('#sponsorImgFull').src=img.src;} }
+function showSponsorImgFull(img) { const o=document.getElementById('sponsorImgOverlay'); if(o){o.classList.add('show');document.getElementById('sponsorImgFull').src=img.src;} }
 
 // ── Helper: selectAll for any table ──
 function selectAllHandler(tableId, checkboxClass) {
