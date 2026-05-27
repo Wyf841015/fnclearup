@@ -657,7 +657,6 @@ function finishDupScan(tab, data) {
   $(ids.empty)&&($(ids.empty).style.display='none');
   $(ids.actions)?.classList.add('visible');
   $(ids.deleteBtn)&&($(ids.deleteBtn).disabled=false);
-  $(ids.exportBtn)&&($(ids.exportBtn).disabled=false);
   showToast('发现 '+dups.length+' 组重复文件','info');
   // Show failed files warning
   var failed=data.failedFiles||[]; if(failed.length>0){showToast(failed.length+' 个文件哈希失败, 已跳过','warning');var fl=$(ids.currentFile);if(fl){var fhtml='<span style="color:var(--color-warning)">⚠️ '+failed.length+' 个文件哈希失败:</span><br>';for(var k=0;k<Math.min(failed.length,5);k++){fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">'+escHtml(failed[k].path)+': '+escHtml(failed[k].error)+'</span><br>';}if(failed.length>5)fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">... 还有 '+(failed.length-5)+' 个</span>';fl.innerHTML=fhtml;}}
@@ -729,8 +728,8 @@ function updateDupSelectedCount() {
   ['music','files'].forEach(tab=>{
     const sc=$(tab+'SelectedCount'); if(sc)sc.textContent=count;
     const ss=$(tab+'SelectedSize'); if(ss)ss.textContent=formatBytes(size);
-    const db=$(tab+'DeleteBtn'); const eb=$(tab+'ExportBtn');
-    if(db)db.disabled=count===0; if(eb)eb.disabled=count===0;
+    const db=$(tab+'DeleteBtn');
+    if(db)db.disabled=count===0;
   });
 }
 
@@ -896,7 +895,7 @@ function init() {
     switchDupInnerTab, startDupScan,
     stopDupScan,
     showDupDeleteModal, hideDupDeleteModal,
-    confirmDupDelete, exportDup,
+    confirmDupDelete,
     updateDupSelectedCount,
     showBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
   };
