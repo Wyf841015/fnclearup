@@ -768,7 +768,9 @@ async function confirmDupDelete(){
   hideDupDeleteModal();
   try{
     const r=await API.post('api/dup/delete',{files:paths,mode});
-    showToast(`已删除 ${r.deleted||0} 个文件`,'success');
+    const msg=`已删除 ${r.deleted||0} 个文件`;
+    if(r.failed&&r.failed.length) showToast(msg+'，失败 '+r.failed.length+' 个: '+r.failed.map(f=>f.reason).join('; '),'warning');
+    else showToast(msg,'success');
     // Re-fetch results to update UI
     const ids=getDupIds(tab);
     const data={status:'complete',duplicates:DupState[tab].duplicates,stats:{}};
