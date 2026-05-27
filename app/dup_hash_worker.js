@@ -42,7 +42,7 @@ function readId3Tags(fp) {
   return null;
 }
 
-async function hashFile(fp) {
+async function hashFile(fp, batchId) {
   try {
     const st = statSync(fp);
     // Adaptive chunk size: 4MB for huge files, 1MB for large, 256KB for small
@@ -59,9 +59,23 @@ async function hashFile(fp) {
       id3 = readId3Tags(fp);
     }
 
-    // Stream hash: update incrementally, no memory accumulation
+    // Stream hash: update incrementally, report progress every 2s
+    let bytesRead = 0;
+    let lastProgressReport = Date.now();
     for await (const chunk of stream) {
       hash.update(chunk);
+      bytesRead += chunk.length;
+      const now = Date.now();
+      if (now - lastProgressReport > 2000) {
+        lastProgressReport = now;
+        parentPort.postMessage({
+          type: 'file-hash-progress',
+          batchId: batchId,
+          file: fp,
+          bytesRead: bytesRead,
+          totalSize: st.size,
+        });
+      }
     }
 
     const digest = hash.digest('hex');
@@ -79,7 +93,7 @@ parentPort.on('message', async (msg) => {
       const results = [];
       for (let idx = 0; idx < msg.files.length; idx++) {
         const fp = msg.files[idx];
-        const r = await hashFile(fp);
+        const r = await hashFile(fp, msg.batchId);
         results.push(r);
         // Report progress after each file
         parentPort.postMessage({ type: 'partial', batchId: msg.batchId, index: idx, total: msg.files.length, file: fp, result: r });

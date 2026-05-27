@@ -163,6 +163,13 @@ async function main() {
         }
         state.progress.processed = processed;
         state.progress.currentFile = filePath;
+        state.progress.hashProgress = '';
+        writeState(stateDir, jobId, state);
+      }, function(filePath, bytesRead, totalSize) {
+        // Per-file hash progress (within current file)
+        const pct = totalSize > 0 ? Math.round((bytesRead / totalSize) * 100) : 0;
+        state.progress.currentFile = filePath;
+        state.progress.hashProgress = pct + '%';
         writeState(stateDir, jobId, state);
       });
     } catch (e) {

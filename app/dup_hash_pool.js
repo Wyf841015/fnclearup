@@ -25,7 +25,7 @@ export class HashPool {
     this.readyWorkers = [];      // Worker[] (free workers)
     this.pendingBatches = [];    // queued batches
     this.batchIdCounter = 0;
-    this.activeBatches = new Map();  // batchId -> { resolve, reject, timeout, worker, onProgress }
+    this.activeBatches = new Map();  // batchId -> { resolve, reject, timeout, worker, onProgress, onFileHashProgress }
     this._initialized = false;
     this.initPromise = null;
   }
@@ -68,6 +68,12 @@ export class HashPool {
         const batch = this.activeBatches.get(msg.batchId);
         if (batch && typeof batch.onProgress === 'function') {
           batch.onProgress(msg.index, msg.total, msg.file, msg.result);
+        }
+      } else if (msg.type === 'file-hash-progress') {
+        // Per-file hash progress (within a file) — forward to callback
+        const batch = this.activeBatches.get(msg.batchId);
+        if (batch && typeof batch.onFileHashProgress === 'function') {
+          batch.onFileHashProgress(msg.file, msg.bytesRead, msg.totalSize);
         }
       } else if (msg.type === 'error') {
         console.error('[HashPool] Worker reported error: ' + msg.error);
@@ -141,8 +147,9 @@ export class HashPool {
    * Throws on timeout or worker crash.
    * @param {string[]} files - file paths to hash
    * @param {function} [onProgress] - called after each file: (index, total, filePath, result)
+   * @param {function} [onFileHashProgress] - called during file hash: (filePath, bytesRead, totalSize)
    */
-  async hashFiles(files, onProgress) {
+  async hashFiles(files, onProgress, onFileHashProgress) {
     await this._waitInit();
     const batchId = ++this.batchIdCounter;
 
@@ -152,7 +159,7 @@ export class HashPool {
         reject(new Error('Batch ' + batchId + ' timed out after ' + (this.batchTimeoutMs / 1000) + 's (' + files.length + ' files)'));
       }.bind(this), this.batchTimeoutMs);
 
-      this.activeBatches.set(batchId, { resolve: resolve, reject: reject, timeout: timeout, worker: null, onProgress: onProgress || null });
+      this.activeBatches.set(batchId, { resolve: resolve, reject: reject, timeout: timeout, worker: null, onProgress: onProgress || null, onFileHashProgress: onFileHashProgress || null });
       this.pendingBatches.push({ batchId: batchId, files: files });
       this._processQueue();
     });

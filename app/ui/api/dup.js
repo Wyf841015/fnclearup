@@ -111,6 +111,12 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
         results = await pool.hashFiles(paths, function(idx, total, filePath, result) {
           state.progress.processed = Math.min(state.progress.processed + 1, state.progress.total);
           state.progress.currentFile = filePath;
+          state.progress.hashProgress = '';
+          update();
+        }, function(filePath, bytesRead, totalSize) {
+          const pct = totalSize > 0 ? Math.round((bytesRead / totalSize) * 100) : 0;
+          state.progress.currentFile = filePath;
+          state.progress.hashProgress = pct + '%';
           update();
         });
       } catch (e) {
