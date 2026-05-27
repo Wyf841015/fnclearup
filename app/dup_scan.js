@@ -152,7 +152,14 @@ async function main() {
 
     const batch = filesToHash.slice(batchStart, batchStart + batchSize);
     const paths = batch.map(f => f.path);
-    const results = await pool.hashFiles(paths);
+    let results;
+    try {
+      results = await pool.hashFiles(paths);
+    } catch (e) {
+      process.stderr.write(`batch ${batchStart}-${batchStart + batchSize} failed: ${e.message}, skipping\n`);
+      state.error = state.error || `部分批次失败: ${e.message}`;
+      continue;
+    }
 
     for (let i = 0; i < results.length; i++) {
       processed++;

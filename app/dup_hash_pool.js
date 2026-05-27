@@ -1,7 +1,11 @@
 /**
  * dup_hash_pool.js — Worker thread pool for parallel file hashing.
  * Spawns N workers and distributes file batches to them.
- * Each worker streams-hashes files (256KB chunks, no memory accumulation).
+ * Each worker streams-hashes files (256KB-4MB chunks, no memory accumulation).
+ *
+ * Crash safety: when a worker dies, its pending batch is rejected
+ * with an error message (not silently hung). Batches also have a
+ * configurable timeout of 10 minutes.
  */
 import { Worker } from 'node:worker_threads';
 import { join, dirname } from 'node:path';
@@ -11,77 +15,108 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_SCRIPT = join(__dirname, 'dup_hash_worker.js');
 
 const DEFAULT_POOL_SIZE = 4;
+const DEFAULT_BATCH_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes per batch
 
 export class HashPool {
-  constructor(poolSize = 4) {
+  constructor(poolSize = DEFAULT_POOL_SIZE, batchTimeoutMs = DEFAULT_BATCH_TIMEOUT_MS) {
     this.poolSize = poolSize;
-    this.workers = [];
-    this.readyWorkers = [];
-    this.pendingBatches = [];
+    this.batchTimeoutMs = batchTimeoutMs;
+    this.workers = [];           // index -> Worker | null
+    this.readyWorkers = [];      // Worker[] (free workers)
+    this.pendingBatches = [];    // queued batches
     this.batchIdCounter = 0;
-    this.activeBatches = new Map();
+    this.activeBatches = new Map();  // batchId -> { resolve, reject, timeout, worker }
     this._initialized = false;
-    this._resolveInit = null;
     this.initPromise = null;
   }
 
-  async init() {
-    if (this._initialized) return;
-    if (this.initPromise) return this.initPromise;
-
-    this.initPromise = new Promise((resolve) => {
-      let readyCount = 0;
-      for (let i = 0; i < this.poolSize; i++) {
-        const worker = new Worker(WORKER_SCRIPT);
-        worker.on('message', (msg) => {
-          if (msg.type === 'ready') {
-            readyCount++;
-            this.readyWorkers.push(worker);
-            if (readyCount === this.poolSize) {
-              this._initialized = true;
-              resolve();
-              // Process any queued batches
-              this._processQueue();
-            }
-          } else if (msg.type === 'result') {
-            const batch = this.activeBatches.get(msg.batchId);
-            if (batch) {
-              batch.resolve(msg.results);
-              this.activeBatches.delete(msg.batchId);
-            }
-            // Return worker to ready pool
-            this.readyWorkers.push(worker);
-            this._processQueue();
+  _setupWorker(worker, idx) {
+    worker.on('message', (msg) => {
+      if (msg.type === 'ready') {
+        this.readyWorkers.push(worker);
+        // Process queue whenever a worker becomes ready (no need to wait all 4)
+        this._processQueue();
+        if (!this._initialized) {
+          let readyCount = 0;
+          for (const w of this.workers) {
+            if (w && this.readyWorkers.includes(w)) readyCount++;
           }
-        });
-        worker.on('error', (err) => {
-          console.error(`[HashPool] Worker ${i} error:`, err.message);
-          // Replace dead worker
-          const idx = this.workers.indexOf(worker);
-          if (idx >= 0) this.workers[idx] = null;
-          this._spawnReplacement(i);
-        });
-        this.workers.push(worker);
+          if (readyCount === this.poolSize) {
+            this._initialized = true;
+          }
+        }
+      } else if (msg.type === 'result') {
+        const batch = this.activeBatches.get(msg.batchId);
+        if (batch) {
+          clearTimeout(batch.timeout);
+          // Filter: only keep results with actual hashes
+          const good = [];
+          for (const r of msg.results) {
+            if (r && r.hash) {
+              good.push(r);
+            } else if (r && r.error) {
+              console.error('[HashPool] File hash error: ' + r.path + ': ' + r.error);
+            }
+          }
+          batch.resolve(good);
+          this.activeBatches.delete(msg.batchId);
+        }
+        this.readyWorkers.push(worker);
+        this._processQueue();
+      } else if (msg.type === 'error') {
+        console.error('[HashPool] Worker reported error: ' + msg.error);
+        const batch = this.activeBatches.get(msg.batchId);
+        if (batch) {
+          clearTimeout(batch.timeout);
+          batch.reject(new Error('Worker error on batch ' + msg.batchId + ': ' + msg.error));
+          this.activeBatches.delete(msg.batchId);
+        }
+        // Worker is still alive (clean error), return to pool
+        this.readyWorkers.push(worker);
+        this._processQueue();
       }
     });
 
-    return this.initPromise;
+    worker.on('error', (err) => {
+      console.error('[HashPool] Worker ' + idx + ' crashed: ' + err.message);
+      this._rejectWorkerBatches(worker);
+      const idx2 = this.workers.indexOf(worker);
+      if (idx2 >= 0) {
+        this.workers[idx2] = null;
+        this._spawnReplacement(idx2);
+      }
+      const ri = this.readyWorkers.indexOf(worker);
+      if (ri >= 0) this.readyWorkers.splice(ri, 1);
+    });
+
+    worker.on('exit', (code) => {
+      if (code !== 0) {
+        console.error('[HashPool] Worker ' + idx + ' exited with code ' + code);
+        this._rejectWorkerBatches(worker);
+        const idx2 = this.workers.indexOf(worker);
+        if (idx2 >= 0) {
+          this.workers[idx2] = null;
+          this._spawnReplacement(idx2);
+        }
+        const ri = this.readyWorkers.indexOf(worker);
+        if (ri >= 0) this.readyWorkers.splice(ri, 1);
+      }
+    });
+  }
+
+  _rejectWorkerBatches(worker) {
+    for (const [batchId, batch] of this.activeBatches) {
+      if (batch.worker === worker) {
+        clearTimeout(batch.timeout);
+        batch.reject(new Error('Worker crashed while processing batch ' + batchId));
+        this.activeBatches.delete(batchId);
+      }
+    }
   }
 
   _spawnReplacement(idx) {
     const worker = new Worker(WORKER_SCRIPT);
-    worker.on('message', (msg) => {
-      if (msg.type === 'ready') {
-        this.readyWorkers.push(worker);
-        this._processQueue();
-      } else if (msg.type === 'result') {
-        const batch = this.activeBatches.get(msg.batchId);
-        if (batch) { batch.resolve(msg.results); this.activeBatches.delete(msg.batchId); }
-        this.readyWorkers.push(worker);
-        this._processQueue();
-      }
-    });
-    worker.on('error', () => { this._spawnReplacement(idx); });
+    this._setupWorker(worker, idx);
     this.workers[idx] = worker;
   }
 
@@ -89,33 +124,66 @@ export class HashPool {
     while (this.readyWorkers.length > 0 && this.pendingBatches.length > 0) {
       const worker = this.readyWorkers.shift();
       const batch = this.pendingBatches.shift();
+      const entry = this.activeBatches.get(batch.batchId);
+      if (entry) entry.worker = worker;
       worker.postMessage({ type: 'hash', files: batch.files, batchId: batch.batchId });
     }
   }
 
   /**
    * Hash a batch of files. Returns Promise<HashResult[]>
+   * Throws on timeout or worker crash.
    */
   async hashFiles(files) {
-    await this.init();
+    await this._waitInit();
     const batchId = ++this.batchIdCounter;
 
-    return new Promise((resolve) => {
-      this.activeBatches.set(batchId, { resolve });
-      this.pendingBatches.push({ batchId, files });
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(function() {
+        this.activeBatches.delete(batchId);
+        reject(new Error('Batch ' + batchId + ' timed out after ' + (this.batchTimeoutMs / 1000) + 's (' + files.length + ' files)'));
+      }.bind(this), this.batchTimeoutMs);
+
+      this.activeBatches.set(batchId, { resolve: resolve, reject: reject, timeout: timeout, worker: null });
+      this.pendingBatches.push({ batchId: batchId, files: files });
       this._processQueue();
     });
   }
 
+  async _waitInit() {
+    if (this._initialized) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = new Promise((resolve) => {
+      // Workers created lazily on first hash request
+      for (let i = 0; i < this.poolSize; i++) {
+        const worker = new Worker(WORKER_SCRIPT);
+        this._setupWorker(worker, i);
+        this.workers.push(worker);
+      }
+      // Resolve immediately — workers signal ready asynchronously.
+      // _processQueue won't dispatch until at least one worker is ready.
+      resolve();
+    });
+    return this.initPromise;
+  }
+
   /**
-   * Hash files and push results to a callback as each batch completes.
-   * Returns total results count.
+   * Hash files in streaming batches, calling onBatch callback after each batch.
+   * Skips failed batches gracefully instead of crashing the whole scan.
    */
-  async hashFilesStream(files, onBatch, batchSize = 20) {
+  async hashFilesStream(files, onBatch, batchSize) {
+    if (!batchSize) batchSize = 20;
     const results = [];
     for (let i = 0; i < files.length; i += batchSize) {
       const batch = files.slice(i, i + batchSize);
-      const batchResults = await this.hashFiles(batch);
+      let batchResults;
+      try {
+        batchResults = await this.hashFiles(batch);
+      } catch (e) {
+        console.error('[HashPool] hashFilesStream batch error: ' + e.message);
+        continue; // Skip failed batch, continue with next
+      }
       for (const r of batchResults) {
         if (r) results.push(r);
       }
@@ -133,6 +201,10 @@ export class HashPool {
     }
     this.workers = [];
     this.readyWorkers = [];
+    for (const [, batch] of this.activeBatches) {
+      clearTimeout(batch.timeout);
+      batch.reject(new Error('Pool terminated'));
+    }
     this.activeBatches.clear();
     this.pendingBatches = [];
     this._initialized = false;
@@ -145,7 +217,7 @@ let defaultPool = null;
 
 export function getHashPool(poolSize) {
   if (!defaultPool) {
-    defaultPool = new HashPool(poolSize || 4);
+    defaultPool = new HashPool(poolSize || DEFAULT_POOL_SIZE);
   }
   return defaultPool;
 }

@@ -2,12 +2,12 @@
 /**
  * dup_hash_worker.js — Worker thread for parallel SHA-256 hash computation.
  * Receives file paths via parentPort, returns hash results.
- * Uses streaming reads (256KB chunks) to avoid memory spikes on large files.
+ * Uses streaming reads (256KB-4MB chunks) to avoid memory spikes on large files.
  */
 import { createHash } from 'node:crypto';
 import { createReadStream, openSync, readSync, closeSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort } from 'node:worker_threads';
 
 const ID3_READ_SIZE = 10240;
 
@@ -36,7 +36,9 @@ function readId3Tags(fp) {
       }
       return tags;
     }
-  } catch {}
+  } catch (e) {
+    // ID3 read failure is non-fatal
+  }
   return null;
 }
 
@@ -51,7 +53,7 @@ async function hashFile(fp) {
     const hash = createHash('sha256');
     const stream = createReadStream(fp, { highWaterMark: chunkSize });
 
-    // Read ID3 tags before hashing (read first 10KB separately, then start hash from byte 0)
+    // Read ID3 tags before hashing (only for MP3s)
     let id3 = null;
     if (fp.toLowerCase().endsWith('.mp3')) {
       id3 = readId3Tags(fp);
@@ -64,22 +66,32 @@ async function hashFile(fp) {
 
     const digest = hash.digest('hex');
     return { path: fp, size: st.size, hash: digest, ext: extname(fp).toLowerCase(), id3 };
-  } catch {
-    return null;
+  } catch (e) {
+    // Return error info so parent can track failures
+    return { path: fp, error: e.message || String(e), size: 0, hash: null, ext: null, id3: null };
   }
 }
 
-// Listen for batch messages from parent
+// Wrap message handler in try-catch to prevent worker crash from propagating
 parentPort.on('message', async (msg) => {
-  if (msg.type === 'hash') {
-    const results = [];
-    for (const fp of msg.files) {
-      const r = await hashFile(fp);
-      if (r) results.push(r);
+  try {
+    if (msg.type === 'hash') {
+      const results = [];
+      for (const fp of msg.files) {
+        const r = await hashFile(fp);
+        results.push(r);
+      }
+      parentPort.postMessage({ type: 'result', batchId: msg.batchId, results });
+    } else if (msg.type === 'exit') {
+      process.exit(0);
     }
-    parentPort.postMessage({ type: 'result', batchId: msg.batchId, results });
-  } else if (msg.type === 'exit') {
-    process.exit(0);
+  } catch (err) {
+    // Prevent unhandled rejection from crashing the worker
+    parentPort.postMessage({
+      type: 'error',
+      batchId: msg?.batchId || 0,
+      error: err.message || String(err),
+    });
   }
 });
 

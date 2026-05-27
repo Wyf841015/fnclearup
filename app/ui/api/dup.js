@@ -106,7 +106,14 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
       if (state._aborted) { state.status = 'aborted'; update(); await pool.terminate(); return; }
       const batch = filesToHash.slice(i, i + batchSize);
       const paths = batch.map(f => f.path);
-      const results = await pool.hashFiles(paths);
+      let results;
+      try {
+        results = await pool.hashFiles(paths);
+      } catch (e) {
+        console.error('[DupScan] batch ' + i + '-' + (i + batchSize) + ' failed: ' + e.message + ', skipping');
+        state.error = state.error || '部分批次失败: ' + e.message;
+        continue;
+      }
       for (const r of results) {
         if (r) fileHashes.push(r);
       }
