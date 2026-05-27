@@ -813,12 +813,7 @@ async function confirmDupDelete(){
   }catch(e){showToast('删除失败: '+e.message,'error');}
 }
 async function exportDup(tab){
-  const dups=DupState[tab].duplicates; if(!dups||!dups.length){showToast('无重复数据可导出','error');return;}
-  try{
-    const r=await API.post('api/dup/export',{type:tab==='music'?'music':'files',duplicates:dups});
-    if(r.success)showToast('已导出 '+r.exported+' 组报告到 '+r.outputDir,'success');
-    else showToast(JSON.stringify(r),'info');
-  }catch(e){showToast('导出失败: '+e.message,'error');}
+  showToast('导出功能已停用', 'info');
 }
 
 // ── Directory Browser ──
