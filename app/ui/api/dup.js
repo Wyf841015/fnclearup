@@ -268,10 +268,10 @@ export async function handleDupDelete(req, res) {
       if (mode === 'permanent') {
         if (existsSync(fp)) unlinkSync(fp);
       } else {
-        const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/\d+\/(.+)/);
+        const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/(\d+)\/(.+)/);
         if (m) {
-          const trashDir = `/${m[1]}/.@#local/trash/1000`;
-          const dest = join(trashDir, m[2]);
+          const trashDir = `/${m[1]}/${m[2]}/.@#local/trash`;
+          const dest = join(trashDir, m[3]);
           mkdirSync(dirname(dest), { recursive: true });
           let finalDest = dest;
           let counter = 1;
