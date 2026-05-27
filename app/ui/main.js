@@ -677,6 +677,8 @@ function renderDupList(tab, duplicates) {
     const div = document.createElement('div'); div.className='dup-group';
     const hdr = document.createElement('div'); hdr.className='dup-group-header open';
     hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span></div><span class="dup-toggle">▼</span>';
+    const body = document.createElement('div'); body.className='dup-group-body open';
+    hdr.classList.add('open');
     // Per-group delete button
     (function(t, b){
       var btn = document.createElement('button');
@@ -692,8 +694,6 @@ function renderDupList(tab, duplicates) {
       hdr.appendChild(btn);
     })(tab, body);
     hdr.addEventListener('click', function(e){if(e.target.closest('input')||e.target.closest('button'))return;this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');this.querySelector('.dup-toggle').textContent=this.classList.contains('open')?'\u25BC':'\u25B6';});
-    const body = document.createElement('div'); body.className='dup-group-body open';
-    hdr.classList.add('open');
 
     // Select all for this group
     const selAll = document.createElement('div'); selAll.className='select-all-row';
