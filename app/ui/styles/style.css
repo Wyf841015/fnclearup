@@ -319,5 +319,8 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   /* Mobile table */
   .data-table{min-width:auto;font-size:12px}
   .data-table th,.data-table td{padding:5px 4px}
-  .data-table td:nth-child(3),.data-table th:nth-child(3){max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .file-path,.paths-cell,.dup-file-name,.dup-progress-current,.dup-file-label{overflow:visible;text-overflow:clip;white-space:normal;max-width:none;word-break:break-all}
+  .dup-file-item{flex-wrap:wrap}
+  .dup-group-header{flex-wrap:wrap;gap:6px}
+  .dup-group-delete-btn{padding:4px 6px}
 }
