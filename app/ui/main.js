@@ -736,6 +736,41 @@ function updateDupSelectedCount() {
 
 function formatBytes(b){if(b===0)return'0 B';const u=['B','KB','MB','GB','TB'];const i=Math.floor(Math.log(b)/Math.log(1024));return(b/Math.pow(1024,i)).toFixed(1)+' '+u[i];}
 
+// ── Version Check ──
+function checkVersion() {
+  const badge = document.getElementById('versionBadge');
+  if (!badge) return;
+  // Try to get current version from API
+  fetch('/app/fnclearup/api/version').then(r=>r.json()).then(d=>{
+    const cur = d.version || '0.7.0';
+    badge.textContent = 'v' + cur;
+    // Fetch remote version from FnDepot
+    return fetch('https://raw.githubusercontent.com/Wyf841015/FnDepot/main/fnpack.json', { signal: AbortSignal.timeout(8000) });
+  }).then(r=>r.json()).then(data => {
+    if (!data || !data.apps) return;
+    const appInfo = data.apps.find(a => a.appname === 'fnclearup');
+    if (!appInfo || !appInfo.version) return;
+    const curVer = badge.textContent.replace(/^v/, '');
+    const remoteVer = appInfo.version.replace(/^v/, '');
+    if (compareVersions(remoteVer, curVer) > 0) {
+      badge.classList.add('new-version');
+      badge.title = '有新版本 v' + remoteVer + ' 可用！点击查看';
+      badge.onclick = function(){ window.open('https://github.com/Wyf841015/FnDepot', '_blank'); };
+      showToast('发现新版本 v' + remoteVer + '，当前 v' + curVer, 'info');
+    }
+  }).catch(() => {/* ignore network errors */});
+}
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0, nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
 function stopDupScan(tab){
   const jobId=DupState[tab].jobId; if(!jobId)return;
   API.post('api/dup/stop',{jobId}).then(r=>{if(r.success){DupState[tab].checking=false;finishDupScan(tab,{status:'aborted'});}else showToast(r.error||'停止失败','error');}).catch(e=>showToast('停止失败','error'));
@@ -842,6 +877,9 @@ else init();
 
 function init() {
   doScan();
+
+  // Check version from FnDepot
+  checkVersion();
 
   // Export all functions to window for inline onclick and event delegation
   const exports = {

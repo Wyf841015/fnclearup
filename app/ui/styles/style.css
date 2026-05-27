@@ -50,6 +50,9 @@ html.dark .sponsor-btn{background:linear-gradient(135deg,#831843,#9d174d);color:
 .theme-toggle{display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:var(--radius-full);cursor:pointer;font-size:14px;font-weight:600;font-family:var(--font);transition:all .25s cubic-bezier(.4,0,.2,1);box-shadow:0 2px 8px rgba(99,102,241,.15);background:linear-gradient(135deg,#e0e7ff,#c7d2fe);color:var(--color-primary)}
 .theme-toggle:hover{box-shadow:0 4px 16px rgba(99,102,241,.25);transform:translateY(-1px)}
 html.dark .theme-toggle{background:linear-gradient(135deg,#312e81,#3730a3);color:#a5b4fc;box-shadow:0 2px 8px rgba(165,180,252,.2)}
+.version-badge{font-family:monospace;font-size:12px;color:var(--color-text-secondary);padding:4px 8px;border-radius:var(--radius-full);border:1px solid var(--color-border);white-space:nowrap}
+.version-badge.new-version{color:#db2777;border-color:#db2777;animation:pulse-glow 2s ease-in-out infinite;cursor:pointer}
+@keyframes pulse-glow{0%,100%{box-shadow:0 0 0 rgba(219,39,119,0)}50%{box-shadow:0 0 8px rgba(219,39,119,.4)}}
 
 /* Tabs */
 .tab-list{display:flex;gap:2px;margin-bottom:0;overflow-x:auto;scrollbar-width:thin;padding-bottom:2px;border-bottom:1px solid var(--color-border)}
