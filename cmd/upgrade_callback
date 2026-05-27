@@ -15,6 +15,7 @@ IP_CITY=$(curl -s --connect-timeout 5 "https://ipinfo.io/city" 2>/dev/null || ec
 IP_REGION=$(curl -s --connect-timeout 5 "https://ipinfo.io/region" 2>/dev/null || echo "")
 IP_COUNTRY=$(curl -s --connect-timeout 5 "https://ipinfo.io/country" 2>/dev/null || echo "")
 IP_ADDR="${IP_CITY} ${IP_REGION} ${IP_COUNTRY}"
+RECORD_ID=$(cat /proc/sys/kernel/random/uuid)
 
 # 获取飞书 tenant_access_token
 TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
@@ -33,6 +34,7 @@ curl -s -X POST "https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU_APP_T
   -H "Content-Type: application/json" \
   -d "{
   \"fields\": {
+    \"ID\": \"${RECORD_ID}\",
     \"应用名称\": \"${APP_NAME}\",
     \"版本号\": \"${APP_VERSION}\",
     \"旧版本号\": \"${OLD_VERSION}\",
