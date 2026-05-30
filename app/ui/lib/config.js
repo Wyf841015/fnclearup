@@ -1,5 +1,5 @@
 // ── Global constants ──
-export const VERSION = '0.7.0';
+export const VERSION = '0.7.2';
 
 export const VOL_GLOBS = ['/vol1','/vol2','/vol3','/vol4','/vol5','/vol6','/vol7','/vol8','/vol9','/vol10'];
 export const SAFE_PREFIXES = new Set(VOL_GLOBS.map(v => v + '/'));

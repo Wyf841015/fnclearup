@@ -64,7 +64,7 @@ function scanDir(dirPath, visited = new Set()) {
 
     if (st.isFile()) {
       info.hasFile = true;
-    } else if (st.isDirectory() && !st.isSymbolicLink()) {
+    } else if (st.isDirectory() && !st.isSymbolicLink() && name !== '.@#local') {
       info.children.add(fp);
       const childInfo = scanDir(fp, visited);
       if (childInfo && childInfo.hasFile) info.hasFile = true;
