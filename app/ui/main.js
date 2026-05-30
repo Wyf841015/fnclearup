@@ -968,6 +968,8 @@ function renderEmptyList(items) {
   const list = $('empty-list');
   if (!list) return;
   list.innerHTML = '';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'list-scroll';
   const tbl = document.createElement('table');
   tbl.className = 'data-table';
   tbl.style.width = '100%';
@@ -983,7 +985,8 @@ function renderEmptyList(items) {
     tbody.appendChild(tr);
   });
   tbl.appendChild(tbody);
-  list.appendChild(tbl);
+  wrapper.appendChild(tbl);
+  list.appendChild(wrapper);
   updateEmptySelectInfo();
 }
 
