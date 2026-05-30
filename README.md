@@ -4,23 +4,22 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
-## v0.7.0 更新
+## v0.7.2 更新
 
-- **去重功能** — 新增文件去重与音乐去重模块，支持 SHA-256/xxhash 多线程哈希比对
-- **目录浏览选择** — 新增目录浏览选择按钮（文件选择器），方便指定扫描路径
-- **去重操作简化** — 移除暂停/继续按钮，仅保留停止按钮，简化去重交互
-- **版本号显示** — 顶部显示当前版本号，启动时自动检查 FnDepot 是否有新版本
-- **回收站路径修复** — 纠正为 `/volX/UID/.@#local/trash/` 规范路径
-- **原子化状态写入** — 状态文件写入改为原子操作，避免并发读导致 JSON 解析失败
-- **赞助图片放大** — 修复 onclick 自动转换导致的 this 丢失问题
+- **空目录清理** — 新增「去空」选项卡，扫描目录下的空目录，一键清理（单删/批量删/回收站/永久删）
+- **实时扫描进度** — 扫描中实时显示当前正在扫描的目录路径，每 10 个目录更新一次
+- **移动端适配** — 空目录列表支持水平滚动和路径自动换行
+- **错误防护升级** — 加入 `uncaughtException` 和进程退出码检测，子进程崩溃不再静默消失
+- **忽略 .@#local** — 空目录扫描跳过 fnOS 回收站目录
+- **版本号统一为 0.7.2**
 
 ## 功能特性
 
 - **自动扫描** — 动态发现系统中所有 vol 卷（`/vol1` ~ `/vol10` 及 `@app*` 目录）
 - **孤立目录检测** — 交叉比对已安装应用列表与实际文件目录，精准识别残留孤立目录
 - **多选删除** — 支持批量勾选，一键清理，附确认弹窗与路径预览
-- **明暗主题** — 支持手动切换与系统主题跟随（`prefers-color-scheme`）
-- **Tab 切换** — 应用 / 网盘 / Docker / tmp / 去重 独立展示
+- **明暗主题** — 支持手动切换（深色/浅色）
+- **Tab 切换** — 应用 / 网盘 / Docker / tmp / 去重 / 去空 独立展示
 - **KPI 卡片** — 显示卷总数、已挂载数量、未挂载数量
 - **Docker 卷管理** — 查看在用卷/残余卷，一键批量删除
 - **Docker 网络管理** — 扫描未使用网络，一键批量删除
@@ -29,6 +28,7 @@
 - **文件去重** — SHA-256 哈希比对，智能分组显示重复文件
 - **音乐去重** — 基于元数据（ID3/FLAC）的智能重复音乐识别
 - **去重多线程哈希** — 10 线程并行计算文件哈希，动态调度
+- **空目录清理** — 扫描指定目录下的空目录（全空目录合并显示），支持回收站/永久删除
 - **目录浏览选择** — 内置文件选择器，支持浏览并选择扫描目录
 - **响应式布局** — 适配桌面端与移动端
 - **轻量架构** — 纯 Node.js ESM 实现，零 npm 依赖
@@ -46,13 +46,15 @@
 │   │   ├── disk.js       # 网盘扫描
 │   │   ├── docker.js     # Docker 资源管理
 │   │   ├── temp.js       # 临时文件清理
-│   │   └── dup.js        # 去重引擎
+│   │   ├── dup.js        # 去重引擎
+│   │   └── empty_dir.js  # 空目录扫描/删除
 │   ├── lib/              # 通用工具
 │   │   ├── config.js     # 全局常量（版本、目录等）
 │   │   └── util.js       # 工具函数
 │   ├── styles/           # 样式文件
 │   └── images/           # 图片资源
-├── app/dup_scan.js       # 去重扫描子进程（独立进程）
+├── app/empty_dir_scan.js # 空目录扫描（独立运行用）
+├── app/dup_scan.js       # 去重扫描子进程
 ├── app/dup_hash_pool.js  # 10线程哈希计算池
 ├── app/dup_hash_worker.js# 哈希计算工作线程
 ├── cmd/                  # FnOS 生命周期脚本
@@ -75,28 +77,45 @@
 | `/api/ping` | GET/POST | 健康检查 |
 | `/api/scan` | POST | 扫描孤立目录 |
 | `/api/delete` | POST | 删除目录/用户 |
-| `/api/mounts` | GET | 获取网盘挂载列表（含 F5 mount info） |
+| `/api/mounts` | GET | 获取网盘挂载列表 |
 | `/api/vol02` | GET | 获取 vol02 目录 |
-| `/api/volumes` | GET | 获取 Docker 卷（含 driver 信息） |
+| `/api/volumes` | GET | 获取 Docker 卷 |
 | `/api/volumes/delete` | POST | 删除 Docker 卷 |
-| `/api/networks` | GET | 扫描 Docker 网络，区分使用中/未使用 |
+| `/api/networks` | GET | 扫描 Docker 网络 |
 | `/api/networks/delete` | POST | 删除 Docker 网络 |
 | `/api/images` | GET | 获取 Docker 镜像 |
 | `/api/images/delete` | POST | 删除 Docker 镜像 |
-| `/api/system` | GET | 系统资源概览（磁盘、内存、Docker 状态） |
+| `/api/system` | GET | 系统资源概览 |
 | `/api/temp/scan` | GET | 扫描临时文件 |
 | `/api/temp/delete` | POST | 删除临时文件 |
-| `/api/dup/status` | GET | 获取去重扫描状态 |
-| `/api/jobs` | GET | 获取去重任务列表 |
-| `/api/browse` | GET | 目录浏览（参数：path） |
 | `/api/dup/scan` | POST | 开始去重扫描 |
-| `/api/dup/delete` | POST | 删除去重结果组 |
-| `/api/dup/export` | POST | 导出去重结果 |
+| `/api/dup/status` | GET | 获取去重扫描状态 |
+| `/api/dup/delete` | POST | 删除去重结果 |
 | `/api/dup/stop` | POST | 停止去重扫描 |
 | `/api/dup/pause` | POST | 暂停去重扫描 |
 | `/api/dup/resume` | POST | 继续去重扫描 |
+| `/api/dup/export` | POST | 导出去重结果 |
+| `/api/jobs` | GET | 获取去重任务列表 |
+| `/api/browse` | GET | 目录浏览（参数：path） |
+| `/api/empty_dir/scan` | POST | 开始空目录扫描 |
+| `/api/empty_dir/status` | GET | 获取空目录扫描状态 |
+| `/api/empty_dir/delete` | POST | 删除空目录 |
 
 ## 版本历史
+
+### v0.7.2 (2026-05-30)
+
+- 新增「去空」选项卡 — 扫描空目录，支持批量/单个删除（回收站/永久删除）
+- 实时扫描目录显示 + 进度条
+- 移动端自适应（空目录列表水平滚动 + 路径自动换行）
+- 单遍遍历算法优化 + 符号链接安全（lstatSync）
+- uncaughtException + 进程退出码检测，错误写到状态文件
+- 跳过 `.@#local` 回收站目录
+- 版本号统一为 0.7.2
+
+### v0.7.1 (2026-05-29)
+
+- 新增 tmp 选项卡（独立版本前已有，版本号对齐）
 
 ### v0.7.0 (2026-05-26)
 
