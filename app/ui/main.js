@@ -743,7 +743,7 @@ function checkVersion() {
   if (!badge) return;
   // Try to get current version from API
   fetch('/app/fnclearup/api/version').then(r=>r.json()).then(d=>{
-    const cur = d.version || '0.7.0';
+    const cur = d.version || '0.7.2';
     badge.textContent = 'v' + cur;
     // Fetch remote version from FnDepot
     return fetch('https://raw.githubusercontent.com/Wyf841015/FnDepot/main/fnpack.json', { signal: AbortSignal.timeout(8000) });

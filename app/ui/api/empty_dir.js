@@ -23,7 +23,7 @@ function isDirEmptySync(dirPath) {
       const fp = join(dirPath, name);
       try {
         const st = lstatSync(fp);
-        if (st.isDirectory() && !st.isSymbolicLink()) {
+        if (st.isDirectory() && !st.isSymbolicLink() && name !== '.@#local') {
           subInfo.push({ name, path: fp, isDir: true, ...isDirEmptySync(fp) });
         } else {
           subInfo.push({ name, path: fp, isDir: false, size: st.size });
