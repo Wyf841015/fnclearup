@@ -10,6 +10,7 @@ import { handleMounts, handleVol02 } from './api/disk.js';
 import { handleVolumes, handleVolumesDelete, handleNetworks, handleNetworksDelete, handleImages, handleImagesDelete, handleSystem } from './api/docker.js';
 import { handleTempScan, handleTempDelete } from './api/temp.js';
 import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleDupExport, handleDupStop, handleDupPause, handleDupResume, dupJobs, setDupPaths } from './api/dup.js';
+import { handleEmptyDirScan, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -23,6 +24,10 @@ const DUP_SCAN_SCRIPT = join(TARGET_DIR, 'dup_scan.js');
 
 // Init dup state
 setDupPaths(DUP_STATE_DIR, DUP_SCAN_SCRIPT);
+
+const EMPTY_STATE_DIR = join(DATA_DIR, 'empty_dir');
+const EMPTY_SCAN_SCRIPT = join(TARGET_DIR, 'empty_dir_scan.js');
+setEmptyDirPaths(EMPTY_STATE_DIR, EMPTY_SCAN_SCRIPT);
 
 // GET /api/browse?path=/vol2
 function handleBrowse(req, res) {
@@ -86,6 +91,13 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/dup/stop') { await handleDupStop(req, res); return; }
       if (method === 'POST' && path === '/api/dup/pause') { await handleDupPause(req, res); return; }
       if (method === 'POST' && path === '/api/dup/resume') { await handleDupResume(req, res); return; }
+      if (method === 'POST' && path === '/api/empty_dir/scan') { await handleEmptyDirScan(req, res); return; }
+      if (method === 'POST' && path === '/api/empty_dir/delete') { await handleEmptyDirDelete(req, res); return; }
+      if (method === 'GET' && path === '/api/empty_dir/status') { handleEmptyDirStatus(req, res); return; }
+      if (method === 'GET' && path === '/api/empty_dir/jobs') {
+        const list = [...emptyDirJobs].map(([id, j]) => ({ id, scanPath: j.scanPath, status: 'running' }));
+        sendJSON(res, 200, list); return;
+      }
       sendJSON(res, 404, { error: 'API endpoint not found' });
       return;
     }

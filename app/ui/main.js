@@ -73,6 +73,7 @@ async function switchTab(tabName) {
   else if(tabName==='disk') { App.diskMountsLoaded=false; await loadDiskMounts(true); }
   else if(tabName==='docker') { App.dockerVolumesLoaded=false; await loadDockerVolumes(); switchInnerTab('volumes'); }
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
+  else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
 }
 
 // ════════════════════════════════
@@ -864,6 +865,179 @@ function browseSelect() {
 }
 
 // ════════════════════════════════
+// 空目录清理
+// ════════════════════════════════
+const EmptyDirState = { items: [], checking: false, jobId: null, startTime: null, stopRequested: false };
+
+function startEmptyScan() {
+  const pathInput = $('emptyPath');
+  const scanPath = pathInput ? pathInput.value.trim() : '';
+  if (!scanPath) { showToast('请输入目录路径', 'error'); return; }
+  const btn = $('emptyScanBtn'), stopBtn = $('emptyStopBtn'), prog = $('emptyProgress');
+  const status = $('empty-status'), list = $('empty-list'), emptyEl = $('empty-empty'), resultsEl = $('empty-results');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>扫描中...</span>'; }
+  if (stopBtn) { stopBtn.style.display = ''; stopBtn.disabled = false; }
+  if (prog) prog.style.display = '';
+  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描空目录...'; }
+  if (list) list.innerHTML = '';
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (resultsEl) resultsEl.style.display = 'none';
+  EmptyDirState.items = [];
+  EmptyDirState.checking = true;
+  EmptyDirState.startTime = Date.now();
+  $('empty-count').textContent = '-';
+  $('empty-pending').textContent = '-';
+  $('empty-elapsed').textContent = '-';
+  const bar = $('emptyProgressBar'); if (bar) bar.style.width = '0%';
+  API.post('api/empty_dir/scan', { path: scanPath }, 10000).then(r => {
+    if (r.error || !r.success) { finishEmptyScan(false, r.error || '扫描失败'); return; }
+    EmptyDirState.jobId = r.jobId;
+    pollEmptyProgress();
+  }).catch(e => { finishEmptyScan(false, e.message); });
+}
+
+function stopEmptyScan() {
+  EmptyDirState.checking = false;
+  EmptyDirState.stopRequested = true;
+  $('emptyScanBtn').disabled = false;
+  $('emptyScanBtn').innerHTML = '<span>🔍</span><span>开始扫描</span>';
+  $('emptyStopBtn').style.display = 'none';
+  $('emptyProgress').style.display = 'none';
+  showToast('已停止扫描', 'info');
+}
+
+function pollEmptyProgress() {
+  if (!EmptyDirState.checking || EmptyDirState.stopRequested) return;
+  const jobId = EmptyDirState.jobId;
+  const elapsed = EmptyDirState.startTime ? Math.round((Date.now() - EmptyDirState.startTime) / 1000) : 0;
+  const el = $('empty-elapsed'); if (el) el.textContent = elapsed + 's';
+  // Update progress bar
+  const bar = $('emptyProgressBar'); if (bar) bar.style.width = '85%';
+  const txt = $('emptyProgressText'); if (txt) txt.textContent = '正在扫描... ' + elapsed + 's';
+
+  API.get('api/empty_dir/status?jobId=' + jobId, 10000).then(r => {
+    if (!EmptyDirState.checking) return;
+    if (r.status === 'complete' || r.status === 'error') {
+      finishEmptyScan(r.status !== 'error', r.error, r);
+    } else {
+      setTimeout(pollEmptyProgress, 1500);
+    }
+  }).catch(() => {
+    if (EmptyDirState.checking) setTimeout(pollEmptyProgress, 2000);
+  });
+}
+
+function finishEmptyScan(success, error, data) {
+  EmptyDirState.checking = false;
+  const btn = $('emptyScanBtn'), stopBtn = $('emptyStopBtn'), prog = $('emptyProgress');
+  const status = $('empty-status'), resultsEl = $('empty-results'), emptyEl = $('empty-empty'), list = $('empty-list');
+  if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔍</span><span>开始扫描</span>'; }
+  if (stopBtn) stopBtn.style.display = 'none';
+  if (prog) prog.style.display = 'none';
+  if (!success) {
+    if (status) status.className = 'status-error'; status.textContent = '❌ ' + (error || '扫描失败');
+    if (emptyEl) { emptyEl.style.display = ''; const h3 = emptyEl.querySelector('h3'); if (h3) h3.textContent = '❌ 扫描失败'; }
+    showToast(error || '扫描失败', 'error');
+    return;
+  }
+  const items = data?.items || [];
+  EmptyDirState.items = items;
+  const count = items.length;
+  const elapsed = EmptyDirState.startTime ? Math.round((Date.now() - EmptyDirState.startTime) / 1000) : 0;
+  if (status) status.className = 'status-success'; status.textContent = '✅ 扫描完成，发现 ' + count + ' 个空目录，耗时 ' + elapsed + 's';
+  const cntEl = $('empty-count'); if (cntEl) cntEl.textContent = count;
+  const penEl = $('empty-pending'); if (penEl) penEl.textContent = count;
+  const elEl = $('empty-elapsed'); if (elEl) elEl.textContent = elapsed + 's';
+  const bar = $('emptyProgressBar'); if (bar) bar.style.width = '100%';
+  if (count === 0) {
+    if (emptyEl) { emptyEl.style.display = ''; const h3 = emptyEl.querySelector('h3'); if (h3) h3.textContent = '🎉 未发现空目录'; }
+    if (list) list.innerHTML = '';
+  } else {
+    if (emptyEl) emptyEl.style.display = 'none';
+    renderEmptyList(items);
+    if (resultsEl) resultsEl.style.display = '';
+  }
+  showToast('发现 ' + count + ' 个空目录', count > 0 ? 'info' : 'success');
+}
+
+function renderEmptyList(items) {
+  const list = $('empty-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const tbl = document.createElement('table');
+  tbl.className = 'data-table';
+  tbl.style.width = '100%';
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th style="width:40px"><input type="checkbox" class="select-all-cb empty-cb" onclick="selectAllEmpty(event)"></th><th>目录路径</th><th style="width:120px">操作</th></tr>';
+  tbl.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  items.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td><input type="checkbox" class="empty-cb" data-path="' + escHtml(item.path) + '" onclick="updateEmptySelectInfo()"></td>' +
+      '<td title="' + escHtml(item.path) + '">' + escHtml(item.path) + '</td>' +
+      '<td><button type="button" class="btn btn-danger btn-sm" onclick="confirmEmptyDeleteOne(\'' + item.path.replace(/'/g, "\\'") + '\')">🗑</button></td>';
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  list.appendChild(tbl);
+  updateEmptySelectInfo();
+}
+
+function selectAllEmpty(e) {
+  document.querySelectorAll('.empty-cb:not(:disabled)').forEach(cb => cb.checked = e.target.checked);
+  updateEmptySelectInfo();
+}
+
+function updateEmptySelectInfo() {
+  const cbs = document.querySelectorAll('.empty-cb:checked');
+  const count = cbs.length;
+  const sc = $('emptySelectedCount'); if (sc) sc.textContent = count;
+  const db = $('emptyDeleteBtn'); if (db) db.disabled = count === 0;
+}
+
+function showEmptyDeleteModal() {
+  const count = document.querySelectorAll('.empty-cb:checked').length;
+  if (count === 0) { showToast('请选择要删除的目录', 'error'); return; }
+  $('emptyDeleteCount').textContent = count;
+  $('emptyDeleteModal')?.classList.add('visible');
+}
+function hideEmptyDeleteModal() { $('emptyDeleteModal')?.classList.remove('visible'); }
+
+async function confirmEmptyDelete() {
+  hideEmptyDeleteModal();
+  const paths = [...document.querySelectorAll('.empty-cb:checked')].map(cb => cb.dataset.path);
+  const mode = document.querySelector('input[name="emptyDeleteMode"]:checked')?.value || 'trash';
+  try {
+    const r = await API.post('api/empty_dir/delete', { paths, mode });
+    const msg = '已删除 ' + (r.deleted || 0) + ' 个空目录';
+    if (r.failed && r.failed.length) showToast(msg + '，失败 ' + r.failed.length + ' 个', 'warning');
+    else showToast(msg, 'success');
+    // Remove deleted from list
+    const deletedSet = new Set(paths);
+    const remaining = EmptyDirState.items.filter(i => !deletedSet.has(i.path));
+    EmptyDirState.items = remaining;
+    const count = remaining.length;
+    const cntEl = $('empty-count'); if (cntEl) cntEl.textContent = count;
+    const penEl = $('empty-pending'); if (penEl) penEl.textContent = count;
+    const resultsEl = $('empty-results'), emptyEl = $('empty-empty'), list = $('empty-list');
+    if (remaining.length === 0) {
+      if (resultsEl) resultsEl.style.display = 'none';
+      if (emptyEl) { emptyEl.style.display = ''; const h3 = emptyEl.querySelector('h3'); if (h3) h3.textContent = '🎉 已清理所有空目录'; }
+    } else {
+      renderEmptyList(remaining);
+    }
+  } catch(e) { showToast('删除失败: ' + e.message, 'error'); }
+}
+
+function confirmEmptyDeleteOne(path) {
+  // Select just this one and show modal
+  document.querySelectorAll('.empty-cb').forEach(cb => cb.checked = cb.dataset.path === path);
+  updateEmptySelectInfo();
+  $('emptyDeleteCount').textContent = '1';
+  $('emptyDeleteModal')?.classList.add('visible');
+}
+
+// ════════════════════════════════
 // Init
 // ════════════════════════════════
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
@@ -898,6 +1072,8 @@ function init() {
     confirmDupDelete,
     updateDupSelectedCount,
     showBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
+    startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
+    showEmptyDeleteModal, hideEmptyDeleteModal, confirmEmptyDelete, confirmEmptyDeleteOne,
   };
   Object.assign(window, exports);
 
