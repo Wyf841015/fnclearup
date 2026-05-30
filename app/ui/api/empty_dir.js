@@ -1,4 +1,4 @@
-import { readdirSync, statSync, rmSync, existsSync, mkdirSync, renameSync, cpSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs';
+import { readdirSync, lstatSync, rmSync, existsSync, mkdirSync, renameSync, cpSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -22,8 +22,8 @@ function isDirEmptySync(dirPath) {
     for (const name of entries) {
       const fp = join(dirPath, name);
       try {
-        const st = statSync(fp);
-        if (st.isDirectory()) {
+        const st = lstatSync(fp);
+        if (st.isDirectory() && !st.isSymbolicLink()) {
           subInfo.push({ name, path: fp, isDir: true, ...isDirEmptySync(fp) });
         } else {
           subInfo.push({ name, path: fp, isDir: false, size: st.size });
