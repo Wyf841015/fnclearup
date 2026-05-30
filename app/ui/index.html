@@ -244,11 +244,14 @@
             <button type="button" class="btn btn-outline" onclick="showBrowseModal('emptyPath')">📁 浏览</button>
             <button type="button" class="btn btn-primary" id="emptyScanBtn" onclick="startEmptyScan()"><span>🔍</span><span>开始扫描</span></button>
             <button type="button" class="btn btn-danger" id="emptyStopBtn" onclick="stopEmptyScan()" style="display:none"><span>⏹</span><span>停止</span></button>
+            <button type="button" class="btn btn-danger" id="emptyDeleteHeaderBtn" onclick="showEmptyDeleteModal()" disabled><span>🗑</span><span>删除选中</span></button>
           </div>
+          <div id="empty-select-info" class="select-info" style="display:none"></div>
         </div>
         <div class="dup-progress-section" id="emptyProgress" style="display:none">
           <div class="dup-progress-track"><div class="dup-progress-fill" id="emptyProgressBar"></div></div>
           <div class="dup-progress-info"><span id="emptyProgressText">准备中...</span></div>
+          <div class="dup-progress-current" id="emptyCurrentDir"></div>
           <div class="dup-progress-status" id="emptyStatus"><span class="dup-spinner"></span> 扫描中...</div>
         </div>
         <div id="empty-status"></div>

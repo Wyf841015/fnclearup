@@ -37,13 +37,14 @@ function isDirEmptySync(dirPath) {
   }
 }
 
-function updateState(status, items, error = null) {
+function updateState(status, items, error = null, currentDir = null) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     raw.status = status;
     raw.items = items;
     raw.total = items.length;
     raw.error = error;
+    if (currentDir !== null) raw.currentDir = currentDir;
     const tmp = stateFile + '.tmp';
     writeFileSync(tmp, JSON.stringify(raw));
     renameSync(tmp, stateFile);
@@ -56,6 +57,8 @@ const visited = new Set();
 function walk(dir) {
   if (visited.has(dir)) return;
   visited.add(dir);
+  // Update currentDir periodically (every 20 dirs to reduce I/O)
+  if (visited.size % 20 === 0) updateState('scanning', results, null, dir);
   try {
     const { empty, children } = isDirEmptySync(dir);
     if (empty) {
@@ -83,5 +86,5 @@ walk(scanPath);
 
 // Final dedup — child paths should not appear if parent is already added
 const filtered = results.filter(r => !results.some(r2 => r2.path !== r.path && r.path.startsWith(r2.path + '/')));
-updateState('complete', filtered);
+updateState('complete', filtered, null, null);
 process.exit(0);

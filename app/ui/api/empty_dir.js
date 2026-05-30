@@ -97,7 +97,7 @@ export function handleEmptyDirStatus(req, res) {
   }
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
-    sendJSON(res, 200, { id: raw.id, status: raw.status, items: raw.items || [], total: raw.total || 0, error: raw.error, startTime: raw.startTime });
+    sendJSON(res, 200, { id: raw.id, status: raw.status, items: raw.items || [], total: raw.total || 0, error: raw.error, startTime: raw.startTime, currentDir: raw.currentDir });
   } catch (e) { sendJSON(res, 500, { error: e.message, success: false }); }
 }
 
