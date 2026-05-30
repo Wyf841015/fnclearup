@@ -7,6 +7,8 @@ import { join, basename } from 'node:path';
 
 const [, , scanPath, jobId, stateDir] = process.argv;
 const stateFile = join(stateDir, `empty_${jobId}.json`);
+const MAX_DIRS = 200000; // 最多扫描 20 万个目录，防止意外长时间扫描
+const PROGRESS_INTERVAL = 10; // 每扫描 10 个目录更新一次进度
 
 function updateState(status, items, error = null, currentDir = null) {
   try {
@@ -15,7 +17,7 @@ function updateState(status, items, error = null, currentDir = null) {
       : { id: jobId, rootPath: scanPath, startTime: Date.now() };
     raw.status = status;
     raw.items = items;
-    raw.total = items.length;
+    raw.total = items.length || 0;
     raw.error = error;
     if (currentDir !== null) raw.currentDir = currentDir;
     const tmp = stateFile + '.tmp';
@@ -25,11 +27,8 @@ function updateState(status, items, error = null, currentDir = null) {
 }
 
 // ── 单遍遍历 ──
-// 扫描树一次，记录每个目录是否有文件（含子目录的文件）
-// 然后自底向上传播 hasFile 标记，最后自上而下输出空目录
-
-const dirMap = new Map(); // path -> { hasFile, children: Set<string> }
-const allPaths = [];      // 保留遍历顺序供后续使用
+const dirMap = new Map();
+const allPaths = [];
 let visitCount = 0;
 
 function scanDir(dirPath, visited = new Set()) {
@@ -37,8 +36,13 @@ function scanDir(dirPath, visited = new Set()) {
   visited.add(dirPath);
   visitCount++;
 
-  // 每 50 个目录更新一次进度
-  if (visitCount % 50 === 0) {
+  if (visitCount > MAX_DIRS) {
+    updateState('error', [], '扫描目录超过上限 ' + MAX_DIRS + ' 个，已终止', dirPath);
+    process.exit(1);
+  }
+
+  // 每 PROGRESS_INTERVAL 个目录更新一次进度
+  if (visitCount % PROGRESS_INTERVAL === 0) {
     updateState('scanning', [], null, dirPath);
   }
 
@@ -57,11 +61,8 @@ function scanDir(dirPath, visited = new Set()) {
     } else if (st.isDirectory() && !st.isSymbolicLink()) {
       info.children.add(fp);
       const childInfo = scanDir(fp, visited);
-      if (childInfo) {
-        if (childInfo.hasFile) info.hasFile = true;
-      }
+      if (childInfo && childInfo.hasFile) info.hasFile = true;
     }
-    // symlink / socket / fifo → 跳过
   }
 
   dirMap.set(dirPath, info);
@@ -69,41 +70,35 @@ function scanDir(dirPath, visited = new Set()) {
   return info;
 }
 
-// Step 1: 扫描整棵树
-scanDir(scanPath);
+try {
+  // Step 1: 扫描整棵树
+  scanDir(scanPath);
 
-// Step 2: 自底向上 propagate hasFile（倒序遍历）
-for (let i = allPaths.length - 1; i >= 0; i--) {
-  const p = allPaths[i];
-  const info = dirMap.get(p);
-  if (!info) continue;
-  for (const childPath of info.children) {
-    const childInfo = dirMap.get(childPath);
-    if (childInfo && childInfo.hasFile) {
-      info.hasFile = true;
+  // Step 2: 自底向上传播 hasFile
+  for (let i = allPaths.length - 1; i >= 0; i--) {
+    const info = dirMap.get(allPaths[i]);
+    if (!info) continue;
+    for (const childPath of info.children) {
+      const childInfo = dirMap.get(childPath);
+      if (childInfo && childInfo.hasFile) info.hasFile = true;
     }
   }
-}
 
-// Step 3: 自上而下收集无文件的目录
-const results = [];
-
-function collect(dirPath) {
-  const info = dirMap.get(dirPath);
-  if (!info) return;
-
-  if (!info.hasFile) {
-    // 该目录及其所有子目录都没有任何文件 → 标记为空目录
-    results.push({ path: dirPath, name: basename(dirPath), type: 'dir' });
-    return; // 不递归子目录（它们已被当前目录覆盖）
+  // Step 3: 自上而下收集空目录
+  const results = [];
+  function collect(dirPath) {
+    const info = dirMap.get(dirPath);
+    if (!info) return;
+    if (!info.hasFile) {
+      results.push({ path: dirPath, name: basename(dirPath), type: 'dir' });
+      return;
+    }
+    for (const childPath of info.children) collect(childPath);
   }
+  collect(scanPath);
 
-  for (const childPath of info.children) {
-    collect(childPath);
-  }
+  updateState('complete', results, null, null);
+} catch (e) {
+  updateState('error', [], e.message || '扫描异常', null);
 }
-
-collect(scanPath);
-
-updateState('complete', results, null, null);
 process.exit(0);
