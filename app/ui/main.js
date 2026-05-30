@@ -886,6 +886,8 @@ function startEmptyScan() {
   EmptyDirState.items = [];
   EmptyDirState.checking = true;
   EmptyDirState.startTime = Date.now();
+  EmptyDirState.stopRequested = false;
+  EmptyDirState.jobId = null;
   // 独立定时器每秒更新耗时
   if (EmptyDirState._timer) clearInterval(EmptyDirState._timer);
   EmptyDirState._timer = setInterval(() => {
@@ -913,6 +915,7 @@ function stopEmptyScan() {
   $('emptyScanBtn').innerHTML = '<span>🔍</span><span>开始扫描</span>';
   $('emptyStopBtn').style.display = 'none';
   $('emptyProgress').classList.remove('visible');
+  $('empty-status').textContent = '';
   showToast('已停止扫描', 'info');
 }
 
