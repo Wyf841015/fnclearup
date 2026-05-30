@@ -868,7 +868,7 @@ function browseSelect() {
 // ════════════════════════════════
 // 空目录清理
 // ════════════════════════════════
-const EmptyDirState = { items: [], checking: false, jobId: null, startTime: null, stopRequested: false };
+const EmptyDirState = { items: [], checking: false, jobId: null, startTime: null, stopRequested: false, _timer: null };
 
 function startEmptyScan() {
   const pathInput = $('emptyPath');
@@ -886,6 +886,14 @@ function startEmptyScan() {
   EmptyDirState.items = [];
   EmptyDirState.checking = true;
   EmptyDirState.startTime = Date.now();
+  // 独立定时器每秒更新耗时
+  if (EmptyDirState._timer) clearInterval(EmptyDirState._timer);
+  EmptyDirState._timer = setInterval(() => {
+    if (!EmptyDirState.startTime) return;
+    const s = Math.round((Date.now() - EmptyDirState.startTime) / 1000);
+    const el = $('empty-elapsed'); if (el) el.textContent = s + 's';
+    const txt = $('emptyProgressText'); if (txt && EmptyDirState.checking) txt.textContent = '正在扫描... ' + s + 's';
+  }, 1000);
   $('empty-count').textContent = '-';
   $('empty-pending').textContent = '-';
   $('empty-elapsed').textContent = '-';
@@ -900,6 +908,7 @@ function startEmptyScan() {
 function stopEmptyScan() {
   EmptyDirState.checking = false;
   EmptyDirState.stopRequested = true;
+  if (EmptyDirState._timer) { clearInterval(EmptyDirState._timer); EmptyDirState._timer = null; }
   $('emptyScanBtn').disabled = false;
   $('emptyScanBtn').innerHTML = '<span>🔍</span><span>开始扫描</span>';
   $('emptyStopBtn').style.display = 'none';
@@ -932,6 +941,7 @@ function pollEmptyProgress() {
 
 function finishEmptyScan(success, error, data) {
   EmptyDirState.checking = false;
+  if (EmptyDirState._timer) { clearInterval(EmptyDirState._timer); EmptyDirState._timer = null; }
   const btn = $('emptyScanBtn'), stopBtn = $('emptyStopBtn'), prog = $('emptyProgress');
   const status = $('empty-status'), resultsEl = $('empty-results'), emptyEl = $('empty-empty'), list = $('empty-list');
   const cdEl = $('emptyCurrentDir'); if (cdEl) cdEl.textContent = '';
