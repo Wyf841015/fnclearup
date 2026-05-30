@@ -890,7 +890,7 @@ function startEmptyScan() {
   $('empty-pending').textContent = '-';
   $('empty-elapsed').textContent = '-';
   const bar = $('emptyProgressBar'); if (bar) bar.style.width = '0%';
-  API.post('api/empty_dir/scan', { path: scanPath }, 10000).then(r => {
+  API.post('api/empty_dir/scan', { path: scanPath }, 60000).then(r => {
     if (r.error || !r.success) { finishEmptyScan(false, r.error || '扫描失败'); return; }
     EmptyDirState.jobId = r.jobId;
     pollEmptyProgress();
@@ -916,7 +916,7 @@ function pollEmptyProgress() {
   const bar = $('emptyProgressBar'); if (bar) bar.style.width = '85%';
   const txt = $('emptyProgressText'); if (txt) txt.textContent = '正在扫描... ' + elapsed + 's';
 
-  API.get('api/empty_dir/status?jobId=' + jobId, 10000).then(r => {
+  API.get('api/empty_dir/status?jobId=' + jobId, 60000).then(r => {
     if (!EmptyDirState.checking) return;
     // Show current scanning directory
     if (r.currentDir) { const cd = $('emptyCurrentDir'); if (cd) cd.textContent = '📂 ' + r.currentDir; }
