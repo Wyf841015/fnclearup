@@ -55,7 +55,7 @@ export async function handleEmptyDirScan(req, res) {
     return;
   }
   let st;
-  try { st = statSync(scanPath); } catch (e) { sendJSON(res, 400, { error: e.message, success: false }); return; }
+  try { st = lstatSync(scanPath); } catch (e) { sendJSON(res, 400, { error: e.message, success: false }); return; }
   if (!st.isDirectory()) { sendJSON(res, 400, { error: '不是目录', success: false }); return; }
 
   const jobId = `empty_${randomUUID().slice(0, 8)}`;
