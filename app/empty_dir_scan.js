@@ -39,7 +39,9 @@ function isDirEmptySync(dirPath) {
 
 function updateState(status, items, error = null, currentDir = null) {
   try {
-    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    const raw = existsSync(stateFile)
+      ? JSON.parse(readFileSync(stateFile, 'utf-8'))
+      : { id: jobId, rootPath: scanPath, startTime: Date.now() };
     raw.status = status;
     raw.items = items;
     raw.total = items.length;
@@ -60,23 +62,18 @@ function walk(dir) {
   // Update currentDir periodically (every 20 dirs to reduce I/O)
   if (visited.size % 20 === 0) updateState('scanning', results, null, dir);
   try {
-    const { empty, children } = isDirEmptySync(dir);
+    const { empty } = isDirEmptySync(dir);
     if (empty) {
-      // Only add if not covered by an existing result
-      const covered = results.some(r => children.some(c => c.startsWith(r.path + '/')));
-      if (!covered) {
-        // If children exist, add only those not covered
-        if (children.length > 0) {
-          for (const c of children) {
-            if (!results.some(r => r.path === c)) results.push({ path: c, name: basename(c), type: 'dir' });
-          }
-        } else {
-          results.push({ path: dir, name: basename(dir), type: 'dir' });
-        }
-      }
+      // 目录自身及所有子目录都为空 → 只显示目录自身
+      results.push({ path: dir, name: basename(dir), type: 'dir' });
     } else {
-      for (const c of children) {
-        if (!visited.has(c)) walk(c);
+      // 目录非空 → 遍历所有直接子目录，查找空目录
+      const entries = readdirSync(dir);
+      for (const name of entries) {
+        const fp = join(dir, name);
+        try {
+          if (statSync(fp).isDirectory()) walk(fp);
+        } catch {}
       }
     }
   } catch {}
