@@ -305,6 +305,7 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   .tab-btn{padding:10px 16px;font-size:13px}
   .dup-scan-input-row{flex-direction:column}
   .dup-scan-btns{flex-direction:row;flex-wrap:wrap}
+  .section-header .section-actions{flex-wrap:wrap}
   .modal{padding:24px;max-width:95%}
   .sponsor-qr-row{flex-direction:column;align-items:center}
 }
@@ -340,6 +341,9 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   /* Mobile table */
   .data-table{min-width:auto;font-size:12px}
   .data-table th,.data-table td{padding:5px 4px}
+  .data-table td:first-child{width:36px;min-width:36px}
+  .data-table td:last-child{width:42px;min-width:42px;text-align:center}
+  #empty-list .data-table td:nth-child(2),#empty-list td.path-col{word-break:break-all;white-space:normal;max-width:0}
   .file-path,.paths-cell,.dup-file-name,.dup-progress-current,.dup-file-label{overflow:visible;text-overflow:clip;white-space:normal;max-width:none;word-break:break-all}
   .dup-file-item{flex-wrap:wrap}
   .dup-group-header{flex-wrap:wrap;gap:6px}
