@@ -26,6 +26,12 @@ function updateState(status, items, error = null, currentDir = null) {
   } catch {}
 }
 
+// 捕获未预期的错误（如 import 失败等）
+process.on('uncaughtException', (err) => {
+  try { writeFileSync(stateFile, JSON.stringify({ id: jobId, rootPath: scanPath, status: 'error', error: '未捕获异常: ' + (err.message || String(err)) })); } catch {}
+  process.exit(1);
+});
+
 // ── 单遍遍历 ──
 const dirMap = new Map();
 const allPaths = [];

@@ -69,8 +69,28 @@ export async function handleEmptyDirScan(req, res) {
   const args = [EMPTY_SCAN_SCRIPT, scanPath, jobId, EMPTY_STATE_DIR];
   const proc = spawn(process.execPath, args, { stdio: 'ignore', detached: true });
   proc.unref();
-  proc.on('error', () => {});
-  emptyDirJobs.set(jobId, { stateFile, scanPath, proc });
+  proc.on('error', (err) => {
+    try {
+      const errState = { ...initialState, status: 'error', error: '启动扫描进程失败: ' + (err.message || String(err)) };
+      writeFileSync(stateFile, JSON.stringify(errState));
+    } catch {}
+    emptyDirJobs.delete(jobId);
+  });
+  proc.on('exit', (code) => {
+    emptyDirJobs.delete(jobId);
+    if (code !== 0) {
+      try {
+        // Only write error if not already complete (race: scan might have updated just before exit)
+        const cur = JSON.parse(readFileSync(stateFile, 'utf-8'));
+        if (cur.status !== 'complete') {
+          cur.status = 'error';
+          cur.error = '扫描进程异常退出，code=' + code;
+          writeFileSync(stateFile, JSON.stringify(cur));
+        }
+      } catch {}
+    }
+  });
+  emptyDirJobs.set(jobId, { stateFile, scanPath, proc, startTime: Date.now() });
 
   sendJSON(res, 200, { jobId, status: 'started', success: true });
 }
