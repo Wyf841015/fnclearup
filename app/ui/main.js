@@ -878,7 +878,7 @@ function startEmptyScan() {
   const status = $('empty-status'), list = $('empty-list'), emptyEl = $('empty-empty'), resultsEl = $('empty-results');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>扫描中...</span>'; }
   if (stopBtn) { stopBtn.style.display = ''; stopBtn.disabled = false; }
-  if (prog) prog.style.display = '';
+  if (prog) prog.classList.add('visible');
   if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描空目录...'; }
   if (list) list.innerHTML = '';
   if (emptyEl) emptyEl.style.display = 'none';
@@ -903,7 +903,7 @@ function stopEmptyScan() {
   $('emptyScanBtn').disabled = false;
   $('emptyScanBtn').innerHTML = '<span>🔍</span><span>开始扫描</span>';
   $('emptyStopBtn').style.display = 'none';
-  $('emptyProgress').style.display = 'none';
+  $('emptyProgress').classList.remove('visible');
   showToast('已停止扫描', 'info');
 }
 
@@ -937,7 +937,7 @@ function finishEmptyScan(success, error, data) {
   const cdEl = $('emptyCurrentDir'); if (cdEl) cdEl.textContent = '';
   if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔍</span><span>开始扫描</span>'; }
   if (stopBtn) stopBtn.style.display = 'none';
-  if (prog) prog.style.display = 'none';
+  if (prog) prog.classList.remove('visible');
   if (!success) {
     if (status) status.className = 'status-error'; status.textContent = '❌ ' + (error || '扫描失败');
     if (emptyEl) { emptyEl.style.display = ''; const h3 = emptyEl.querySelector('h3'); if (h3) h3.textContent = '❌ 扫描失败'; }
