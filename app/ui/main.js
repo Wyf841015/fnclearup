@@ -59,6 +59,7 @@ function selectAllHandler(tableId, checkboxClass) {
       else if (checkboxClass === 'image-cb') updateImagesSelectInfo();
       else if (checkboxClass === 'network-cb') updateNetworkSelectInfo();
       else if (checkboxClass === 'temp-cb') updateTempSelectInfo();
+      else if (checkboxClass === 'empty-cb') updateEmptySelectInfo();
     }
   });
 }
@@ -917,6 +918,8 @@ function pollEmptyProgress() {
 
   API.get('api/empty_dir/status?jobId=' + jobId, 10000).then(r => {
     if (!EmptyDirState.checking) return;
+    // Show current scanning directory
+    if (r.currentDir) { const cd = $('emptyCurrentDir'); if (cd) cd.textContent = '📂 ' + r.currentDir; }
     if (r.status === 'complete' || r.status === 'error') {
       finishEmptyScan(r.status !== 'error', r.error, r);
     } else {
@@ -931,6 +934,7 @@ function finishEmptyScan(success, error, data) {
   EmptyDirState.checking = false;
   const btn = $('emptyScanBtn'), stopBtn = $('emptyStopBtn'), prog = $('emptyProgress');
   const status = $('empty-status'), resultsEl = $('empty-results'), emptyEl = $('empty-empty'), list = $('empty-list');
+  const cdEl = $('emptyCurrentDir'); if (cdEl) cdEl.textContent = '';
   if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔍</span><span>开始扫描</span>'; }
   if (stopBtn) stopBtn.style.display = 'none';
   if (prog) prog.style.display = 'none';
@@ -993,6 +997,8 @@ function updateEmptySelectInfo() {
   const count = cbs.length;
   const sc = $('emptySelectedCount'); if (sc) sc.textContent = count;
   const db = $('emptyDeleteBtn'); if (db) db.disabled = count === 0;
+  const dbH = $('emptyDeleteHeaderBtn'); if (dbH) dbH.disabled = count === 0;
+  const si = $('empty-select-info'); if (si) { si.style.display = count > 0 ? '' : 'none'; si.textContent = '已选 ' + count + ' 个目录'; }
 }
 
 function showEmptyDeleteModal() {

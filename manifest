@@ -1,5 +1,5 @@
 appname               = fnclearup
-version               = 0.7.0
+version               = 0.7.1
 display_name          = 清理精灵
 desc                  = 智能扫描系统，精准识别已卸载应用、网盘挂载和 Docker 的残留目录及重复文件，一键安全清理 - Node.js 版
 platform              = all
