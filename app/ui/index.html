@@ -273,11 +273,65 @@
       <h3><span>⚠️</span><span>确认删除</span></h3>
       <p>即将删除以下 <strong id="confirmCount">0</strong> 个目录：</p>
       <div class="paths-preview" id="confirmPaths"></div>
-      <label class="modal-checkbox"><input type="checkbox" id="deleteUsersCheckbox"><span>同步删除关联系统用户</span></label>
+      <label class="modal-checkbox" style="color:var(--color-danger)"><input type="checkbox" id="deleteUsersCheckbox"><span>⚠️ 危险：同步删除关联系统用户及其家目录（不可恢复）</span></label>
       <label class="modal-checkbox"><input type="checkbox" id="deleteAppshareCheckbox"><span>删除 @appshare 目录残余文件</span></label>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
         <button type="button" class="btn btn-danger" onclick="doDelete()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Docker 卷删除确认弹窗 -->
+  <div class="modal-overlay" id="dockerVolDeleteModal">
+    <div class="modal">
+      <h3><span>⚠️</span><span>确认删除 Docker 卷</span></h3>
+      <p>确定删除 <strong id="dockerVolDeleteCount">0</strong> 个孤立 Docker 卷？</p>
+      <p style="color:var(--color-danger);font-size:12px;margin-top:-4px">⚠️ 如卷是 bind mount，宿主机目录不会被清理（需手动删除）</p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideDockerVolDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" onclick="confirmDeleteDocker()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Docker 网络删除确认弹窗 -->
+  <div class="modal-overlay" id="dockerNetDeleteModal">
+    <div class="modal">
+      <h3><span>⚠️</span><span>确认删除 Docker 网络</span></h3>
+      <p>确定删除 <strong id="dockerNetDeleteCount">0</strong> 个未使用 Docker 网络？</p>
+      <p style="color:var(--color-danger);font-size:12px;margin-top:-4px">⚠️ 某些 compose stack 即使容器停止仍依赖其网络</p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideDockerNetDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" onclick="confirmDeleteNetworks()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Docker 镜像删除确认弹窗 -->
+  <div class="modal-overlay" id="dockerImgDeleteModal">
+    <div class="modal">
+      <h3><span>⚠️</span><span>确认删除 Docker 镜像</span></h3>
+      <p>确定删除 <strong id="dockerImgDeleteCount">0</strong> 个未使用 Docker 镜像？</p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideDockerImgDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" onclick="confirmDeleteImages()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Temp 文件删除确认弹窗 -->
+  <div class="modal-overlay" id="tempDeleteModal">
+    <div class="modal">
+      <h3><span>⚠️</span><span>确认清理临时文件</span></h3>
+      <p>确定清理 <strong id="tempDeleteCount">0</strong> 个过期临时文件？</p>
+      <div class="delete-mode-select">
+        <label class="delete-radio"><input type="radio" name="tempDeleteMode" value="trash" checked><span>放到回收站<small>移至 /tmp/.@#local/trash，可恢复</small></span></label>
+        <label class="delete-radio"><input type="radio" name="tempDeleteMode" value="permanent"><span>永久删除<small>直接删除，不可恢复</small></span></label>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideTempDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" onclick="confirmDeleteTemp()">确认清理</button>
       </div>
     </div>
   </div>
@@ -346,7 +400,6 @@
 
   <div class="footer"><p>Copyright©2026 <a href="https://gitee.com/wyf1015" target="_blank">一零一二</a> · 清理精灵</p></div>
 </div>
-<script src="utils.js"></script>
 <script src="main.js"></script>
 </body>
 </html>

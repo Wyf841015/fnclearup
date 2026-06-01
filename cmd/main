@@ -1,56 +1,91 @@
 #!/bin/bash
-# FnClearup Node.js lifecycle script (aligned with fnm3u8dl)
+### FnClearup Node.js lifecycle script (aligned with fnm3u8dl)
+### - set -euo pipefail for strict error handling
+### - use lsof + pkill (not fuser — psmisc may be missing)
+### - exec node so PID in PID_FILE is the actual node process
+set -euo pipefail
 
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
+PORT="${wizard_app_port:-47938}"
 
 export PATH=/var/apps/nodejs_v24/target/bin:$PATH
 CMD="node ${TRIM_APPDEST}/ui/server.js"
 
 log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+# Clean up any zombie holding the port (prefer lsof, fallback to pkill)
+cleanup_port() {
+    if command -v lsof >/dev/null 2>&1; then
+        local pids
+        pids=$(lsof -ti :"${PORT}" 2>/dev/null || true)
+        if [ -n "${pids}" ]; then
+            log_msg "Killing port ${PORT} holders: ${pids}"
+            # shellcheck disable=SC2086
+            kill -TERM ${pids} 2>/dev/null || true
+            sleep 0.5
+            pids=$(lsof -ti :"${PORT}" 2>/dev/null || true)
+            [ -n "${pids}" ] && kill -KILL ${pids} 2>/dev/null || true
+        fi
+    else
+        # Fallback: pkill on node server.js pattern
+        pkill -TERM -f "node.*server\\.js" 2>/dev/null || true
+        sleep 0.5
+        pkill -KILL -f "node.*server\\.js" 2>/dev/null || true
+    fi
+    # Also clean stale socket
+    if [ -S "${TRIM_APPDEST}/target/fnclearup.sock" ]; then
+        rm -f "${TRIM_APPDEST}/target/fnclearup.sock" 2>/dev/null || true
+    fi
 }
 
 start_process() {
     if status; then
         return 0
     fi
-    log_msg "Starting process ..."
-    # Kill any zombie on port 47938
-    fuser -k 47938/tcp 2>/dev/null
-    sleep 0.5
-    bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
-    printf "%s" "$!" > ${PID_FILE}
-    log_msg "pid=$!"
+    log_msg "Starting process on port ${PORT} ..."
+    cleanup_port
+    sleep 0.3
+    # exec node so the PID we record is the actual node process, not a shell wrapper
+    bash -c "exec ${CMD}" >> "${LOG_FILE}" 2>&1 &
+    local pid=$!
+    printf "%s" "${pid}" > "${PID_FILE}"
+    log_msg "pid=${pid}"
     return 0
 }
 
 stop_process() {
     log_msg "Stopping process ..."
     if [ -f "${PID_FILE}" ]; then
+        local pid
         pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
-        if kill -0 "${pid}" 2>/dev/null; then
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
             log_msg "send TERM to PID:${pid}"
-            kill -TERM ${pid}
+            kill -TERM "${pid}"
             local count=0
-            while kill -0 "${pid}" 2>/dev/null && [ $count -lt 10 ]; do
+            while kill -0 "${pid}" 2>/dev/null && [ "${count}" -lt 10 ]; do
                 sleep 1; count=$((count + 1))
                 log_msg "waiting ... (${count}s)"
             done
             if kill -0 "${pid}" 2>/dev/null; then
                 log_msg "send KILL to PID:${pid}"
-                kill -KILL ${pid}
+                kill -KILL "${pid}" 2>/dev/null || true
             fi
         fi
         rm -f "${PID_FILE}"
     fi
+    # Final cleanup
+    cleanup_port
     return 0
 }
 
 status() {
     if [ -f "${PID_FILE}" ]; then
+        local pid
         pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
-        if kill -0 "${pid}" 2>/dev/null; then
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
             return 0
         else
             rm -f "${PID_FILE}"
@@ -59,9 +94,9 @@ status() {
     return 1
 }
 
-case $1 in
+case "${1:-}" in
 start)   start_process ;;
 stop)    stop_process ;;
 status)  if status; then exit 0; else exit 3; fi ;;
-*)       exit 1 ;;
+*)       echo "Usage: $0 {start|stop|status}" >&2; exit 1 ;;
 esac

@@ -17,8 +17,18 @@ export async function parseBody(req) {
   catch { return {}; }
 }
 
+// CORS origins: comma-separated env var, or specific dev defaults
+export const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:9633,http://127.0.0.1:9633').split(',').map(s => s.trim()).filter(Boolean);
+const ALLOW_ANY_ORIGIN = CORS_ORIGINS.includes('*');
+
 export function sendJSON(res, code, data) {
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  const origin = res.req?.headers?.origin;
+  const allowOrigin = ALLOW_ANY_ORIGIN ? '*' : (origin && CORS_ORIGINS.includes(origin) ? origin : CORS_ORIGINS[0] || '*');
+  res.writeHead(code, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Credentials': 'true',
+  });
   res.end(JSON.stringify(data));
 }
 
@@ -35,7 +45,11 @@ export function execCmd(cmd, args, timeout = 30000) {
 
 export function isSafePath(p) {
   const n = resolve(p);
-  return [...SAFE_PREFIXES].some(pre => n.startsWith(pre));
+  // Standard whitelist: /vol* paths
+  if ([...SAFE_PREFIXES].some(pre => n.startsWith(pre))) return true;
+  // Test fixture allowlist: when TRM_FNCLEARUP_TEST=1, allow /tmp/fnclearup_test paths
+  if (process.env.TRM_FNCLEARUP_TEST === '1' && n.startsWith('/tmp/fnclearup_test')) return true;
+  return false;
 }
 
 export function parseQuery(url) {

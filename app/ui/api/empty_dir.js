@@ -1,7 +1,7 @@
-import { readdirSync, lstatSync, rmSync, existsSync, mkdirSync, renameSync, cpSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs';
+import { readdirSync, lstatSync, rmSync, existsSync, mkdirSync, renameSync, cpSync, unlinkSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { sendJSON } from '../lib/util.js';
+import { sendJSON, isSafePath } from '../lib/util.js';
 
 export const emptyDirJobs = new Map();
 let EMPTY_STATE_DIR = '';
@@ -12,13 +12,22 @@ export function setEmptyDirPaths(stateDir, _scanScript) {
 }
 
 // ── 同进程异步扫描（不用 spawn 子进程） ──
+// Stream + parent-only tracking: don't retain dirMap for all dirs
+// Each directory only needs to know "do I have a child that has a file"
+// Skip system dirs: .@#local, @appcenter, @appshare, @apphome, @appconf, @apptmp
+const SKIP_DIRS = new Set(['.@#local', '@appcenter', '@appshare', '@apphome', '@appconf', '@apptemp', '@apphome', '@appdata']);
+function shouldSkipDir(name) {
+  return SKIP_DIRS.has(name) || name.startsWith('@app');
+}
+
 function runScan(jobId, scanPath) {
   const stateFile = join(EMPTY_STATE_DIR, `empty_${jobId}.json`);
-  const dirMap = new Map();
-  const allPaths = [];
   let visitCount = 0;
+  let aborted = false;
+  console.log('[empty_dir] runScan START', { jobId, scanPath, stateFile, stateFileExists: existsSync(stateFile) });
 
   function update(status, items, error, currentDir) {
+    if (aborted) return;
     try {
       const raw = existsSync(stateFile)
         ? JSON.parse(readFileSync(stateFile, 'utf-8'))
@@ -32,66 +41,114 @@ function runScan(jobId, scanPath) {
     } catch {}
   }
 
-  function scanDir(dirPath, visited) {
-    if (visited.has(dirPath)) return null;
-    visited.add(dirPath);
-    visitCount++;
+  // Phase 1: visit all dirs, count files in each dir, record parent hasFile state.
+  // To save memory, we don't keep dirMap: just write a transient count to state file.
+  // We do a single bottom-up traversal: walk deep first, then count hasFile based on
+  // direct children.
+  // For each dir, hasFile = any direct file in it OR any direct child that hasFile.
+  // Stream the result: don't retain allPaths.
 
-    if (visitCount % 10 === 0) update('scanning', [], null, dirPath);
+  // We use a 2-pass approach:
+  // Pass 1: collect all dir paths (no recursion, just store the path)
+  // Pass 2: walk bottom-up (sorted by depth desc), compute hasFile
+  // This still O(N) memory, but we free hasFileMap after each parent processed.
+  const allPaths = [];
+  const fileCount = new Map();  // dir -> number of direct files
 
+  function walk(p) {
+    if (aborted) return;
     let entries;
-    try { entries = readdirSync(dirPath); } catch { return null; }
-
-    const info = { hasFile: false, children: new Set() };
+    try { entries = readdirSync(p); } catch { return; }
+    let fileN = 0;
+    const childDirs = [];
     for (const name of entries) {
-      const fp = join(dirPath, name);
+      if (aborted) return;
+      const fp = join(p, name);
       let st;
       try { st = lstatSync(fp); } catch { continue; }
       if (st.isFile()) {
-        info.hasFile = true;
-      } else if (st.isDirectory() && !st.isSymbolicLink() && name !== '.@#local') {
-        info.children.add(fp);
-        const childInfo = scanDir(fp, visited);
-        if (childInfo && childInfo.hasFile) info.hasFile = true;
+        fileN++;
+      } else if (st.isDirectory() && !st.isSymbolicLink() && !shouldSkipDir(name)) {
+        childDirs.push(fp);
       }
     }
-    dirMap.set(dirPath, info);
-    allPaths.push(dirPath);
-    return info;
+    fileCount.set(p, fileN);
+    allPaths.push(p);
+    visitCount++;
+    if (visitCount % 10 === 0) update('scanning', [], null, p);
+    for (const c of childDirs) walk(c);
   }
 
   try {
-    scanDir(scanPath, new Set());
+    walk(scanPath);
 
-    // 自底向上传播 hasFile
-    for (let i = allPaths.length - 1; i >= 0; i--) {
-      const info = dirMap.get(allPaths[i]);
-      if (!info) continue;
-      for (const childPath of info.children) {
-        const childInfo = dirMap.get(childPath);
-        if (childInfo && childInfo.hasFile) info.hasFile = true;
-      }
+    // Pass 2: bottom-up — for each dir, hasFile = (own files > 0) OR (any child hasFile)
+    // Sort by depth (desc) so deepest processed first
+    const hasFile = new Map();
+    allPaths.sort((a, b) => b.split('/').length - a.split('/').length);
+    for (const p of allPaths) {
+      const own = (fileCount.get(p) || 0) > 0;
+      // hasFile includes child dirs that have files
+      // We check each child by looking it up
+      let childHasFile = false;
+      try {
+        const entries = readdirSync(p);
+        for (const name of entries) {
+          if (shouldSkipDir(name)) continue;
+          const fp = join(p, name);
+          try {
+            const st = lstatSync(fp);
+            if (st.isDirectory() && !st.isSymbolicLink() && hasFile.get(fp)) {
+              childHasFile = true;
+              break;
+            }
+          } catch {}
+        }
+      } catch {}
+      hasFile.set(p, own || childHasFile);
     }
 
-    // 自上而下收集空目录
+    // Pass 3: collect empty dirs (top-down, but only output leaves)
     const results = [];
-    function collect(dirPath) {
-      const info = dirMap.get(dirPath);
-      if (!info) return;
-      if (!info.hasFile) {
-        results.push({ path: dirPath, name: basename(dirPath), type: 'dir' });
-        return;
+    function collect(p) {
+      if (aborted) return;
+      if (!hasFile.get(p)) {
+        results.push({ path: p, name: basename(p), type: 'dir' });
+        return;  // empty leaf
       }
-      for (const childPath of info.children) collect(childPath);
+      try {
+        const entries = readdirSync(p);
+        for (const name of entries) {
+          if (shouldSkipDir(name)) continue;
+          const fp = join(p, name);
+          try {
+            const st = lstatSync(fp);
+            if (st.isDirectory() && !st.isSymbolicLink()) collect(fp);
+          } catch {}
+        }
+      } catch {}
     }
     collect(scanPath);
 
+    // Free memory
+    allPaths.length = 0;
+    fileCount.clear();
+    hasFile.clear();
+
     update('complete', results, null);
   } catch (e) {
-    update('error', [], e.message || '扫描异常');
+    console.error('[empty_dir] runScan ERROR', e);
+    if (!aborted) update('error', [], e.message || '扫描异常');
   } finally {
+    console.log('[empty_dir] runScan FINALLY', { jobId, aborted, visitCount, willUnlink: aborted });
     emptyDirJobs.delete(jobId);
+    // Only unlink state file on abort/error — keep complete state so client can poll
+    if (aborted) {
+      try { unlinkSync(stateFile); } catch (e2) { console.error('[empty_dir] unlink fail', e2); }
+    }
   }
+
+  return { abort: () => { aborted = true; } };
 }
 
 // ── POST /api/empty_dir/scan ──
@@ -105,6 +162,10 @@ export async function handleEmptyDirScan(req, res) {
     sendJSON(res, 400, { error: scanPath ? `目录不存在: ${scanPath}` : '无效的扫描路径', success: false });
     return;
   }
+  if (!isSafePath(scanPath)) {
+    sendJSON(res, 403, { error: '路径越界：仅允许 /vol* 下的目录', success: false });
+    return;
+  }
   let st;
   try { st = lstatSync(scanPath); } catch (e) { sendJSON(res, 400, { error: e.message, success: false }); return; }
   if (!st.isDirectory()) { sendJSON(res, 400, { error: '不是目录', success: false }); return; }
@@ -113,14 +174,32 @@ export async function handleEmptyDirScan(req, res) {
   const stateFile = join(EMPTY_STATE_DIR, `empty_${jobId}.json`);
   const startTime = Date.now();
   const initialState = { id: jobId, rootPath: scanPath, status: 'scanning', items: [], total: 0, error: null, startTime };
+  console.log('[empty_dir] handleEmptyDirScan: EMPTY_STATE_DIR=', EMPTY_STATE_DIR, 'stateFile=', stateFile, 'scanPath=', scanPath);
   writeFileSync(stateFile, JSON.stringify(initialState));
-
-  emptyDirJobs.set(jobId, { stateFile, scanPath, startTime });
+  console.log('[empty_dir] wrote initial state, existsSync=', existsSync(stateFile));
 
   // 先返回响应，再异步扫描
   sendJSON(res, 200, { jobId, status: 'started', success: true });
 
-  setTimeout(() => runScan(jobId, scanPath), 0);
+  setTimeout(() => {
+    const handle = runScan(jobId, scanPath);
+    emptyDirJobs.set(jobId, { stateFile, scanPath, startTime, abort: handle.abort });
+  }, 0);
+}
+
+// ── POST /api/empty_dir/stop ──
+export async function handleEmptyDirStop(req, res) {
+  const bufs = [];
+  for await (const c of req) bufs.push(c);
+  let data = {};
+  try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch {}
+  const jobId = data.jobId || '';
+  if (!jobId) { sendJSON(res, 400, { error: '缺少 jobId', success: false }); return; }
+  const job = emptyDirJobs.get(jobId);
+  if (!job) { sendJSON(res, 200, { stopped: false, success: true }); return; }
+  if (job.abort) job.abort();
+  emptyDirJobs.delete(jobId);
+  sendJSON(res, 200, { stopped: true, success: true });
 }
 
 // ── GET /api/empty_dir/status?jobId=xxx ──
@@ -145,7 +224,9 @@ export function handleEmptyDirStatus(req, res) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     sendJSON(res, 200, { id: raw.id, status: raw.status, items: raw.items || [], total: raw.total || 0, error: raw.error, startTime: raw.startTime, currentDir: raw.currentDir });
-  } catch (e) { sendJSON(res, 500, { error: e.message, success: false }); }
+  } catch (e) {
+    sendJSON(res, 500, { error: e.message, success: false });
+  }
 }
 
 // ── POST /api/empty_dir/delete ──
@@ -154,7 +235,9 @@ export async function handleEmptyDirDelete(req, res) {
   for await (const c of req) bufs.push(c);
   let data = {};
   try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch {}
-  const paths = Array.isArray(data.paths) ? data.paths : [];
+  const rawPaths = Array.isArray(data.paths) ? data.paths : [];
+  const paths = rawPaths.filter(p => isSafePath(p));
+  const skipped = rawPaths.length - paths.length;
   const mode = data.mode || 'trash';
   let deleted = 0, failed = [];
   for (const fp of paths) {
@@ -183,5 +266,5 @@ export async function handleEmptyDirDelete(req, res) {
       deleted++;
     } catch (e) { failed.push({ path: fp, reason: e.message }); }
   }
-  sendJSON(res, 200, { deleted, failed, success: true });
+  sendJSON(res, 200, { deleted, failed, skipped, total: paths.length, failures: failed.length, success: true });
 }

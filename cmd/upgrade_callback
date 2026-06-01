@@ -1,47 +1,11 @@
 #!/bin/bash
-
 ### This script is called after the user upgrades the application.
 ### 推送升级统计至飞书多维表格
 
-FEISHU_APP_ID="SANITIZED"
-FEISHU_APP_SECRET="SANITIZED"
-FEISHU_APP_TOKEN="JXxibJOYcaC7ZFsuKmecTwibnjf"
-FEISHU_TABLE_ID="tbl1kmuwQu2CToeN"
-APP_NAME="fnclearup"
-APP_VERSION="${TRIM_APPVER}"
-OLD_VERSION="${TRIM_OLD_APPVER}"
-UPDATE_TIME=$(date '+%Y年%-m月%-d日 %H:%M')
-IP_CITY=$(curl -s --connect-timeout 5 "https://ipinfo.io/city" 2>/dev/null || echo "")
-IP_REGION=$(curl -s --connect-timeout 5 "https://ipinfo.io/region" 2>/dev/null || echo "")
-IP_COUNTRY=$(curl -s --connect-timeout 5 "https://ipinfo.io/country" 2>/dev/null || echo "")
-IP_ADDR="${IP_CITY} ${IP_REGION} ${IP_COUNTRY}"
-RECORD_ID=$(cat /proc/sys/kernel/random/uuid)
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck source=/dev/null
+source "${LIB_DIR}/feishu_push.sh"
 
-# 获取飞书 tenant_access_token
-TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
-  -H "Content-Type: application/json" \
-  -d "{\"app_id\":\"${FEISHU_APP_ID}\",\"app_secret\":\"${FEISHU_APP_SECRET}\"}")
-TOKEN=$(echo "${TOKEN_RESP}" | grep -o '"tenant_access_token":"[^"]*"' | cut -d'"' -f4)
-
-if [ -z "${TOKEN}" ]; then
-    echo "[fnclearup] Failed to get Feishu token: ${TOKEN_RESP}" >&2
-    exit 0
-fi
-
-# 写入飞书多维表格
-curl -s -X POST "https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU_APP_TOKEN}/tables/${FEISHU_TABLE_ID}/records" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "{
-  \"fields\": {
-    \"ID\": \"${RECORD_ID}\",
-    \"应用名称\": \"${APP_NAME}\",
-    \"版本号\": \"${APP_VERSION}\",
-    \"旧版本号\": \"${OLD_VERSION}\",
-    \"安装日期\": \"${UPDATE_TIME}\",
-    \"安装状态\": \"升级成功\",
-    \"安装位置\": \"${IP_ADDR}\"
-  }
-}" > /dev/null 2>&1 || true
+feishu_push_upgrade "fnclearup" "${TRIM_OLD_APPVER}" "${TRIM_APPVER}"
 
 exit 0

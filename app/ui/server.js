@@ -1,16 +1,16 @@
-import { existsSync, statSync, readFileSync, readdirSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join, extname, dirname } from 'node:path';
+import { existsSync, statSync, readdirSync, readFileSync, unlinkSync, mkdirSync, writeFileSync, rmSync, renameSync, cpSync, lstatSync } from 'node:fs';
+import { join, extname, dirname, basename } from 'node:path';
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { MIME, VERSION } from './lib/config.js';
-import { sendJSON, parseBody } from './lib/util.js';
+import { sendJSON, parseBody, isSafePath, CORS_ORIGINS } from './lib/util.js';
 import { handleScan, handleDelete } from './api/app.js';
 import { handleMounts, handleVol02 } from './api/disk.js';
 import { handleVolumes, handleVolumesDelete, handleNetworks, handleNetworksDelete, handleImages, handleImagesDelete, handleSystem } from './api/docker.js';
 import { handleTempScan, handleTempDelete } from './api/temp.js';
 import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleDupExport, handleDupStop, handleDupPause, handleDupResume, dupJobs, setDupPaths } from './api/dup.js';
-import { handleEmptyDirScan, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
+import { handleEmptyDirScan, handleEmptyDirStop, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -33,11 +33,15 @@ setEmptyDirPaths(EMPTY_STATE_DIR, EMPTY_SCAN_SCRIPT);
 function handleBrowse(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const dirPath = url.searchParams.get('path') || '/';
+  if (dirPath !== '/' && !isSafePath(dirPath)) {
+    sendJSON(res, 403, { error: '路径越界：仅允许 /vol* 下的目录' });
+    return;
+  }
   try {
     const st = statSync(dirPath);
     if (!st.isDirectory()) { sendJSON(res, 400, { error: '不是目录' }); return; }
     const entries = readdirSync(dirPath, { withFileTypes: true })
-      .filter(e => e.name !== '.' && e.name !== '..')
+      .filter(e => e.name !== '.' && e.name !== '..' && e.name !== '.@#local' && !e.name.startsWith('@app'))
       .sort((a, b) => {
         if (a.isDirectory() && !b.isDirectory()) return -1;
         if (!a.isDirectory() && b.isDirectory()) return 1;
@@ -55,10 +59,15 @@ async function handle(req, res) {
   const cleanPath = url.pathname.replace(/^\/app\/fnclearup/, '') || '/';
   const method = req.method;
 
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // CORS (re-import constants from lib/util.js for handle())
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': process.env.CORS_ORIGINS === '*' ? '*' :
+      ((req.headers.origin && CORS_ORIGINS.includes(req.headers.origin)) ? req.headers.origin : (CORS_ORIGINS[0] || '*')),
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+  for (const k of Object.keys(corsHeaders)) res.setHeader(k, corsHeaders[k]);
   if (method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   try {
@@ -92,6 +101,7 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/dup/pause') { await handleDupPause(req, res); return; }
       if (method === 'POST' && path === '/api/dup/resume') { await handleDupResume(req, res); return; }
       if (method === 'POST' && path === '/api/empty_dir/scan') { await handleEmptyDirScan(req, res); return; }
+      if (method === 'POST' && path === '/api/empty_dir/stop') { await handleEmptyDirStop(req, res); return; }
       if (method === 'POST' && path === '/api/empty_dir/delete') { await handleEmptyDirDelete(req, res); return; }
       if (method === 'GET' && path === '/api/empty_dir/status') { handleEmptyDirStatus(req, res); return; }
       if (method === 'GET' && path === '/api/empty_dir/jobs') {

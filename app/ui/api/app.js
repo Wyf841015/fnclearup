@@ -49,13 +49,29 @@ export async function handleScan(req, res) {
 export async function handleDelete(req, res) {
   const data = await parseBody(req);
   const deleteUsers = !!data.delete_users;
-  const paths = (data.paths || []).filter(p => isSafePath(p));
+  const deleteAppshare = !!data.delete_appshare_residual;
+  const rawPaths = data.paths || [];
+  const paths = rawPaths.filter(p => isSafePath(p));
+  const skipped = rawPaths.length - paths.length;
   const deleted = [], failed = [], usersDeleted = [], usersFailed = [];
   for (const p of paths) {
     try {
       await execCmd('chattr', ['-i', p], 5000).catch(() => {});
       if (existsSync(p)) {
-        const r = await execCmd('rm', ['-rf', p], 60000);
+        // If deleteAppshare, also remove sibling @appshare/.../app directory
+        let r;
+        if (deleteAppshare) {
+          const m = p.match(/^(\/(?:mnt\/)?vol\d+\/\d+\/)(.+)/);
+          if (m) {
+            const appsharePath = `${m[1]}@appshare/${m[2]}`;
+            await execCmd('chattr', ['-i', appsharePath], 5000).catch(() => {});
+            if (existsSync(appsharePath)) {
+              const ra = await execCmd('rm', ['-rf', appsharePath], 60000);
+              if (ra.code !== 0) failed.push(`${appsharePath} (appshare)`);
+            }
+          }
+        }
+        r = await execCmd('rm', ['-rf', p], 60000);
         if (r.code === 0) deleted.push(p);
         else failed.push(p);
       }
@@ -74,5 +90,5 @@ export async function handleDelete(req, res) {
       } else usersFailed.push(username);
     }
   }
-  sendJSON(res, 200, { deleted, failed, total: deleted.length, failures: failed.length, users_deleted: usersDeleted, users_failed: usersFailed, success: true });
+  sendJSON(res, 200, { deleted, failed, skipped, total: deleted.length, failures: failed.length, users_deleted: usersDeleted, users_failed: usersFailed, success: true });
 }
