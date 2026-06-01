@@ -419,3 +419,37 @@ describe('API: 404 Handling', () => {
     assert.strictEqual(status, 404);
   });
 });
+
+// ══════════════════════════════
+// Frontend HTML/JS contract
+// ══════════════════════════════
+describe('Frontend: Modal onclick functions exist in main.js', () => {
+  it('all modal confirm buttons reference exported functions', async () => {
+    const fs = await import('node:fs');
+    const html = fs.readFileSync(join(UI_DIR, 'index.html'), 'utf-8');
+    const main = fs.readFileSync(join(UI_DIR, 'main.js'), 'utf-8');
+
+    // Extract every inline onclick="fnName(...)" — skip raw expression handlers like if(...)/this.x/event.x
+    const onclickRegex = /onclick="([a-zA-Z_$][\w$]*)\s*\([^"]*\)"/g;
+    const STATEMENT_KEYWORDS = new Set(['if','for','while','return','this','event','document','window']);
+    const fns = new Set();
+    let m;
+    while ((m = onclickRegex.exec(html)) !== null) {
+      if (STATEMENT_KEYWORDS.has(m[1])) continue;
+      fns.add(m[1]);
+    }
+
+    // For each onclick fn, assert it appears in the exports block OR is defined before use
+    // (doXxx is the executed function; confirmXxx is the entry that opens the modal)
+    for (const fn of fns) {
+      // Allow closeModal/hideXxx which are simple toggles; just check they are defined
+      assert.ok(main.includes(`function ${fn}`) || main.includes(`${fn}:`), `function ${fn} not defined in main.js`);
+      // And that the function is reachable: either in exports block, or it's an external API like closeModal
+      // exports block items are comma-separated across multiple lines — check the substring exists as a list item
+      const exportsBlock = main.split('const exports')[1] || '';
+      const isExported = new RegExp(`(?:^|\\n|,\\s*|\\s)${fn}\\s*[,}]`).test(exportsBlock);
+      const isBuiltin = ['closeModal', 'showSponsorModal', 'showSponsorImgFull'].includes(fn);
+      assert.ok(isExported || isBuiltin, `function ${fn} is not exported to window and not a builtin`);
+    }
+  });
+});
