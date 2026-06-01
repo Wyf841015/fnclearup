@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { sendJSON, execCmd, parseBody, formatBytes } from '../lib/util.js';
+import { sendJSON, execCmd, parseBody, formatBytes, isSafePath } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
 import { getHashPool } from '../../dup_hash_pool.js';
 
@@ -28,6 +28,10 @@ export async function handleDupScan(req, res) {
   }
   if (!scanPath || !existsSync(scanPath)) {
     sendJSON(res, 400, { error: scanPath ? `目录不存在: ${scanPath}` : '无效的扫描路径', success: false });
+    return;
+  }
+  if (!isSafePath(scanPath)) {
+    sendJSON(res, 403, { error: '路径越界：仅允许 /vol* 下的目录', success: false });
     return;
   }
   const jobId = `dup_${randomUUID().slice(0, 8)}`;
@@ -259,7 +263,8 @@ export function handleDupJobs(req, res) {
 // POST /api/dup/delete
 export async function handleDupDelete(req, res) {
   const data = await parseBody(req);
-  const files = data.files || [];
+  const files = (data.files || []).filter(p => isSafePath(p));
+  const skipped = (data.files || []).length - files.length;
   const mode = data.mode || 'trash';
   let deleted = 0;
   const failed = [];
@@ -289,7 +294,7 @@ export async function handleDupDelete(req, res) {
       deleted++;
     } catch (e) { failed.push({ file: fp, reason: e.message }); }
   }
-  sendJSON(res, 200, { deleted, failed, success: true });
+  sendJSON(res, 200, { deleted, failed, skipped, total: deleted.length, failures: failed.length, success: true });
 }
 
 // POST /api/dup/export
@@ -297,7 +302,10 @@ export async function handleDupExport(req, res) {
   const data = await parseBody(req);
   const jobId = data.jobId;
   const filterHash = data.hash || '';
-  const outDir = data.outputDir || join(DUP_STATE_DIR, 'exports');
+  // Whitelist outputDir: must be under DATA_DIR (or its subdir 'exports')
+  const defaultOutDir = join(DUP_STATE_DIR, 'exports');
+  const requestedOut = data.outputDir || defaultOutDir;
+  const outDir = isSafePath(requestedOut) ? requestedOut : defaultOutDir;
   let duplicates = [];
   if (data.duplicates && Array.isArray(data.duplicates)) {
     // Frontend sends raw duplicates data directly
@@ -318,10 +326,22 @@ export async function handleDupExport(req, res) {
     const hShort = (g.hash || 'unknown').slice(0, 8);
     const expPath = join(outDir, `dup_${hShort}`);
     mkdirSync(expPath, { recursive: true });
+    // CSV injection prevention: prefix leading =, +, -, @, \t, \r with single-quote
+    const sanitize = (v) => {
+      const s = String(v ?? '');
+      return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+    };
+    const csvEscape = (v) => {
+      const s = sanitize(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
     const csvLines = ['路径,文件名,大小,扩展名,艺术家,标题,专辑'];
     for (const f of g.files) {
       const id3 = f.id3 || {};
-      csvLines.push(`"${f.path}","${basename(f.path)}",${f.size},"${f.ext}","${(id3.artist||'').replace(/"/g,'""')}","${(id3.title||'').replace(/"/g,'""')}","${(id3.album||'').replace(/"/g,'""')}"`);
+      csvLines.push([
+        csvEscape(f.path), csvEscape(basename(f.path)), f.size, csvEscape(f.ext),
+        csvEscape(id3.artist||''), csvEscape(id3.title||''), csvEscape(id3.album||'')
+      ].join(','));
     }
     writeFileSync(join(expPath, 'report.csv'), '\uFEFF' + csvLines.join('\n'));
     const readme = [

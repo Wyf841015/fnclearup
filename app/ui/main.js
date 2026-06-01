@@ -206,6 +206,17 @@ async function doDelete() {
   const delUsers=!!$('deleteUsersCheckbox')?.checked;
   const delAppshare=!!$('deleteAppshareCheckbox')?.checked;
   $('confirmModal')?.classList.remove('visible');
+  // P0-6: Strong warning before deleting users
+  if (delUsers) {
+    if (!confirm('⚠️ 危险操作：将删除系统用户及其家目录！\n\n确定要继续吗？')) {
+      showToast('已取消', 'info');
+      return;
+    }
+    if (!confirm('最后确认：用户家目录会被永久删除，无法恢复！\n\n继续吗？')) {
+      showToast('已取消', 'info');
+      return;
+    }
+  }
   try {
     const r=await API.post('api/delete',{paths:allPaths,delete_users:delUsers,delete_appshare_residual:delAppshare});
     const msg=`已删除 ${r.total||0} 个，失败 ${r.failures||0} 个`;
@@ -362,10 +373,17 @@ function updateDockerSelectInfo() {
 function confirmDeleteDocker() {
   const cbs=document.querySelectorAll('.docker-cb:checked');
   if(cbs.length===0){showToast('请选择孤立卷','error');return;}
-  doDeleteDocker();
+  showDockerVolDeleteModal();
 }
+function showDockerVolDeleteModal() {
+  const count = document.querySelectorAll('.docker-cb:checked').length;
+  $('dockerVolDeleteCount').textContent = count;
+  $('dockerVolDeleteModal')?.classList.add('visible');
+}
+function hideDockerVolDeleteModal() { $('dockerVolDeleteModal')?.classList.remove('visible'); }
 async function doDeleteDocker() {
   const vols=[...document.querySelectorAll('.docker-cb:checked')].map(cb=>cb.value);
+  hideDockerVolDeleteModal();
   try {
     const r=await API.post('api/volumes/delete',{volumes:vols});
     showToast(`已删除 ${r.total||0} 个卷`,'success');
@@ -422,10 +440,17 @@ function updateNetworkSelectInfo() {
 function confirmDeleteNetworks() {
   const cbs=document.querySelectorAll('.network-cb:checked');
   if(cbs.length===0){showToast('请选择网络','error');return;}
-  doDeleteNetworks();
+  showDockerNetDeleteModal();
 }
+function showDockerNetDeleteModal() {
+  const count = document.querySelectorAll('.network-cb:checked').length;
+  $('dockerNetDeleteCount').textContent = count;
+  $('dockerNetDeleteModal')?.classList.add('visible');
+}
+function hideDockerNetDeleteModal() { $('dockerNetDeleteModal')?.classList.remove('visible'); }
 async function doDeleteNetworks() {
   const nets=[...document.querySelectorAll('.network-cb:checked')].map(cb=>cb.value);
+  hideDockerNetDeleteModal();
   try {
     const r=await API.post('api/networks/delete',{networks:nets});
     showToast(`已删除 ${r.total||0} 个网络`,'success');
@@ -485,10 +510,17 @@ function updateImagesSelectInfo() {
 function confirmDeleteImages() {
   const cbs=document.querySelectorAll('.image-cb:checked');
   if(cbs.length===0){showToast('请选择镜像','error');return;}
-  doDeleteImages();
+  showDockerImgDeleteModal();
 }
+function showDockerImgDeleteModal() {
+  const count = document.querySelectorAll('.image-cb:checked').length;
+  $('dockerImgDeleteCount').textContent = count;
+  $('dockerImgDeleteModal')?.classList.add('visible');
+}
+function hideDockerImgDeleteModal() { $('dockerImgDeleteModal')?.classList.remove('visible'); }
 async function doDeleteImages() {
   const ids=[...document.querySelectorAll('.image-cb:checked')].map(cb=>cb.value);
+  hideDockerImgDeleteModal();
   try {
     const r=await API.post('api/images/delete',{images:ids});
     showToast(`已删除 ${r.total||0} 个镜像`,'success');
@@ -548,13 +580,21 @@ function updateTempSelectInfo() {
 function confirmDeleteTemp() {
   const cbs=document.querySelectorAll('.temp-cb:checked');
   if(cbs.length===0){showToast('请选择文件','error');return;}
-  doDeleteTemp();
+  showTempDeleteModal();
 }
+function showTempDeleteModal() {
+  const count = document.querySelectorAll('.temp-cb:checked').length;
+  $('tempDeleteCount').textContent = count;
+  $('tempDeleteModal')?.classList.add('visible');
+}
+function hideTempDeleteModal() { $('tempDeleteModal')?.classList.remove('visible'); }
 async function doDeleteTemp() {
   const paths=[...document.querySelectorAll('.temp-cb:checked')].map(cb=>cb.value);
+  const mode=document.querySelector('input[name="tempDeleteMode"]:checked')?.value||'trash';
+  hideTempDeleteModal();
   try {
-    const r=await API.post('api/temp/delete',{paths});
-    showToast(`已删除 ${r.total||0} 个文件`,'success');
+    const r=await API.post('api/temp/delete',{paths,mode});
+    showToast(`已处理 ${r.total||0} 个（跳过 ${r.skipped||0}）`,'success');
     await doTempScan();
   } catch(e){showToast('删除失败: '+e.message,'error');}
 }
@@ -916,6 +956,14 @@ function stopEmptyScan() {
   $('emptyStopBtn').style.display = 'none';
   $('emptyProgress').classList.remove('visible');
   $('empty-status').textContent = '';
+  // Call backend to actually stop the scan
+  if (EmptyDirState.jobId) {
+    API.post('api/empty_dir/stop', { jobId: EmptyDirState.jobId }).catch(() => {});
+  }
+  // Reset all state to prevent stale pollEmptyProgress from continuing
+  EmptyDirState.jobId = null;
+  EmptyDirState.startTime = null;
+  EmptyDirState.items = [];
   showToast('已停止扫描', 'info');
 }
 

@@ -7,7 +7,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import { request } from 'node:http';
-import { existsSync, mkdirSync, writeFileSync, unlinkSync, rmdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, unlinkSync, rmdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,18 +51,15 @@ function setupTestData() {
 }
 
 function cleanupTestData() {
-  try { unlinkSync(join(TEST_TMP, 'test1.txt')); } catch {}
-  try { unlinkSync(join(TEST_TMP, 'test2.txt')); } catch {}
-  try { unlinkSync(join(TEST_TMP, 'old', 'old_file.txt')); } catch {}
-  try { rmdirSync(join(TEST_TMP, 'old')); } catch {}
-  try { rmdirSync(TEST_TMP); } catch {}
+  // Best-effort recursive cleanup of TEST_TMP (incl. subdirs dup_test, exports, data)
+  try { rmSync(TEST_TMP, { recursive: true, force: true }); } catch {}
 }
 
 // Start server
 before(async () => {
   setupTestData();
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, PORT: String(PORT), TRM_PKGVAR: TEST_TMP };
+    const env = { ...process.env, PORT: String(PORT), TRM_PKGVAR: TEST_TMP, TRM_FNCLEARUP_TEST: '1' };
     server = spawn(process.execPath, ['app/ui/server.js'], { cwd: join(dirname(fileURLToPath(import.meta.url)), '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
     let started = false;
     const timeout = setTimeout(() => { if (!started) reject(new Error('Server start timeout')); }, 10000);
@@ -344,6 +341,75 @@ describe('API: Duplicate File Scan', () => {
   it('POST /api/dup/export without jobId returns error', async () => {
     const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/export', {});
     assert.strictEqual(status, 400);
+  });
+});
+
+describe('API: Empty Dir Scan', () => {
+  const emptyTestDir = join(TEST_TMP, 'empty_test');
+
+  before(() => {
+    if (!existsSync(emptyTestDir)) mkdirSync(emptyTestDir, { recursive: true });
+    mkdirSync(join(emptyTestDir, 'empty_a'), { recursive: true });
+    mkdirSync(join(emptyTestDir, 'empty_b'), { recursive: true });
+    writeFileSync(join(emptyTestDir, 'has_file.txt'), 'data');
+    mkdirSync(join(emptyTestDir, 'has_file_dir'), { recursive: true });
+  });
+
+  it('POST /api/empty_dir/scan starts scan and completes', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/empty_dir/scan', { path: emptyTestDir });
+    assert.strictEqual(status, 200);
+    assert.ok(data.jobId);
+    // Poll for completion
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const res = await httpRequest('GET', `/app/fnclearup/api/empty_dir/status?jobId=${data.jobId}`);
+      if (res.data && res.data.status === 'complete') {
+        assert.ok(res.data.total >= 2, 'should find at least 2 empty dirs');
+        return;
+      }
+    }
+    assert.fail('empty_dir scan did not complete in time');
+  });
+
+  it('POST /api/empty_dir/scan with /etc path is rejected (whitelist)', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/empty_dir/scan', { path: '/etc' });
+    assert.strictEqual(status, 403);
+    assert.ok(data.error);
+  });
+
+  it('POST /api/empty_dir/delete with empty paths returns zero', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/empty_dir/delete', { paths: [] });
+    assert.strictEqual(status, 200);
+    assert.strictEqual(data.total, 0);
+  });
+});
+
+describe('API: Path Whitelist (Security)', () => {
+  it('POST /api/dup/scan with /etc is rejected', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', path: '/etc' });
+    assert.strictEqual(status, 403);
+    assert.ok(data.error);
+  });
+
+  it('POST /api/dup/delete with /etc/passwd is rejected (whitelist)', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/delete', { files: ['/etc/passwd'], mode: 'permanent' });
+    assert.strictEqual(status, 200);
+    // returns deleted: 0 because path was filtered out
+    assert.strictEqual(data.deleted, 0);
+    assert.ok(data.skipped >= 1, 'should report skipped paths');
+  });
+
+  it('POST /api/temp/delete with /etc/passwd is rejected (whitelist)', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/temp/delete', { paths: ['/etc/passwd'], mode: 'permanent' });
+    assert.strictEqual(status, 200);
+    assert.strictEqual(data.total, 0);
+    assert.ok(data.skipped >= 1);
+  });
+
+  it('GET /api/browse with /etc is rejected (whitelist)', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/etc');
+    assert.strictEqual(status, 403);
+    assert.ok(data.error);
   });
 });
 

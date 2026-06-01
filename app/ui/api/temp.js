@@ -1,7 +1,34 @@
-import { existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, lstatSync, unlinkSync, renameSync, cpSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { join, basename, dirname, extname } from 'node:path';
 import { sendJSON, execCmd, parseBody, formatBytes } from '../lib/util.js';
 import { TEMP_DIRS } from '../lib/config.js';
+
+// Whitelist: only allow deletion of paths inside /tmp or /var/tmp
+function isTempPath(p) {
+  if (typeof p !== 'string') return false;
+  if (p === '/tmp' || p === '/var/tmp' ||
+      p.startsWith('/tmp/') || p.startsWith('/var/tmp/')) return true;
+  // Test fixture allowlist
+  if (process.env.TRM_FNCLEARUP_TEST === '1' && p.startsWith('/tmp/fnclearup_test')) return true;
+  return false;
+}
+
+// Move path into a trash dir; create unique name on conflict
+function moveToTrash(p) {
+  const trashDir = '/tmp/.@#local/trash';
+  const dest = join(trashDir, p.replace(/^\/+/, ''));
+  mkdirSync(dirname(dest), { recursive: true });
+  let finalDest = dest;
+  let counter = 1;
+  while (existsSync(finalDest)) {
+    const ext2 = extname(dest);
+    finalDest = join(dirname(dest), `${basename(dest).slice(0, ext2.length || basename(dest).length)}_${counter}${ext2}`);
+    counter++;
+  }
+  try { renameSync(p, finalDest); }
+  catch (e2) { if (e2.code === 'EXDEV') { cpSync(p, finalDest); unlinkSync(p); } else throw e2; }
+  return finalDest;
+}
 
 // GET /api/temp/scan
 export function handleTempScan(req, res) {
@@ -14,8 +41,9 @@ export function handleTempScan(req, res) {
     for (const entry of entries) {
       const full = join(dir, entry);
       try {
-        const st = statSync(full);
-        const ageHours = (Date.now() / 1000 - st.atimeMs / 1000) / 3600;
+        const st = lstatSync(full);  // lstatSync: don't follow symlinks (avoid deleting link target)
+        // Use mtime (reliable) instead of atime (unreliable on tmpfs/relatime)
+        const ageHours = (Date.now() - st.mtimeMs) / 3600000;
         if (ageHours < 24) continue;
         const isDir = st.isDirectory();
         const item = { path: full, name: entry, dir, age_hours: Math.round(ageHours * 10) / 10, size: st.size, size_str: formatBytes(st.size), is_dir: isDir, type: isDir ? 'dir' : 'file' };
@@ -36,19 +64,33 @@ export function handleTempScan(req, res) {
 // POST /api/temp/delete
 export async function handleTempDelete(req, res) {
   const data = await parseBody(req);
-  const paths = data.paths || [];
+  const rawPaths = data.paths || [];
+  const mode = data.mode || 'trash';
   const deleted = [], failed = [], errors = [];
+  // Filter: only paths under /tmp or /var/tmp
+  const paths = rawPaths.filter(p => isTempPath(p));
+  const skipped = rawPaths.length - paths.length;
   for (const p of paths) {
     try {
-      if (existsSync(p)) {
-        const st = statSync(p);
-        if (st.isDirectory()) {
+      if (!existsSync(p)) continue;
+      const st = lstatSync(p);
+      if (st.isDirectory()) {
+        if (mode === 'permanent') {
           const r = await execCmd('rm', ['-rf', p], 30000);
           if (r.code !== 0) throw new Error(r.stderr);
-        } else unlinkSync(p);
+        } else {
+          moveToTrash(p);
+        }
+      } else {
+        // File
+        if (mode === 'permanent') {
+          unlinkSync(p);
+        } else {
+          moveToTrash(p);
+        }
       }
       deleted.push(p);
     } catch (e) { failed.push(p); errors.push(`${p}: ${e.message}`); }
   }
-  sendJSON(res, 200, { deleted, failed, total: deleted.length, failures: failed.length, errors, success: true });
+  sendJSON(res, 200, { deleted, failed, skipped, total: deleted.length, failures: failed.length, errors, success: true });
 }

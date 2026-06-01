@@ -1,8 +1,12 @@
 {
   "name": "fnclearup",
-  "version": "0.7.0",
+  "version": "0.7.2",
   "description": "FnOS 系统清理工具 - Node.js 重写版",
   "type": "module",
   "main": "app/ui/server.js",
-  "private": true
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/test_api.js",
+    "start": "node app/ui/server.js"
+  }
 }
