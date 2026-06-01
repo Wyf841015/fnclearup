@@ -4,6 +4,19 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.7.5 更新
+
+- **5 个 modal「确认删除」按钮修复** — 之前调错函数（`confirmXxx` 而非 `doXxx`），点击只重开 modal 不执行删除
+- **安全加固 (P0/P1)** — 4 个删除端点加 `isSafePath` 白名单，handleBrowse 加 `/vol*` 白名单，dup export 加 CSV 注入防护
+- **删除用户强警告** — 双重 `confirm()` 弹窗 + ⚠️ 红色警告
+- **Docker 删除确认** — 3 个 docker 删除（卷/网络/镜像）加 modal-overlay 确认弹窗
+- **empty_dir 重写** — 加 stop API、跳过 `@app*` 系统目录、流式扫描 + state file 保留（修复 complete 状态提前消失 bug）
+- **飞书推送重构** — 抽 `cmd/lib/feishu_push.sh` 公共库，install/upgrade_callback 各自从 65 行简化为 12 行
+- **数据隐私清理** — 删除 `app/data/` 4 个测试 JSON（含真实扫描路径）
+- **CORS 环境变量** — 改用 `CORS_ORIGINS` 逗号分隔
+- **删除冗余代码** — `app/ui/utils.js` 3 个未使用函数清理
+- **测试 39/39 通过** — 新增路径遍历、CSV 注入、HTML onclick 契约测试
+
 ## v0.7.2 更新
 
 - **空目录清理** — 新增「去空」选项卡，扫描目录下的空目录，一键清理（单删/批量删/回收站/永久删）
@@ -102,6 +115,17 @@
 | `/api/empty_dir/delete` | POST | 删除空目录 |
 
 ## 版本历史
+
+### v0.7.5 (2026-06-02)
+
+- 修复 5 个 modal「确认」按钮 onclick 调错函数（confirmXxx → doXxx）
+- P0/P1 安全修复：4 个删除端点 isSafePath 白名单、handleBrowse /vol* 白名单、CSV 注入防护
+- 删除用户强警告（双重 confirm）+ 3 个 docker 删除加 modal 确认
+- empty_dir 重写：stop API、跳过 @app*、流式扫描、state file 修复 complete 状态保留
+- 飞书推送重构为 cmd/lib/feishu_push.sh 公共库
+- 删除 app/data/ 隐私数据 + app/ui/utils.js 冗余代码
+- CORS 改 CORS_ORIGINS 环境变量
+- 测试 39/39 通过（新增路径遍历、CSV 注入、HTML onclick 契约测试）
 
 ### v0.7.2 (2026-05-30)
 
