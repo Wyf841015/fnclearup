@@ -290,7 +290,7 @@
       <p style="color:var(--color-danger);font-size:12px;margin-top:-4px">⚠️ 如卷是 bind mount，宿主机目录不会被清理（需手动删除）</p>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideDockerVolDeleteModal()">取消</button>
-        <button type="button" class="btn btn-danger" onclick="confirmDeleteDocker()">确认删除</button>
+        <button type="button" class="btn btn-danger" onclick="doDeleteDocker()">确认删除</button>
       </div>
     </div>
   </div>
@@ -303,7 +303,7 @@
       <p style="color:var(--color-danger);font-size:12px;margin-top:-4px">⚠️ 某些 compose stack 即使容器停止仍依赖其网络</p>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideDockerNetDeleteModal()">取消</button>
-        <button type="button" class="btn btn-danger" onclick="confirmDeleteNetworks()">确认删除</button>
+        <button type="button" class="btn btn-danger" onclick="doDeleteNetworks()">确认删除</button>
       </div>
     </div>
   </div>
@@ -315,7 +315,7 @@
       <p>确定删除 <strong id="dockerImgDeleteCount">0</strong> 个未使用 Docker 镜像？</p>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideDockerImgDeleteModal()">取消</button>
-        <button type="button" class="btn btn-danger" onclick="confirmDeleteImages()">确认删除</button>
+        <button type="button" class="btn btn-danger" onclick="doDeleteImages()">确认删除</button>
       </div>
     </div>
   </div>
@@ -331,7 +331,7 @@
       </div>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideTempDeleteModal()">取消</button>
-        <button type="button" class="btn btn-danger" onclick="confirmDeleteTemp()">确认清理</button>
+        <button type="button" class="btn btn-danger" onclick="doDeleteTemp()">确认清理</button>
       </div>
     </div>
   </div>
