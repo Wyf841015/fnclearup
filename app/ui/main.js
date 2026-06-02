@@ -1463,6 +1463,7 @@ async function trashScan() {
     if (!r.trashList || r.trashList.length === 0) {
       list.innerHTML = '<div class="kpi-info">✨ 没有任何用户的 trash 目录（可能还没被用过回收站功能）</div>';
     } else {
+      // Desktop: <table>; Mobile (CSS hides table): card list
       let html = '<div class="data-table"><table><thead><tr><th>卷</th><th>UID</th><th>路径</th><th>文件数</th><th>目录数</th><th>大小</th><th>最老 mtime</th></tr></thead><tbody>';
       for (const t of r.trashList) {
         const mtime = t.mtime ? new Date(t.mtime).toLocaleString('zh-CN') : '?';
@@ -1477,6 +1478,24 @@ async function trashScan() {
         </tr>`;
       }
       html += '</tbody></table></div>';
+      // Mobile cards
+      html += '<div class="trash-mobile-card">';
+      for (const t of r.trashList) {
+        const mtime = t.mtime ? new Date(t.mtime).toLocaleString('zh-CN') : '?';
+        html += `<div class="trash-card">
+          <div class="trash-card-head">
+            <span style="font-weight:600">${_escHtml(t.vol)} · UID ${_escHtml(t.uid)}</span>
+            <span style="color:var(--color-danger);font-weight:600">${_formatBytes(t.size)}</span>
+          </div>
+          <div class="trash-card-path">${_escHtml(t.path)}</div>
+          <div class="trash-card-stats">
+            <span>📄 <strong>${t.files}</strong> 文件</span>
+            <span>📁 <strong>${t.dirs}</strong> 目录</span>
+            <span>🕒 ${_escHtml(mtime)}</span>
+          </div>
+        </div>`;
+      }
+      html += '</div>';
       list.innerHTML = html;
     }
 
@@ -1529,9 +1548,9 @@ function trashClean(ageDays) {
   if (willDelete === 0) {
     pathsEl.innerHTML = '<em style="color:var(--color-text-secondary)">当前没有可清理的内容</em>';
   } else {
-    let ph = '<ul style="margin:0;padding-left:20px">';
+    let ph = '<ul style="margin:0;padding-left:20px;list-style:none">';
     for (const t of (_trashLastScan.trashList || [])) {
-      ph += `<li><code>${_escHtml(t.path)}</code> · ${_formatBytes(t.size)}</li>`;
+      ph += `<li style="margin-bottom:6px"><code style="word-break:break-all;font-size:12px">${_escHtml(t.path)}</code><br><span style="color:var(--color-text-secondary);font-size:12px">${_escHtml(t.vol)} · UID ${_escHtml(t.uid)} · ${_formatBytes(t.size)}</span></li>`;
     }
     ph += '</ul>';
     pathsEl.innerHTML = ph;
