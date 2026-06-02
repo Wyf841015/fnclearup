@@ -125,12 +125,6 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
 .btn-sm{padding:5px 12px;font-size:12px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 
-/* Trash KPI: auto-fit responsive grid (5 cards, 3 on tablet, 1 on phone) */
-.tab-panel[data-panel="trash"] .kpi-row{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
-
-/* Trash data table → card layout on small screens */
-#trash-list .trash-mobile-card{display:none}
-
 /* File row */
 .file-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--color-border);transition:var(--transition)}
 .file-row:hover{background:var(--color-hover-bg)}
@@ -314,10 +308,7 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   .section-header .section-actions{flex-wrap:wrap}
   .modal{padding:24px;max-width:95%}
   .sponsor-qr-row{flex-direction:column;align-items:center}
-  /* Trash: 2-col KPI + wrap buttons */
-  .tab-panel[data-panel="trash"] .kpi-row{grid-template-columns:repeat(2,1fr);gap:10px}
-  .tab-panel[data-panel="trash"] .kpi-card{padding:12px 14px;gap:10px}
-  .tab-panel[data-panel="trash"] .kpi-card:nth-child(n+5){grid-column:span 1}
+  /* Trash: 跟其他面板一致 3 列 + 按钮可换行 */
   .tab-panel[data-panel="trash"] .section-header .btn{flex:1 1 auto;min-width:0;justify-content:center;padding:8px 10px;font-size:12px}
   .tab-panel[data-panel="trash"] .section-header .btn span:last-child{overflow:hidden;text-overflow:ellipsis}
 }
@@ -360,11 +351,7 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   .dup-file-item{flex-wrap:wrap}
   .dup-group-header{flex-wrap:wrap;gap:6px}
   .dup-group-delete-btn{padding:4px 6px}
-  /* Trash: 1-col KPI + 2-col buttons + table→card */
-  .tab-panel[data-panel="trash"] .kpi-row{grid-template-columns:1fr;gap:8px}
-  .tab-panel[data-panel="trash"] .kpi-card{padding:10px 12px;gap:10px}
-  .tab-panel[data-panel="trash"] .kpi-icon{width:36px;height:36px;font-size:18px}
-  .tab-panel[data-panel="trash"] .kpi-value{font-size:20px}
+  /* Trash: 跟其他面板一致 3 列 + 按钮 2 列网格 + 表格→卡片 */
   .tab-panel[data-panel="trash"] .section-header{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   .tab-panel[data-panel="trash"] .section-header .btn{padding:7px 6px;font-size:11px;gap:4px}
   .tab-panel[data-panel="trash"] .section-header .btn#trashScanBtn{grid-column:span 2}
