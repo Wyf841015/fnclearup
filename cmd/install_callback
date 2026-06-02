@@ -11,6 +11,7 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
 # shellcheck source=/dev/null
 source "${LIB_DIR}/feishu_push.sh"
 
-feishu_push_install "fnclearup" "${TRIM_APPVER}"
+# 飞书安装统计已暂时停用（凭据安全考虑），恢复时取消下面这行注释即可
+# feishu_push_install "fnclearup" "${TRIM_APPVER}"
 
 exit 0
