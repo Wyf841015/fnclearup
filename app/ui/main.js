@@ -1285,20 +1285,99 @@ async function showSysCleanManifests() {
     list.innerHTML = r.manifests.map(m => {
       const t = new Date(m.mtime);
       const tstr = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')} ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
-      return `<div style="padding:8px;border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:center;gap:12px">
+      // data-* attrs for download handler (avoid inline JS with embedded user paths)
+      return `<div class="sysclean-manifest-row" style="padding:8px;border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:center;gap:12px" data-path="${escHtml(m.path)}" data-name="${escHtml(m.name)}">
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;color:var(--color-text-muted)">${tstr}</div>
           <div style="font-size:11px;color:var(--color-text-secondary);word-break:break-all" title="${escHtml(m.path)}">${escHtml(m.name)}</div>
         </div>
         <span style="font-size:11px;color:var(--color-text-secondary);white-space:nowrap">${escHtml(m.size_str)}</span>
-        <a href="api/sysclean/manifest?path=${encodeURIComponent(m.path)}" target="_blank" download="${escHtml(m.name)}" class="btn btn-outline" style="font-size:11px;padding:4px 8px">下载</a>
+        <button type="button" class="btn btn-outline sysclean-manifest-dl" style="font-size:11px;padding:4px 8px">下载</button>
+        <button type="button" class="btn btn-outline sysclean-manifest-view" style="font-size:11px;padding:4px 8px" title="在弹窗里查看 manifest JSON 内容">查看</button>
       </div>`;
     }).join('');
+    // Wire up download/view handlers (avoid inline onclick with user-controlled paths)
+    list.querySelectorAll('.sysclean-manifest-dl').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const row = e.target.closest('.sysclean-manifest-row');
+        if (!row) return;
+        downloadSysCleanManifest(row.dataset.path, row.dataset.name);
+      });
+    });
+    list.querySelectorAll('.sysclean-manifest-view').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const row = e.target.closest('.sysclean-manifest-row');
+        if (!row) return;
+        viewSysCleanManifest(row.dataset.path, row.dataset.name);
+      });
+    });
   } catch (e) {
     list.innerHTML = `<div style="color:var(--color-danger)">❌ 加载失败: ${escHtml(e.message)}</div>`;
   }
 }
 function hideSysCleanManifests() { $('syscleanManifestsModal')?.classList.remove('visible'); }
+
+// Download a manifest via fetch → Blob → temporary <a download>. No popup blocker concerns
+// since we never open a new window.
+async function downloadSysCleanManifest(path, name) {
+  try {
+    const url = `api/sysclean/manifest?path=${encodeURIComponent(path)}`;
+    const res = await fetch(url, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let msg = `下载失败 (HTTP ${res.status})`;
+      try { const j = await res.json(); if (j.error) msg = `下载失败: ${j.error}`; } catch {}
+      showToast(msg, 'error', 5000);
+      return;
+    }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = name || 'manifest.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    showToast(`✅ 已下载 ${name}`, 'success', 3000);
+  } catch (e) {
+    showToast('下载失败: ' + e.message, 'error', 5000);
+  }
+}
+
+// View a manifest inline (in a sub-modal) so users can preview without downloading
+async function viewSysCleanManifest(path, name) {
+  // Open a new modal layered on top
+  let m = $('syscleanManifestViewer');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'syscleanManifestViewer';
+    m.className = 'modal-overlay';
+    m.innerHTML = `<div class="modal modal-md" style="max-width:880px;max-height:80vh;display:flex;flex-direction:column">
+      <h3><span>👁</span><span>Manifest 内容</span></h3>
+      <pre id="syscleanManifestViewerPre" style="flex:1;overflow:auto;background:var(--color-bg-secondary);padding:12px;border-radius:6px;font-size:11px;line-height:1.5;margin:8px 0;white-space:pre-wrap;word-break:break-all"></pre>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('syscleanManifestViewer').classList.remove('visible')">关闭</button>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  const pre = $('syscleanManifestViewerPre');
+  if (pre) pre.textContent = '⏳ 加载中...';
+  m.classList.add('visible');
+  try {
+    const res = await fetch(`api/sysclean/manifest?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let msg = `加载失败 (HTTP ${res.status})`;
+      try { const j = await res.json(); if (j.error) msg = `加载失败: ${j.error}`; } catch {}
+      if (pre) pre.textContent = msg;
+      return;
+    }
+    const data = await res.json();
+    if (pre) pre.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    if (pre) pre.textContent = '❌ ' + e.message;
+  }
+}
 
 async function doSysCleanDelete() {
   hideSysCleanDeleteModal();
@@ -1381,6 +1460,7 @@ function init() {
     doSysCleanScan, renderSysCleanList, selectAllSysClean, selectAllSysCleanRecommended,
     updateSysCleanSelectInfo, showSysCleanDeleteModal, hideSysCleanDeleteModal, doSysCleanDelete,
     toggleSysCleanBackup, getSysCleanBackupEnabled, showSysCleanManifests, hideSysCleanManifests,
+    downloadSysCleanManifest, viewSysCleanManifest,
   };
   Object.assign(window, exports);
 
