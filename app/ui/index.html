@@ -279,8 +279,16 @@
           <h2><span>🧹</span><span>系统缓存清理</span></h2>
           <div class="section-actions">
             <button type="button" class="btn btn-primary" id="syscleanScanBtn" onclick="doSysCleanScan()"><span>🔍</span><span>扫描缓存</span></button>
+            <button type="button" class="btn btn-outline" onclick="selectAllSysCleanRecommended()" title="勾选全部低风险、auto-rebuild 的安全项（apt/npm/pip/uv/.gz 等）">✅ 推荐清理</button>
             <button type="button" class="btn btn-danger" id="syscleanDeleteBtn" onclick="showSysCleanDeleteModal()" disabled><span>🗑</span><span>清理选中</span></button>
-            <button type="button" class="btn btn-outline" onclick="selectAllSysCleanRecommended()">✅ 只选推荐项</button>
+            <button type="button" class="btn btn-outline" onclick="showSysCleanManifests()" title="查看历史清理清单（manifest 审计）">📜 历史清单</button>
+          </div>
+          <div class="section-options" style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--color-text-secondary)">
+              <input type="checkbox" id="syscleanBackupCb" onchange="toggleSysCleanBackup()">
+              <span>📦 清理前写 manifest（审计/回溯用）</span>
+            </label>
+            <span style="font-size:12px;color:var(--color-text-muted)">→ <code id="syscleanBackupPath">/vol*/UID/.@#local/fnclearup_pre_clean_manifest_*.json</code></span>
           </div>
           <div id="sysclean-select-info" class="select-info" style="display:none"></div>
         </div>
@@ -404,10 +412,23 @@
       <h3><span>⚠️</span><span>确认清理系统缓存</span></h3>
       <p>即将清理 <strong id="syscleanDeleteCount">0</strong> 项，可释放 <strong id="syscleanDeleteSize">0 B</strong></p>
       <div class="paths-preview" id="syscleanDeletePaths" style="max-height:200px;overflow-y:auto"></div>
+      <p id="syscleanBackupInfo" style="color:var(--color-text-secondary);font-size:12px;margin-top:8px;display:none">📦 <span id="syscleanBackupInfoText">清理前将写入 manifest 到本地审计目录</span></p>
       <p style="color:var(--color-text-secondary);font-size:12px;margin-top:8px">系统缓存删除后会在需要时自动重建（apt/npm/pip 缓存），不会影响应用功能。危险项已默认不勾选。</p>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideSysCleanDeleteModal()">取消</button>
         <button type="button" class="btn btn-danger" onclick="doSysCleanDelete()">确认清理</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 历史 manifest 弹窗 -->
+  <div class="modal-overlay" id="syscleanManifestsModal">
+    <div class="modal modal-md" style="max-width:780px">
+      <h3><span>📜</span><span>历史清理清单（manifest 审计）</span></h3>
+      <p style="color:var(--color-text-secondary);font-size:13px">每次清理前的路径/size/mtime 记录。仅供审计，不保存文件内容（缓存本来就是要清掉的）。</p>
+      <div class="paths-preview" id="syscleanManifestsList" style="max-height:340px;overflow-y:auto;margin-top:8px"></div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideSysCleanManifests()">关闭</button>
       </div>
     </div>
   </div>

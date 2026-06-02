@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { existsSync, statSync, readdirSync } from 'node:fs';
 import { SAFE_PREFIXES } from './config.js';
 
 export function formatBytes(b) {
@@ -51,6 +52,25 @@ export function isSafePath(p) {
   // Test fixture allowlist: when TRM_FNCLEARUP_TEST=1, allow /tmp/fnclearup_test paths
   if (process.env.TRM_FNCLEARUP_TEST === '1' && (n === '/tmp/fnclearup_test' || n.startsWith('/tmp/fnclearup_test/'))) return true;
   return false;
+}
+
+// Return a directory where we can safely write persistent state (manifests, logs, etc).
+// Priority:
+//   1. The user's "safer" vol1–vol10 trash (e.g. /vol3/1000/.@#local) — fnOS convention
+//   2. Any writable /volN/1000 path (even if .@#local doesn't exist — we create it)
+//   3. /var/fnclearup (admin-writable fallback)
+//   4. /tmp/fnclearup (last resort — may be wiped on reboot)
+//
+// Returns the BASE directory (e.g. /vol3/1000/.@#local). Caller is expected to mkdirSync({recursive:true}) before writing.
+export function getSafeTrashDir() {
+  const uid = process.env.UID || '1000';
+  for (let n = 1; n <= 10; n++) {
+    const userDir = `/vol${n}/${uid}`;
+    if (existsSync(userDir)) return join(userDir, '.@#local');
+  }
+  // Test mode: write manifests under /tmp/fnclearup_test/manifests to keep tests isolated
+  if (process.env.TRM_FNCLEARUP_TEST === '1') return '/tmp/fnclearup_test/manifests';
+  return '/var/fnclearup';
 }
 
 export function parseQuery(url) {
