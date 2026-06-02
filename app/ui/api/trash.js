@@ -31,12 +31,11 @@ export function isTrashPath(p) {
 
 /**
  * 扫描所有 vol × 所有 UID 的 trash 目录
- * 返回 { own: [string], other: [{path,uid,vol}] }
+ * fnclearup 以 root 运行，包含全部用户的回收站
+ * 返回 [{ path, vol, uid, files, dirs, size, mtime }]
  */
-export function getAllTrashDirs(myUid) {
-  const myUidStr = String(myUid);
-  const own = [];
-  const other = [];
+export function getAllTrashDirs() {
+  const out = [];
   for (const vol of SAFE_VOL_PREFIXES) {
     if (!existsSync(vol)) continue;
     let uids;
@@ -45,11 +44,10 @@ export function getAllTrashDirs(myUid) {
       if (!/^\d+$/.test(uid)) continue;
       const trashDir = join(vol, uid, LOCAL_TRASH, TRASH_SUBDIR);
       if (!existsSync(trashDir)) continue;
-      if (uid === myUidStr) own.push(trashDir);
-      else other.push({ path: trashDir, uid, vol });
+      out.push({ path: trashDir, vol, uid });
     }
   }
-  return { own, other };
+  return out;
 }
 
 /**
@@ -121,51 +119,43 @@ export function bucketByAge(items, now = Date.now()) {
 }
 
 /**
- * 主扫描入口
+ * 主扫描入口（root 权限，包含所有用户）
  */
 export function scanTrash() {
-  const myUid = process.getuid ? process.getuid() : 1000;
-  const { own, other } = getAllTrashDirs(myUid);
-  const myTrash = [];
+  const allDirs = getAllTrashDirs();
+  const trashList = [];
   const allItems = [];
   let totalFiles = 0, totalDirs = 0, totalSize = 0;
 
-  for (const dir of own) {
+  for (const e of allDirs) {
     let info;
-    try { info = collectDirInfo(dir, 0, 16); }
+    try { info = collectDirInfo(e.path, 0, 16); }
     catch { info = { files: 0, dirs: 0, size: 0, mtimes: [] }; }
     totalFiles += info.files;
     totalDirs += info.dirs;
     totalSize += info.size;
-    const vol = dir.split('/').slice(0, 2).join('/');
-    myTrash.push({
-      path: dir, vol, uid: String(myUid),
+    const oldest = pickOldestMtime(info.mtimes);
+    trashList.push({
+      path: e.path, vol: e.vol, uid: e.uid,
       files: info.files, dirs: info.dirs, size: info.size,
-      mtime: pickOldestMtime(info.mtimes),
+      mtime: oldest,
     });
-    if (info.mtimes.length > 0) {
+    if (oldest) {
       allItems.push({
-        path: dir, mtime: pickOldestMtime(info.mtimes),
+        path: e.path, mtime: oldest,
         size: info.size, files: info.files, dirs: info.dirs,
       });
     }
   }
 
-  const otherTrash = [];
-  for (const e of other) {
-    let info;
-    try { info = collectDirInfo(e.path, 0, 1); }  // shallow
-    catch { info = { files: 0, dirs: 0, size: 0, mtimes: [] }; }
-    otherTrash.push({
-      ...e, files: info.files, dirs: info.dirs, size: info.size,
-      mtime: pickOldestMtime(info.mtimes),
-    });
-  }
+  // 排序：按 vol 字母序，vol 内按 uid 数字序
+  trashList.sort((a, b) => {
+    if (a.vol !== b.vol) return a.vol.localeCompare(b.vol);
+    return Number(a.uid) - Number(b.uid);
+  });
 
   return {
-    myUid,
-    myTrash,
-    otherTrash,
+    trashList,
     totals: { files: totalFiles, dirs: totalDirs, size: totalSize },
     buckets: bucketByAge(allItems),
   };
@@ -217,24 +207,23 @@ function walkTree(dir, depth, maxDepth) {
 }
 
 /**
- * 清理 trash
+ * 清理 trash（root 权限，包含所有用户）
  * ageDays: 0=全部, 30/90/365=对应档位
  */
 export function cleanTrash(ageDays, withManifest = true) {
-  const myUid = process.getuid ? process.getuid() : 1000;
-  const { own } = getAllTrashDirs(myUid);
+  const allDirs = getAllTrashDirs();
   const now = Date.now();
   const threshold = ageDays > 0 ? now - ageDays * 86400000 : Infinity;
   const deleted = [];
   const failed = [];
   const itemsForManifest = [];
 
-  for (const dir of own) {
+  for (const e of allDirs) {
     let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); }
+    try { entries = readdirSync(e.path, { withFileTypes: true }); }
     catch { continue; }
-    for (const e of entries) {
-      const p = join(dir, e.name);
+    for (const ent of entries) {
+      const p = join(e.path, ent.name);
       let st;
       try { st = statSync(p); } catch { continue; }
       const mtime = st.mtime ? st.mtime.getTime() : 0;
@@ -243,9 +232,9 @@ export function cleanTrash(ageDays, withManifest = true) {
       const size = info.size;
       try {
         rmSync(p, { recursive: true, force: true });
-        deleted.push({ path: p, size, files: info.files, dirs: info.dirs });
+        deleted.push({ path: p, vol: e.vol, uid: e.uid, size, files: info.files, dirs: info.dirs });
         itemsForManifest.push({
-          path: p, size, files: info.files, dirs: info.dirs,
+          path: p, vol: e.vol, uid: e.uid, size, files: info.files, dirs: info.dirs,
           mtime: st.mtime, reason: `age>=${ageDays}d`,
         });
       } catch (err) {

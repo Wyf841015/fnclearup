@@ -1456,18 +1456,19 @@ async function trashScan() {
     $('trashKpi90').textContent = _formatBytes(b.lt365?.size || 0);
     $('trashKpi365').textContent = _formatBytes(b.gte365?.size || 0);
     $('trashKpiTotal').textContent = _formatBytes(r.totals?.size || 0);
-    $('trashKpiTopDirs').textContent = (r.myTrash || []).reduce((s, t) => s + (t.dirs || 0), 0);
+    $('trashKpiTopDirs').textContent = (r.trashList || []).reduce((s, t) => s + (t.dirs || 0), 0);
 
-    // List my trash
+    // List all trash dirs (root 包含所有用户)
     const list = $('trash-list');
-    if (!r.myTrash || r.myTrash.length === 0) {
-      list.innerHTML = '<div class="kpi-info">✨ 所有 vol 上没有自己的 trash 目录（可能还没被用过回收站功能）</div>';
+    if (!r.trashList || r.trashList.length === 0) {
+      list.innerHTML = '<div class="kpi-info">✨ 没有任何用户的 trash 目录（可能还没被用过回收站功能）</div>';
     } else {
-      let html = '<div class="data-table"><table><thead><tr><th>卷</th><th>路径</th><th>文件数</th><th>目录数</th><th>大小</th><th>最老 mtime</th></tr></thead><tbody>';
-      for (const t of r.myTrash) {
+      let html = '<div class="data-table"><table><thead><tr><th>卷</th><th>UID</th><th>路径</th><th>文件数</th><th>目录数</th><th>大小</th><th>最老 mtime</th></tr></thead><tbody>';
+      for (const t of r.trashList) {
         const mtime = t.mtime ? new Date(t.mtime).toLocaleString('zh-CN') : '?';
         html += `<tr>
           <td>${_escHtml(t.vol)}</td>
+          <td>${_escHtml(t.uid)}</td>
           <td><code>${_escHtml(t.path)}</code></td>
           <td>${t.files}</td>
           <td>${t.dirs}</td>
@@ -1479,23 +1480,9 @@ async function trashScan() {
       list.innerHTML = html;
     }
 
-    // Other UID trash (灰化)
+    // 清空"其他用户"段（已合并到 trashList）
     const other = $('trash-other');
-    if (r.otherTrash && r.otherTrash.length > 0) {
-      let oh = '<h4 style="margin-top:12px;color:var(--color-text-secondary)">👥 其他用户的 trash（仅展示，不清理）</h4>';
-      oh += '<div class="data-table"><table><thead><tr><th>用户</th><th>卷</th><th>大小</th></tr></thead><tbody>';
-      for (const t of r.otherTrash) {
-        oh += `<tr class="grayed">
-          <td>UID ${_escHtml(t.uid)}</td>
-          <td><code>${_escHtml(t.path)}</code></td>
-          <td>${_formatBytes(t.size)}</td>
-        </tr>`;
-      }
-      oh += '</tbody></table></div>';
-      other.innerHTML = oh;
-    } else {
-      other.innerHTML = '';
-    }
+    if (other) other.innerHTML = '';
 
     $('trash-status').innerHTML = '<div class="kpi-info">✅ 扫描完成：' + _formatBytes(r.totals?.size || 0) + '，其中 30+ 天可清 ' + _formatBytes(totalCleanable) + '</div>';
     $('trash-empty').style.display = 'none';
@@ -1524,7 +1511,7 @@ function trashClean(ageDays) {
   let willDelete = 0, willSize = 0;
   if (ageDays === 0) {
     willSize = _trashLastScan.totals?.size || 0;
-    willDelete = (_trashLastScan.myTrash || []).reduce((s, t) => s + (t.files || 0) + (t.dirs || 0), 0);
+    willDelete = (_trashLastScan.trashList || []).reduce((s, t) => s + (t.files || 0) + (t.dirs || 0), 0);
   } else if (ageDays === 30) {
     willSize = (b.lt90?.size || 0) + (b.lt365?.size || 0) + (b.gte365?.size || 0);
     willDelete = (b.lt90?.count || 0) + (b.lt365?.count || 0) + (b.gte365?.count || 0);
@@ -1543,7 +1530,7 @@ function trashClean(ageDays) {
     pathsEl.innerHTML = '<em style="color:var(--color-text-secondary)">当前没有可清理的内容</em>';
   } else {
     let ph = '<ul style="margin:0;padding-left:20px">';
-    for (const t of (_trashLastScan.myTrash || [])) {
+    for (const t of (_trashLastScan.trashList || [])) {
       ph += `<li><code>${_escHtml(t.path)}</code> · ${_formatBytes(t.size)}</li>`;
     }
     ph += '</ul>';
@@ -1586,7 +1573,7 @@ async function doTrashClean() {
 }
 
 async function trashBrowseList() {
-  if (!_trashLastScan || !_trashLastScan.myTrash || _trashLastScan.myTrash.length === 0) {
+  if (!_trashLastScan || !_trashLastScan.trashList || _trashLastScan.trashList.length === 0) {
     showToast('请先扫描回收站', 'warn');
     return;
   }
@@ -1595,7 +1582,7 @@ async function trashBrowseList() {
   $('trashBrowseModal').classList.add('visible');
   try {
     let html = '';
-    for (const t of _trashLastScan.myTrash) {
+    for (const t of _trashLastScan.trashList) {
       html += '<h4 style="margin:8px 0 4px"><code>' + _escHtml(t.path) + '</code></h4>';
       const r = await API.get('api/trash/browse?path=' + encodeURIComponent(t.path));
       if (!r || !r.ok) {
@@ -1605,7 +1592,7 @@ async function trashBrowseList() {
       html += _renderTrashTree(r.tree, 0);
     }
     $('trashBrowseTree').innerHTML = html || '<em>回收站为空</em>';
-    $('trashBrowseDesc').textContent = '共 ' + (_trashLastScan.myTrash || []).length + ' 个 trash 目录的完整文件树（只读）';
+    $('trashBrowseDesc').textContent = '共 ' + (_trashLastScan.trashList || []).length + ' 个 trash 目录的完整文件树（只读）';
   } catch (e) {
     $('trashBrowseTree').innerHTML = '<div class="kpi-error">❌ ' + _escHtml(e.message || String(e)) + '</div>';
   }
