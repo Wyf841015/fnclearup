@@ -304,6 +304,37 @@
     </div>
   </div>
 
+  <!-- 启动警告弹窗（首次打开时显示，确认后不再弹） -->
+  <div class="modal-overlay" id="startupWarningModal">
+    <div class="modal modal-md" style="max-width:620px">
+      <h3 style="color:var(--color-danger)"><span>⚠️</span><span>清理有风险，确认需谨慎！！！</span></h3>
+      <div style="background:rgba(220,38,38,0.08);border-left:4px solid var(--color-danger);padding:12px 16px;margin:12px 0;border-radius:4px;color:var(--color-text-primary);font-size:14px;line-height:1.6">
+        <p style="margin:0 0 8px 0"><strong>本工具会真实删除文件，且删除通常不可恢复。</strong></p>
+        <p style="margin:0 0 8px 0">使用前请务必确认：</p>
+        <ul style="margin:0;padding-left:20px">
+          <li>已经备份过重要数据</li>
+          <li>了解目标目录里装的是什么（应用残留？网盘挂载？Docker 资源？）</li>
+          <li>勾选前再次确认每一项，没有"看起来像就删"的侥幸心理</li>
+        </ul>
+      </div>
+      <p style="color:var(--color-text-secondary);font-size:13px;line-height:1.5;margin:8px 0">
+        📦 强烈建议在「系统清理」Tab 开启「清理前写 manifest」开关 —— 每次清理会先在 <code>&lt;PKGVAR&gt;/data/manifests/</code> 写入审计记录（含路径/size/mtime），事后可查看"清理了哪些路径、共多少 MB"。
+      </p>
+      <p style="color:var(--color-text-secondary);font-size:13px;line-height:1.5;margin:8px 0">
+        ⏪ 多数删除支持"回收站"模式（除系统缓存外），误删可从 <code>/vol*/UID/.@#local/trash/</code> 恢复。
+      </p>
+      <p style="color:var(--color-text-muted);font-size:12px;margin:8px 0 0 0">
+        本提示每次<strong>重新进入应用</strong>都会显示。点「我已知晓风险」后本次会话不再弹出。
+      </p>
+      <div class="btn-row" style="margin-top:16px">
+        <button type="button" class="btn btn-secondary" onclick="closeStartupWarning(false)">稍后再说</button>
+        <button type="button" class="btn btn-danger" id="startupWarningConfirmBtn" onclick="closeStartupWarning(true)" disabled>
+          我已知晓风险（<span id="startupWarningCountdown">3</span>）
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- 删除确认弹窗 -->
   <div class="modal-overlay" id="confirmModal">
     <div class="modal">
