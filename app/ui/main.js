@@ -1543,13 +1543,20 @@ function trashClean(ageDays) {
   }
   $('trashDeleteCount').textContent = willDelete;
   $('trashDeleteSize').textContent = _formatBytes(willSize);
-  // 路径预览
+  // 路径预览：只列 mtime 实际超过阈值的 trash 目录
   const pathsEl = $('trashDeletePaths');
-  if (willDelete === 0) {
+  const now = Date.now();
+  const thresholdMs = ageDays > 0 ? now - ageDays * 86400000 : Infinity;
+  const previewList = (_trashLastScan.trashList || []).filter(t => {
+    if (ageDays === 0) return true;
+    if (!t.mtime) return false;
+    return new Date(t.mtime).getTime() <= thresholdMs;
+  });
+  if (previewList.length === 0) {
     pathsEl.innerHTML = '<em style="color:var(--color-text-secondary)">当前没有可清理的内容</em>';
   } else {
     let ph = '<ul style="margin:0;padding-left:20px;list-style:none">';
-    for (const t of (_trashLastScan.trashList || [])) {
+    for (const t of previewList) {
       ph += `<li style="margin-bottom:6px"><code style="word-break:break-all;font-size:12px">${_escHtml(t.path)}</code><br><span style="color:var(--color-text-secondary);font-size:12px">${_escHtml(t.vol)} · UID ${_escHtml(t.uid)} · ${_formatBytes(t.size)}</span></li>`;
     }
     ph += '</ul>';
