@@ -1443,7 +1443,7 @@ async function trashScan() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>扫描中...</span>'; }
   $('trash-status').innerHTML = '<div class="kpi-loading">⏳ 扫描所有 vol/UID 下的 trash 目录...</div>';
   try {
-    const r = await apiFetch('/api/trash/scan');
+    const r = await API.get('/api/trash/scan');
     if (!r || !r.ok) {
       $('trash-status').innerHTML = '<div class="kpi-error">❌ 扫描失败：' + _escHtml((r && r.error) || 'unknown') + '</div>';
       return;
@@ -1563,9 +1563,7 @@ async function doTrashClean() {
   $('trash-status').innerHTML = '<div class="kpi-loading">⏳ 清理中（写入 manifest + 删除文件）...</div>';
   hideTrashDeleteModal();
   try {
-    const r = await apiFetch('/api/trash/clean', {
-      method: 'POST', body: { ageDays: age, manifest: true }
-    });
+    const r = await API.post('/api/trash/clean', { ageDays: age, manifest: true });
     if (!r || !r.ok) {
       $('trash-status').innerHTML = '<div class="kpi-error">❌ 清理失败：' + _escHtml((r && r.error) || 'unknown') + '</div>';
       return;
@@ -1599,7 +1597,7 @@ async function trashBrowseList() {
     let html = '';
     for (const t of _trashLastScan.myTrash) {
       html += '<h4 style="margin:8px 0 4px"><code>' + _escHtml(t.path) + '</code></h4>';
-      const r = await apiFetch('/api/trash/browse?path=' + encodeURIComponent(t.path));
+      const r = await API.get('/api/trash/browse?path=' + encodeURIComponent(t.path));
       if (!r || !r.ok) {
         html += '<div class="kpi-error">❌ ' + _escHtml((r && r.error) || '加载失败') + '</div>';
         continue;
