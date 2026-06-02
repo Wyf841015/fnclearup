@@ -1523,14 +1523,19 @@ function trashClean(ageDays) {
     return;
   }
   // 弹确认框
-  const ageText = ageDays === 0 ? '全部内容' : `mtime 超过 ${ageDays} 天的内容`;
+  // 语义：清理 ageDays 天+ = mtime >= ageDays*86400000 ms
+  //   X 越大范围越窄：30+ 最宽，365+ 最窄
+  const ageText = ageDays === 0 ? '全部内容（不挑 mtime）' : `mtime 超过 ${ageDays} 天的内容`;
   $('trashDeleteAgeDesc').textContent = '范围：' + ageText;
-  // 估算将删数量（从 buckets 推算）
+  // 估算将删数量（按桶名相加）
+  // 桶名语义：ltN = mtime < N 天的内容（"lt" = less than）
+  // ageDays 天+ = mtime >= ageDays = lt{ageDays 下一档}+ ... + gte365
   const b = _trashLastScan.buckets || {};
   let willDelete = 0, willSize = 0;
   if (ageDays === 0) {
-    willSize = _trashLastScan.totals?.size || 0;
-    willDelete = (_trashLastScan.trashList || []).reduce((s, t) => s + (t.files || 0) + (t.dirs || 0), 0);
+    // 全部 = 5 个桶全加
+    willSize = (b.lt7?.size || 0) + (b.lt30?.size || 0) + (b.lt90?.size || 0) + (b.lt365?.size || 0) + (b.gte365?.size || 0);
+    willDelete = (b.lt7?.count || 0) + (b.lt30?.count || 0) + (b.lt90?.count || 0) + (b.lt365?.count || 0) + (b.gte365?.count || 0);
   } else if (ageDays === 30) {
     willSize = (b.lt90?.size || 0) + (b.lt365?.size || 0) + (b.gte365?.size || 0);
     willDelete = (b.lt90?.count || 0) + (b.lt365?.count || 0) + (b.gte365?.count || 0);
@@ -1543,7 +1548,7 @@ function trashClean(ageDays) {
   }
   $('trashDeleteCount').textContent = willDelete;
   $('trashDeleteSize').textContent = _formatBytes(willSize);
-  // 路径预览：只列 mtime 实际超过阈值的 trash 目录
+  // 路径预览：按 mtime 阈值过滤
   const pathsEl = $('trashDeletePaths');
   const now = Date.now();
   const thresholdMs = ageDays > 0 ? now - ageDays * 86400000 : Infinity;
