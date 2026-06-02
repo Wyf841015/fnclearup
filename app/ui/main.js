@@ -1108,6 +1108,173 @@ function confirmEmptyDeleteOne(path) {
 }
 
 // ════════════════════════════════
+// System Cache Cleaning
+// ════════════════════════════════
+const SysCleanState = { items: [], scanLoaded: false };
+
+function formatSysCleanBytes(n) {
+  if (n === 0) return '0 B';
+  const u = ['B','KB','MB','GB','TB'];
+  const i = Math.floor(Math.log(n) / Math.log(1024));
+  return (n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + u[i];
+}
+
+const RISK_LABELS = {
+  low: { label: '低', color: '#059669', bg: '#dcfce7' },
+  medium: { label: '中', color: '#d97706', bg: '#fff7ed' },
+  high: { label: '高', color: '#dc2626', bg: '#fee2e2' },
+  dangerous: { label: '危险', color: '#dc2626', bg: '#7f1d1d' },
+};
+
+function getSysCleanRiskFilter() {
+  return document.querySelector('input[name="syscleanRiskFilter"]:checked')?.value || 'all';
+}
+
+async function doSysCleanScan() {
+  const btn = $('syscleanScanBtn');
+  const status = $('sysclean-status');
+  const list = $('sysclean-list');
+  const empty = $('sysclean-empty');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>扫描中...</span>'; }
+  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描系统缓存...'; }
+  if (list) list.innerHTML = '';
+  if (empty) empty.style.display = 'none';
+  try {
+    const data = await API.get('api/sysclean/scan');
+    SysCleanState.items = data.items || [];
+    SysCleanState.scanLoaded = true;
+    if ($('sysclean-count')) $('sysclean-count').textContent = data.count || 0;
+    if ($('sysclean-total')) $('sysclean-total').textContent = data.total_size_str || '0 B';
+    renderSysCleanList();
+    if (status) { status.className = 'success'; status.textContent = `✅ 共 ${data.count} 项，可释放 ${data.total_size_str}`; }
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ 扫描失败: ' + e.message; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔍</span><span>扫描缓存</span>'; }
+  }
+}
+
+function renderSysCleanList() {
+  const list = $('sysclean-list');
+  if (!list) return;
+  const filter = getSysCleanRiskFilter();
+  const items = SysCleanState.items.filter(it => {
+    if (filter === 'low') return it.risk === 'low';
+    if (filter === 'medium') return it.risk === 'low' || it.risk === 'medium';
+    return true; // 'all' shows everything
+  });
+  if (items.length === 0) {
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--color-text-secondary)">没有匹配的项</div>';
+    return;
+  }
+  let html = '<div class="list-scroll"><table class="data-table" id="sysclean-table"><thead><tr>' +
+    '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllSysClean(this)"></th>' +
+    '<th style="width:64px">风险</th><th>名称</th><th>路径</th><th style="text-align:right">大小</th>' +
+    '</tr></thead><tbody>';
+  for (const it of items) {
+    const r = RISK_LABELS[it.risk] || RISK_LABELS.low;
+    const isDangerous = it.risk === 'dangerous';
+    const checked = it.recommended ? 'checked' : '';
+    const disabled = isDangerous ? 'disabled' : '';
+    const rowStyle = isDangerous ? 'style="opacity:0.6"' : '';
+    const riskBadge = `<span class="file-badge" style="background:${r.bg};color:${r.color}">${r.label}</span>`;
+    html += `<tr ${rowStyle}>
+      <td><input type="checkbox" class="sysclean-cb" value="${escHtml(it.id)}" data-size="${it.size}" data-label="${escHtml(it.label)}" onchange="updateSysCleanSelectInfo()" ${checked} ${disabled}></td>
+      <td>${riskBadge}</td>
+      <td style="white-space:nowrap" title="${escHtml(it.label)}">${escHtml(it.name || it.label)}</td>
+      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary);max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(it.path)}">${escHtml(it.path)}</td>
+      <td style="text-align:right;font-family:monospace;font-size:13px">${escHtml(it.size_str)}</td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+  updateSysCleanSelectInfo();
+}
+
+function selectAllSysClean(el) {
+  // Don't toggle dangerous items
+  document.querySelectorAll('#sysclean-table .sysclean-cb:not(:disabled)').forEach(cb => cb.checked = el.checked);
+  updateSysCleanSelectInfo();
+}
+
+function selectAllSysCleanRecommended() {
+  // Select only recommended + low/medium risk (skip high/dangerous)
+  document.querySelectorAll('#sysclean-table .sysclean-cb').forEach(cb => {
+    if (cb.disabled) return; // dangerous
+    const r = cb.closest('tr').querySelector('.file-badge')?.textContent || '';
+    cb.checked = (r === '低' || r === '中');
+  });
+  updateSysCleanSelectInfo();
+}
+
+function updateSysCleanSelectInfo() {
+  const cbs = document.querySelectorAll('.sysclean-cb:checked');
+  let total = 0;
+  for (const cb of cbs) total += parseInt(cb.dataset.size || 0);
+  const count = cbs.length;
+  if ($('sysclean-selected-count')) $('sysclean-selected-count').textContent = count;
+  const db = $('syscleanDeleteBtn');
+  if (db) db.disabled = count === 0;
+  const si = $('sysclean-select-info');
+  if (si) {
+    if (count > 0) { si.style.display = ''; si.textContent = `已选 ${count} 项，可释放 ${formatSysCleanBytes(total)}`; }
+    else { si.style.display = 'none'; }
+  }
+}
+
+function showSysCleanDeleteModal() {
+  const cbs = document.querySelectorAll('.sysclean-cb:checked');
+  if (cbs.length === 0) { showToast('请选择要清理的项', 'error'); return; }
+  let total = 0;
+  const items = [];
+  for (const cb of cbs) {
+    total += parseInt(cb.dataset.size || 0);
+    items.push({ id: cb.value, label: cb.dataset.label, size: parseInt(cb.dataset.size || 0) });
+  }
+  $('syscleanDeleteCount').textContent = cbs.length;
+  $('syscleanDeleteSize').textContent = formatSysCleanBytes(total);
+  $('syscleanDeletePaths').innerHTML = items
+    .sort((a, b) => b.size - a.size)
+    .slice(0, 50)
+    .map(it => `<div>${escHtml(it.label)} <span style="color:var(--color-text-secondary);font-size:11px">(${formatSysCleanBytes(it.size)})</span></div>`)
+    .join('') + (items.length > 50 ? `<div style="color:var(--color-text-secondary)">...还有 ${items.length - 50} 项</div>` : '');
+  $('syscleanDeleteModal')?.classList.add('visible');
+}
+
+function hideSysCleanDeleteModal() { $('syscleanDeleteModal')?.classList.remove('visible'); }
+
+async function doSysCleanDelete() {
+  hideSysCleanDeleteModal();
+  const cbs = document.querySelectorAll('.sysclean-cb:checked');
+  const ids = [...cbs].map(cb => cb.value);
+  if (ids.length === 0) return;
+  const btn = $('syscleanDeleteBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>清理中...</span>'; }
+  try {
+    const r = await API.post('api/sysclean/clean', { ids });
+    const msg = `已清理 ${r.total || 0} 项`;
+    if (r.failed && r.failed.length) {
+      showToast(msg + `，失败 ${r.failures} 个（请查看服务器日志）`, 'warning');
+    } else {
+      showToast(msg, 'success');
+    }
+    // Reload the scan
+    await doSysCleanScan();
+  } catch (e) {
+    showToast('清理失败: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>🗑</span><span>清理选中</span>'; }
+  }
+}
+
+// Re-render the sysclean list when risk filter changes
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.name === 'syscleanRiskFilter') {
+    if (SysCleanState.scanLoaded) renderSysCleanList();
+  }
+});
+
+// ════════════════════════════════
 // Init
 // ════════════════════════════════
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
@@ -1148,6 +1315,8 @@ function init() {
     showBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
     startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
     showEmptyDeleteModal, hideEmptyDeleteModal, confirmEmptyDelete, confirmEmptyDeleteOne,
+    doSysCleanScan, renderSysCleanList, selectAllSysClean, selectAllSysCleanRecommended,
+    updateSysCleanSelectInfo, showSysCleanDeleteModal, hideSysCleanDeleteModal, doSysCleanDelete,
   };
   Object.assign(window, exports);
 

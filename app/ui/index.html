@@ -31,6 +31,7 @@
       <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false">🕐 tmp</button>
       <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false">📋 去重</button>
       <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false">📭 去空</button>
+      <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false">🧹 系统</button>
     </div>
 
     <!-- Tab 1: 应用残余 -->
@@ -265,6 +266,35 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab 7: 系统缓存清理 -->
+    <div class="tab-panel" data-panel="sysclean">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon">🧹</div><div class="kpi-body"><div class="kpi-label">可清理项</div><div class="kpi-value" id="sysclean-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">总可释放</div><div class="kpi-value" id="sysclean-total">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">已选中</div><div class="kpi-value" id="sysclean-selected-count">0</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span>🧹</span><span>系统缓存清理</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" id="syscleanScanBtn" onclick="doSysCleanScan()"><span>🔍</span><span>扫描缓存</span></button>
+            <button type="button" class="btn btn-danger" id="syscleanDeleteBtn" onclick="showSysCleanDeleteModal()" disabled><span>🗑</span><span>清理选中</span></button>
+            <button type="button" class="btn btn-outline" onclick="selectAllSysCleanRecommended()">✅ 只选推荐项</button>
+          </div>
+          <div id="sysclean-select-info" class="select-info" style="display:none"></div>
+        </div>
+        <div class="delete-mode-select" style="margin:8px 0">
+          <span style="color:var(--color-text-secondary);font-size:13px;margin-right:8px">风险过滤：</span>
+          <label class="delete-radio"><input type="radio" name="syscleanRiskFilter" value="all" checked><span>全部</span></label>
+          <label class="delete-radio"><input type="radio" name="syscleanRiskFilter" value="low"><span>仅低风险</span></label>
+          <label class="delete-radio"><input type="radio" name="syscleanRiskFilter" value="medium"><span>中+低</span></label>
+        </div>
+        <div id="sysclean-status"></div>
+        <div id="sysclean-list" style="margin-top:12px"></div>
+        <div id="sysclean-empty" class="dup-empty-state"><div class="dup-empty-icon">🧹</div><h3>尚未开始扫描</h3><p>扫描 APT 缓存、NPM/PIP 缓存、系统日志轮转文件、缩略图、浏览器缓存等可清理项。</p></div>
+      </div>
+    </div>
   </div>
 
   <!-- 删除确认弹窗 -->
@@ -364,6 +394,20 @@
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideEmptyDeleteModal()">取消</button>
         <button type="button" class="btn btn-danger" onclick="confirmEmptyDelete()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 系统缓存清理确认弹窗 -->
+  <div class="modal-overlay" id="syscleanDeleteModal">
+    <div class="modal">
+      <h3><span>⚠️</span><span>确认清理系统缓存</span></h3>
+      <p>即将清理 <strong id="syscleanDeleteCount">0</strong> 项，可释放 <strong id="syscleanDeleteSize">0 B</strong></p>
+      <div class="paths-preview" id="syscleanDeletePaths" style="max-height:200px;overflow-y:auto"></div>
+      <p style="color:var(--color-text-secondary);font-size:12px;margin-top:8px">系统缓存删除后会在需要时自动重建（apt/npm/pip 缓存），不会影响应用功能。危险项已默认不勾选。</p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideSysCleanDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" onclick="doSysCleanDelete()">确认清理</button>
       </div>
     </div>
   </div>

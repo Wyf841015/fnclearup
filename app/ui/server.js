@@ -11,6 +11,7 @@ import { handleVolumes, handleVolumesDelete, handleNetworks, handleNetworksDelet
 import { handleTempScan, handleTempDelete } from './api/temp.js';
 import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleDupExport, handleDupStop, handleDupPause, handleDupResume, dupJobs, setDupPaths } from './api/dup.js';
 import { handleEmptyDirScan, handleEmptyDirStop, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
+import { handleSysCleanScan, handleSysCleanClean } from './api/sysclean.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -108,6 +109,8 @@ async function handle(req, res) {
         const list = [...emptyDirJobs].map(([id, j]) => ({ id, scanPath: j.scanPath, status: 'running' }));
         sendJSON(res, 200, list); return;
       }
+      if (method === 'GET' && path === '/api/sysclean/scan') { handleSysCleanScan(req, res); return; }
+      if (method === 'POST' && path === '/api/sysclean/clean') { await handleSysCleanClean(req, res); return; }
       sendJSON(res, 404, { error: 'API endpoint not found' });
       return;
     }
