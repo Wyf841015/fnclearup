@@ -4,11 +4,18 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.7.7 更新
+
+- **Manifest 目录调整** — 改写到 `<TRM_PKGVAR>/data/manifests/`，跟 `info.log`、`app.pid` 在同一个父目录（fnOS 标准 `data/` 子目录组织）。不再写到 `/vol*/UID/.@#local/`
+- **删除 UI 提示** — 开关旁"写到 .@#local/，仅记路径不复制文件"那句删了，确认弹窗和 toast 文案同步更新
+- **`getSafeTrashDir` → `getManifestDir` 重命名** — 旧函数保留为 alias，避免破坏其他引用
+- **测试 58/58 通过** — 新增 2 个用例验证 `base_dir` 和 `backup_path` 都在 `/data/manifests/` 下
+
 ## v0.7.6 更新
 
 - **🧹 新增「系统缓存清理」Tab** — 14 项可清理：APT 缓存/列表、系统日志轮转、NPM/PIP/UV/Node-gyp/TypeScript 缓存、浏览器缓存、Playwright 浏览器、其它 `~/.cache` 自动发现、应用日志、旧内核
 - **✅ 「推荐清理」一键勾选** — 10 项低风险、auto-rebuild 的安全项（apt/npm/pip/uv/.gz 等），最常用的"无感清理"
-- **📦 清理前备份 manifest** — 每次清理前先写一份元数据（路径/size/mtime/时间戳/工具版本/主机/用户）到 `/vol*/UID/.@#local/fnclearup_pre_clean_manifest_<时间>.json`（仅记录，不复制文件）
+- **📦 清理前备份 manifest** — 每次清理前先写一份元数据（路径/size/mtime/时间戳/工具版本/主机/用户）到 `<TRM_PKGVAR>/data/manifests/fnclearup_pre_clean_manifest_<时间>.json`（仅记录，不复制文件）。跟 `info.log`、`app.pid` 在同一个父目录（`<TRM_PKGVAR>`），按 fnOS 标准 `data/` 子目录组织
 - **📜 历史清单弹窗** — 「📜 历史清单」按钮列出所有历史 manifest，可下载查看（审计/回溯用）
 - **新 API 端点** — `GET /api/sysclean/manifests` 列出、`GET /api/sysclean/manifest?path=...` 下载
 - **安全加固** — `handleSysCleanGetManifest` 白名单（必须位于 `getSafeTrashDir()` 下 + 文件名 `fnclearup_pre_clean_manifest_` 前缀 + `.json` 后缀）拒绝路径遍历
@@ -128,16 +135,23 @@
 
 ## 版本历史
 
+### v0.7.7 (2026-06-02)
+
+- Manifest 写入位置改到 `<TRM_PKGVAR>/data/manifests/`（与 info.log 同父目录，fnOS 标准 data/ 子目录）
+- `getSafeTrashDir` → `getManifestDir` 重命名（保留旧名 alias）
+- 删除 UI 上的"写到 .@#local/"提示文案
+- 测试 58/58 通过（+2 路径验证）
+
 ### v0.7.6 (2026-06-02)
 
 - 新增「系统缓存清理」Tab（14 项可清理：APT/系统日志/NPM/PIP/UV/TypeScript/浏览器缓存/应用日志/旧内核等）
 - 「✅ 推荐清理」一键勾选 10 项低风险 auto-rebuild 安全项
-- 「📦 清理前备份 manifest」开关（默认 ON，写到 `/vol*/UID/.@#local/fnclearup_pre_clean_manifest_<时间>.json`）
+- 「📦 清理前备份 manifest」开关（默认 ON，写到 `<TRM_PKGVAR>/data/manifests/fnclearup_pre_clean_manifest_<时间>.json`，与 info.log 同父目录）
 - 「📜 历史清单」弹窗，列出/下载历史 manifest（审计用）
-- 新增 `getSafeTrashDir()` 工具函数（按 vol1-vol10 优先级返回安全目录）
+- 新增 `getManifestDir()` 工具函数（按 `TRM_PKGVAR`/test/fallback 优先级返回 `<PKGVAR>/data/manifests`，与 `info.log` 同父目录）
 - 新增 API：`GET /api/sysclean/manifests`、`GET /api/sysclean/manifest?path=...`
 - 路径遍历防护：manifest 下载端点强制白名单
-- 测试 56/56 通过（+6 个新用例：备份写入/不写/列表/下载/路径遍历拒/缺参拒）
+- 测试 58/58 通过（+6 个新用例：备份写入/不写/列表/下载/路径遍历拒/缺参拒 + 2 个路径验证）
 
 ### v0.7.5 (2026-06-02)
 

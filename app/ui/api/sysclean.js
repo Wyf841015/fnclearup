@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, lstatSync, statSync, unlinkSync, rmSync, mkdirSync, renameSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
-import { sendJSON, execCmd, parseBody, formatBytes, getSafeTrashDir } from '../lib/util.js';
+import { sendJSON, execCmd, parseBody, formatBytes, getManifestDir } from '../lib/util.js';
 
 // Cache items under the current user's HOME (or root's if running as root).
 const HOME = process.env.HOME || '/root';
@@ -210,11 +210,11 @@ export async function handleSysCleanClean(req, res) {
     try {
       const ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, 'T').replace(/-(\d{3})Z$/, 'Z');
       const filename = `fnclearup_pre_clean_manifest_${ts}.json`;
-      const trashBase = getSafeTrashDir();
+      const trashBase = getManifestDir();
       backupPath = join(trashBase, filename);
       const manifest = {
         tool: 'fnclearup sysclean',
-        version: '0.7.6',
+        version: '0.7.7',
         timestamp: new Date().toISOString(),
         hostname: process.env.HOSTNAME || 'unknown',
         user: process.env.USER || 'unknown',
@@ -259,7 +259,7 @@ export async function handleSysCleanClean(req, res) {
 
 // GET /api/sysclean/manifests — list past pre-clean manifests (for audit/recovery UI)
 export function handleSysCleanListManifests(req, res) {
-  const base = getSafeTrashDir();
+  const base = getManifestDir();
   const manifests = [];
   try {
     if (existsSync(base)) {
@@ -282,8 +282,8 @@ export async function handleSysCleanGetManifest(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const p = url.searchParams.get('path');
   if (!p) { sendJSON(res, 400, { error: 'missing path' }); return; }
-  // Whitelist: must live under getSafeTrashDir() and start with fnclearup_pre_clean_manifest_
-  const base = getSafeTrashDir();
+  // Whitelist: must live under getManifestDir() and start with fnclearup_pre_clean_manifest_
+  const base = getManifestDir();
   if (!p.startsWith(base + '/') || !basename(p).startsWith('fnclearup_pre_clean_manifest_') || !p.endsWith('.json')) {
     sendJSON(res, 403, { error: 'path not allowed' });
     return;

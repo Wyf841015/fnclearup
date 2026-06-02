@@ -1243,7 +1243,7 @@ function showSysCleanDeleteModal() {
   const backupInfo = $('syscleanBackupInfo');
   if (backupInfo) {
     if (getSysCleanBackupEnabled()) {
-      $('syscleanBackupInfoText').textContent = '清理前将先写一份 manifest 到 /vol*/UID/.@#local/fnclearup_pre_clean_manifest_<时间>.json（仅记录路径/size/mtime，不复制文件内容）';
+      $('syscleanBackupInfoText').textContent = '清理前将先写一份 manifest 到 <PKGVAR>/data/manifests/（仅记录路径/size/mtime，不复制文件内容）';
       backupInfo.style.display = 'block';
     } else {
       backupInfo.style.display = 'none';
@@ -1279,7 +1279,7 @@ async function showSysCleanManifests() {
   try {
     const r = await API.get('api/sysclean/manifests');
     if (!r.manifests || r.manifests.length === 0) {
-      list.innerHTML = `<div style="color:var(--color-text-secondary);padding:20px;text-align:center">📭 暂无历史 manifest（开启"清理前备份"开关后，下次清理会自动写入）<br><br><span style="font-size:12px">位置：<code>${escHtml(r.base_dir || '/vol*/UID/.@#local')}</code></span></div>`;
+      list.innerHTML = `<div style="color:var(--color-text-secondary);padding:20px;text-align:center">📭 暂无历史 manifest（开启"清理前备份"开关后，下次清理会自动写入）<br><br><span style="font-size:12px">位置：<code>${escHtml(r.base_dir || '<PKGVAR>/data/manifests')}</code></span></div>`;
       return;
     }
     list.innerHTML = r.manifests.map(m => {
@@ -1390,7 +1390,7 @@ async function doSysCleanDelete() {
   try {
     const r = await API.post('api/sysclean/clean', { ids, backup: doBackup });
     if (r.backup_error) {
-      showToast('⚠️ 备份 manifest 失败，已中止清理（请检查 /vol*/UID/.@#local 写入权限）: ' + r.error, 'error', 6000);
+      showToast('⚠️ 备份 manifest 失败，已中止清理（请检查 <PKGVAR>/data/manifests 写入权限）: ' + r.error, 'error', 6000);
       return;
     }
     let msg = `已清理 ${r.total || 0} 项`;

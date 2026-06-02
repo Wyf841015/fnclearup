@@ -54,24 +54,37 @@ export function isSafePath(p) {
   return false;
 }
 
-// Return a directory where we can safely write persistent state (manifests, logs, etc).
-// Priority:
-//   1. The user's "safer" vol1–vol10 trash (e.g. /vol3/1000/.@#local) — fnOS convention
-//   2. Any writable /volN/1000 path (even if .@#local doesn't exist — we create it)
-//   3. /var/fnclearup (admin-writable fallback)
-//   4. /tmp/fnclearup (last resort — may be wiped on reboot)
+// Return the directory where audit manifests (sysclean pre-clean snapshots) are stored.
+// Manifests are app-level audit artifacts, NOT user-deleted files. They live in the same
+// parent directory as the system log (info.log), under a dedicated data/manifests/ subdir.
 //
-// Returns the BASE directory (e.g. /vol3/1000/.@#local). Caller is expected to mkdirSync({recursive:true}) before writing.
-export function getSafeTrashDir() {
-  const uid = process.env.UID || '1000';
-  for (let n = 1; n <= 10; n++) {
-    const userDir = `/vol${n}/${uid}`;
-    if (existsSync(userDir)) return join(userDir, '.@#local');
+// Priority:
+//   1. TRM_PKGVAR (fnOS standard; e.g. /vol3/@appcenter/fnclearup/) → <PKGVAR>/data/manifests
+//      This puts them alongside info.log and app.pid (also under <PKGVAR>).
+//   2. /var/fnclearup/data/manifests (admin-writable fallback for non-fnOS / bare deploys)
+//   3. /tmp/fnclearup_test/data/manifests (test mode, keeps fixtures isolated)
+//
+// Caller is expected to mkdirSync({recursive:true}) before writing.
+export function getManifestDir() {
+  // Test mode: explicit isolation under /tmp/fnclearup_test (TRM_PKGVAR is also
+  // pointed there in tests, but we want a known fixture path regardless of PKGVAR).
+  if (process.env.TRM_FNCLEARUP_TEST === '1') {
+    return '/tmp/fnclearup_test/data/manifests';
   }
-  // Test mode: write manifests under /tmp/fnclearup_test/manifests to keep tests isolated
-  if (process.env.TRM_FNCLEARUP_TEST === '1') return '/tmp/fnclearup_test/manifests';
-  return '/var/fnclearup';
+  // Production: TRM_PKGVAR (fnOS standard; e.g. /vol3/@appcenter/fnclearup/) →
+  // <PKGVAR>/data/manifests. This puts them alongside info.log and app.pid
+  // (also under <PKGVAR>).
+  const pkgvar = process.env.TRM_PKGVAR;
+  if (pkgvar && pkgvar !== '/' && pkgvar.length > 1) {
+    return join(pkgvar, 'data', 'manifests');
+  }
+  return '/var/fnclearup/data/manifests';
 }
+
+// Backwards-compatible alias (older code referenced this name; semantics shifted
+// from "user trash dir" to "app manifest dir" so callers should migrate to
+// getManifestDir() when writing manifest artifacts).
+export const getSafeTrashDir = getManifestDir;
 
 export function parseQuery(url) {
   const q = url.searchParams;
