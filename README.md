@@ -4,6 +4,18 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.7.6 更新
+
+- **🧹 新增「系统缓存清理」Tab** — 14 项可清理：APT 缓存/列表、系统日志轮转、NPM/PIP/UV/Node-gyp/TypeScript 缓存、浏览器缓存、Playwright 浏览器、其它 `~/.cache` 自动发现、应用日志、旧内核
+- **✅ 「推荐清理」一键勾选** — 10 项低风险、auto-rebuild 的安全项（apt/npm/pip/uv/.gz 等），最常用的"无感清理"
+- **📦 清理前备份 manifest** — 每次清理前先写一份元数据（路径/size/mtime/时间戳/工具版本/主机/用户）到 `/vol*/UID/.@#local/fnclearup_pre_clean_manifest_<时间>.json`（仅记录，不复制文件）
+- **📜 历史清单弹窗** — 「📜 历史清单」按钮列出所有历史 manifest，可下载查看（审计/回溯用）
+- **新 API 端点** — `GET /api/sysclean/manifests` 列出、`GET /api/sysclean/manifest?path=...` 下载
+- **安全加固** — `handleSysCleanGetManifest` 白名单（必须位于 `getSafeTrashDir()` 下 + 文件名 `fnclearup_pre_clean_manifest_` 前缀 + `.json` 后缀）拒绝路径遍历
+- **风险过滤 UI** — 「全部 / 仅低风险 / 中+低」radio 切换即时刷新列表
+- **getSafeTrashDir() 工具函数** — 按优先级返回 `getSafeTrashDir()`：用户 vol1-vol10 → `/var/fnclearup` → 测试模式 `/tmp/fnclearup_test/manifests`
+- **测试 56/56 通过** — 新增 6 个用例：备份写入、不备份、清单列表、清单下载、路径遍历拒、缺参拒
+
 ## v0.7.5 更新
 
 - **5 个 modal「确认删除」按钮修复** — 之前调错函数（`confirmXxx` 而非 `doXxx`），点击只重开 modal 不执行删除
@@ -115,6 +127,17 @@
 | `/api/empty_dir/delete` | POST | 删除空目录 |
 
 ## 版本历史
+
+### v0.7.6 (2026-06-02)
+
+- 新增「系统缓存清理」Tab（14 项可清理：APT/系统日志/NPM/PIP/UV/TypeScript/浏览器缓存/应用日志/旧内核等）
+- 「✅ 推荐清理」一键勾选 10 项低风险 auto-rebuild 安全项
+- 「📦 清理前备份 manifest」开关（默认 ON，写到 `/vol*/UID/.@#local/fnclearup_pre_clean_manifest_<时间>.json`）
+- 「📜 历史清单」弹窗，列出/下载历史 manifest（审计用）
+- 新增 `getSafeTrashDir()` 工具函数（按 vol1-vol10 优先级返回安全目录）
+- 新增 API：`GET /api/sysclean/manifests`、`GET /api/sysclean/manifest?path=...`
+- 路径遍历防护：manifest 下载端点强制白名单
+- 测试 56/56 通过（+6 个新用例：备份写入/不写/列表/下载/路径遍历拒/缺参拒）
 
 ### v0.7.5 (2026-06-02)
 

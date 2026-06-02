@@ -1238,10 +1238,67 @@ function showSysCleanDeleteModal() {
     .slice(0, 50)
     .map(it => `<div>${escHtml(it.label)} <span style="color:var(--color-text-secondary);font-size:11px">(${formatSysCleanBytes(it.size)})</span></div>`)
     .join('') + (items.length > 50 ? `<div style="color:var(--color-text-secondary)">...还有 ${items.length - 50} 项</div>` : '');
+  // Show backup hint if enabled
+  const backupCb = $('syscleanBackupCb');
+  const backupInfo = $('syscleanBackupInfo');
+  if (backupInfo) {
+    if (getSysCleanBackupEnabled()) {
+      $('syscleanBackupInfoText').textContent = '清理前将先写一份 manifest 到 /vol*/UID/.@#local/fnclearup_pre_clean_manifest_<时间>.json（仅记录路径/size/mtime，不复制文件内容）';
+      backupInfo.style.display = 'block';
+    } else {
+      backupInfo.style.display = 'none';
+    }
+  }
   $('syscleanDeleteModal')?.classList.add('visible');
 }
 
 function hideSysCleanDeleteModal() { $('syscleanDeleteModal')?.classList.remove('visible'); }
+
+// Backup toggle (persists in localStorage)
+const SYSCLEAN_BACKUP_KEY = 'fnclearup.sysclean.backup';
+function getSysCleanBackupEnabled() {
+  try {
+    const v = localStorage.getItem(SYSCLEAN_BACKUP_KEY);
+    return v === null ? true : v === '1';  // default ON
+  } catch { return true; }
+}
+function toggleSysCleanBackup() {
+  const cb = $('syscleanBackupCb');
+  if (!cb) return;
+  try { localStorage.setItem(SYSCLEAN_BACKUP_KEY, cb.checked ? '1' : '0'); } catch {}
+  showToast(cb.checked ? '✅ 已开启清理前备份' : '⚠️ 已关闭清理前备份（不推荐）', cb.checked ? 'success' : 'warning');
+}
+
+// History manifests modal
+async function showSysCleanManifests() {
+  const modal = $('syscleanManifestsModal');
+  const list = $('syscleanManifestsList');
+  if (!modal || !list) return;
+  list.innerHTML = '<div style="color:var(--color-text-secondary)">⏳ 加载中...</div>';
+  modal.classList.add('visible');
+  try {
+    const r = await API.get('api/sysclean/manifests');
+    if (!r.manifests || r.manifests.length === 0) {
+      list.innerHTML = `<div style="color:var(--color-text-secondary);padding:20px;text-align:center">📭 暂无历史 manifest（开启"清理前备份"开关后，下次清理会自动写入）<br><br><span style="font-size:12px">位置：<code>${escHtml(r.base_dir || '/vol*/UID/.@#local')}</code></span></div>`;
+      return;
+    }
+    list.innerHTML = r.manifests.map(m => {
+      const t = new Date(m.mtime);
+      const tstr = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')} ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
+      return `<div style="padding:8px;border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;color:var(--color-text-muted)">${tstr}</div>
+          <div style="font-size:11px;color:var(--color-text-secondary);word-break:break-all" title="${escHtml(m.path)}">${escHtml(m.name)}</div>
+        </div>
+        <span style="font-size:11px;color:var(--color-text-secondary);white-space:nowrap">${escHtml(m.size_str)}</span>
+        <a href="api/sysclean/manifest?path=${encodeURIComponent(m.path)}" target="_blank" download="${escHtml(m.name)}" class="btn btn-outline" style="font-size:11px;padding:4px 8px">下载</a>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div style="color:var(--color-danger)">❌ 加载失败: ${escHtml(e.message)}</div>`;
+  }
+}
+function hideSysCleanManifests() { $('syscleanManifestsModal')?.classList.remove('visible'); }
 
 async function doSysCleanDelete() {
   hideSysCleanDeleteModal();
@@ -1250,13 +1307,19 @@ async function doSysCleanDelete() {
   if (ids.length === 0) return;
   const btn = $('syscleanDeleteBtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>清理中...</span>'; }
+  const doBackup = getSysCleanBackupEnabled();
   try {
-    const r = await API.post('api/sysclean/clean', { ids });
-    const msg = `已清理 ${r.total || 0} 项`;
+    const r = await API.post('api/sysclean/clean', { ids, backup: doBackup });
+    if (r.backup_error) {
+      showToast('⚠️ 备份 manifest 失败，已中止清理（请检查 /vol*/UID/.@#local 写入权限）: ' + r.error, 'error', 6000);
+      return;
+    }
+    let msg = `已清理 ${r.total || 0} 项`;
+    if (r.backup_path) msg += ` · 📦 ${r.backup_path}`;
     if (r.failed && r.failed.length) {
-      showToast(msg + `，失败 ${r.failures} 个（请查看服务器日志）`, 'warning');
+      showToast(msg + `，失败 ${r.failures} 个`, 'warning', 6000);
     } else {
-      showToast(msg, 'success');
+      showToast(msg, 'success', 5000);
     }
     // Reload the scan
     await doSysCleanScan();
@@ -1317,6 +1380,7 @@ function init() {
     showEmptyDeleteModal, hideEmptyDeleteModal, confirmEmptyDelete, confirmEmptyDeleteOne,
     doSysCleanScan, renderSysCleanList, selectAllSysClean, selectAllSysCleanRecommended,
     updateSysCleanSelectInfo, showSysCleanDeleteModal, hideSysCleanDeleteModal, doSysCleanDelete,
+    toggleSysCleanBackup, getSysCleanBackupEnabled, showSysCleanManifests, hideSysCleanManifests,
   };
   Object.assign(window, exports);
 
@@ -1353,6 +1417,10 @@ function init() {
       }
     });
   });
+
+  // Initialize sysclean backup toggle from localStorage (default ON)
+  const backupCb = document.getElementById('syscleanBackupCb');
+  if (backupCb) backupCb.checked = getSysCleanBackupEnabled();
 }
 
 })();

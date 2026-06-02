@@ -1,9 +1,18 @@
-import { existsSync, readdirSync, lstatSync, statSync, unlinkSync, rmSync, mkdirSync, renameSync, cpSync } from 'node:fs';
+import { existsSync, readdirSync, lstatSync, statSync, unlinkSync, rmSync, mkdirSync, renameSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
-import { sendJSON, execCmd, parseBody, formatBytes } from '../lib/util.js';
+import { sendJSON, execCmd, parseBody, formatBytes, getSafeTrashDir } from '../lib/util.js';
 
 // Cache items under the current user's HOME (or root's if running as root).
 const HOME = process.env.HOME || '/root';
+
+// "No-regression" recommended set: 100% safe to clear, system rebuilds on demand.
+// Anything here auto-recreates next time the tool runs (apt/npm/pip/uv/etc).
+// Frontend uses this for the "✅ 推荐清理" one-click button.
+export const RECOMMENDED_IDS = [
+  'apt-archives', 'apt-lists',
+  'syslog-gz', 'syslog-old', 'journal',
+  'npm', 'pip', 'uv', 'node-gyp', 'typescript',
+];
 
 // Scan items: { id, path, label, size, size_str, risk, recommended }
 // Sizes are computed by statSync; recurse=true to sum children.
@@ -165,27 +174,66 @@ function isTargetPath(p) {
 }
 
 // POST /api/sysclean/clean
-// Body: { ids: ['apt-archives', 'npm', 'cache-other:fontconfig', ...], mode: 'permanent' (default) }
+// Body: { ids: ['apt-archives', 'npm', 'cache-other:fontconfig', ...], mode: 'permanent' (default), backup: true|false }
 // Note: sysclean items are caches that auto-rebuild — no recycle bin mode, always permanent.
 export async function handleSysCleanClean(req, res) {
   const data = await parseBody(req);
   const ids = Array.isArray(data.ids) ? data.ids : [];
+  const doBackup = data.backup === true;
   const deleted = [], failed = [];
-  // Map target_id -> label for reporting
-  const items = [];
+
+  // Build snapshot of items being deleted (for backup manifest + return data)
+  const snapshot = [];
   for (const id of ids) {
-    // Find the item by id — we need to look it up
-    // Rescan to find path by id
-    let path = null, label = id;
+    let path = null, label = id, target_id = id, size = 0, mtime = 0;
     for (const target of SCAN_TARGETS) {
-      if (target.id === id) { path = target.path; label = target.label; break; }
+      if (target.id === id) { path = target.path; label = target.label; target_id = target.id; break; }
       if (id.startsWith(target.id + ':')) {
         const childName = id.slice(target.id.length + 1);
         path = join(target.path, childName);
         label = `${target.label}: ${childName}`;
+        target_id = target.id;
         break;
       }
     }
+    if (path && existsSync(path)) {
+      try { size = dirSize(path, true); } catch {}
+      try { mtime = lstatSync(path).mtimeMs; } catch {}
+    }
+    snapshot.push({ id, target_id, label, path, size, mtime });
+  }
+
+  // If backup requested, write manifest FIRST (before any deletion) so we have a record
+  // even if deletion partially fails.
+  let backupPath = null;
+  if (doBackup) {
+    try {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, 'T').replace(/-(\d{3})Z$/, 'Z');
+      const filename = `fnclearup_pre_clean_manifest_${ts}.json`;
+      const trashBase = getSafeTrashDir();
+      backupPath = join(trashBase, filename);
+      const manifest = {
+        tool: 'fnclearup sysclean',
+        version: '0.7.6',
+        timestamp: new Date().toISOString(),
+        hostname: process.env.HOSTNAME || 'unknown',
+        user: process.env.USER || 'unknown',
+        total_items: snapshot.length,
+        items: snapshot,
+        note: 'Manifest only — caches auto-rebuild. Use this as audit trail; no files were preserved.',
+      };
+      try { mkdirSync(trashBase, { recursive: true }); } catch {}
+      writeFileSync(backupPath, JSON.stringify(manifest, null, 2), 'utf8');
+    } catch (e) {
+      // Backup failed — abort cleanup to avoid user losing audit trail
+      sendJSON(res, 500, { success: false, error: 'backup failed: ' + e.message, backup_error: true });
+      return;
+    }
+  }
+
+  // Now perform the actual deletion
+  for (const item of snapshot) {
+    const { id, label, path } = item;
     if (!path) { failed.push({ id, reason: 'unknown id' }); continue; }
     if (!isTargetPath(path)) { failed.push({ id, reason: 'path not in whitelist' }); continue; }
     try {
@@ -205,5 +253,47 @@ export async function handleSysCleanClean(req, res) {
     total: deleted.filter(d => !d.skipped).length,
     failures: failed.length,
     success: true,
+    backup_path: backupPath,
   });
+}
+
+// GET /api/sysclean/manifests — list past pre-clean manifests (for audit/recovery UI)
+export function handleSysCleanListManifests(req, res) {
+  const base = getSafeTrashDir();
+  const manifests = [];
+  try {
+    if (existsSync(base)) {
+      for (const f of readdirSync(base)) {
+        if (!f.startsWith('fnclearup_pre_clean_manifest_') || !f.endsWith('.json')) continue;
+        const full = join(base, f);
+        try {
+          const st = lstatSync(full);
+          manifests.push({ name: f, path: full, size: st.size, size_str: formatBytes(st.size), mtime: st.mtimeMs });
+        } catch {}
+      }
+    }
+  } catch {}
+  manifests.sort((a, b) => b.mtime - a.mtime);
+  sendJSON(res, 200, { manifests, base_dir: base, count: manifests.length, success: true });
+}
+
+// GET /api/sysclean/manifest?path=/vol3/1000/.@#local/fnclearup_pre_clean_manifest_xxx.json
+export async function handleSysCleanGetManifest(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+  const p = url.searchParams.get('path');
+  if (!p) { sendJSON(res, 400, { error: 'missing path' }); return; }
+  // Whitelist: must live under getSafeTrashDir() and start with fnclearup_pre_clean_manifest_
+  const base = getSafeTrashDir();
+  if (!p.startsWith(base + '/') || !basename(p).startsWith('fnclearup_pre_clean_manifest_') || !p.endsWith('.json')) {
+    sendJSON(res, 403, { error: 'path not allowed' });
+    return;
+  }
+  if (!existsSync(p)) { sendJSON(res, 404, { error: 'not found' }); return; }
+  try {
+    const data = readFileSync(p, 'utf8');
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(data);
+  } catch (e) {
+    sendJSON(res, 500, { error: e.message });
+  }
 }

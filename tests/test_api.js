@@ -528,6 +528,103 @@ describe('API: System Cache Cleaning (sysclean)', () => {
     // Verify it's gone
     assert.ok(!fs.existsSync(item.path), 'fakeapp_test dir should be deleted');
   });
+
+  it('POST /api/sysclean/clean with backup:true writes a manifest file', async () => {
+    const fs = await import('node:fs');
+    // Re-create fixture
+    const path = await import('node:path');
+    const cacheDir = path.join(process.env.HOME, '.cache', 'fakeapp_test_backup_' + process.pid);
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'data.bin'), Buffer.alloc(512 * 1024));
+
+    // Find it
+    const scan = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const item = scan.data.items.find(it => it.path === cacheDir);
+    assert.ok(item, 'fakeapp_test_backup fixture should be in scan results');
+
+    // Delete with backup
+    const { data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', {
+      ids: [item.id],
+      backup: true,
+    });
+    assert.strictEqual(data.failures, 0, 'delete should succeed');
+    assert.ok(data.backup_path, 'backup_path should be returned');
+    assert.ok(data.backup_path.includes('fnclearup_pre_clean_manifest_'), 'backup file name should match pattern');
+    assert.ok(fs.existsSync(data.backup_path), 'manifest file should be created on disk');
+
+    // Verify manifest content
+    const manifest = JSON.parse(fs.readFileSync(data.backup_path, 'utf8'));
+    assert.strictEqual(manifest.tool, 'fnclearup sysclean');
+    assert.ok(Array.isArray(manifest.items));
+    assert.ok(manifest.items.find(it => it.path === cacheDir), 'manifest should contain deleted item path');
+    assert.ok(manifest.items.find(it => it.path === cacheDir).size >= 512 * 1024);
+
+    // Verify the cache itself is gone
+    assert.ok(!fs.existsSync(cacheDir), 'cache dir should be deleted after clean');
+  });
+
+  it('POST /api/sysclean/clean with backup:false does NOT write a manifest', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const cacheDir = path.join(process.env.HOME, '.cache', 'fakeapp_test_nobackup_' + process.pid);
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'data.bin'), Buffer.alloc(256 * 1024));
+
+    const scan = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const item = scan.data.items.find(it => it.path === cacheDir);
+    assert.ok(item, 'nobackup fixture should be in scan results');
+
+    // Count manifests before (ensure base dir exists for the readdir)
+    const manifestsBase = '/tmp/fnclearup_test/manifests';
+    if (!fs.existsSync(manifestsBase)) fs.mkdirSync(manifestsBase, { recursive: true });
+    const before = fs.readdirSync(manifestsBase).filter(f => f.startsWith('fnclearup_pre_clean_manifest_')).length;
+
+    const { data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', {
+      ids: [item.id],
+      backup: false,
+    });
+    assert.strictEqual(data.failures, 0);
+    assert.strictEqual(data.backup_path, null, 'backup_path should be null when backup:false');
+
+    const after = fs.readdirSync(manifestsBase).filter(f => f.startsWith('fnclearup_pre_clean_manifest_')).length;
+    assert.strictEqual(after, before, 'no new manifest should be created');
+  });
+
+  it('GET /api/sysclean/manifests lists past manifests', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/manifests');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.manifests), 'manifests should be array');
+    assert.ok(data.count >= 1, 'should have at least 1 manifest from previous test');
+    assert.ok(data.base_dir, 'should report base_dir');
+    // Verify sorted by mtime desc
+    for (let i = 1; i < data.manifests.length; i++) {
+      assert.ok(data.manifests[i-1].mtime >= data.manifests[i].mtime, 'should be sorted desc');
+    }
+  });
+
+  it('GET /api/sysclean/manifest?path=... returns manifest content', async () => {
+    // Get a manifest path
+    const list = await httpRequest('GET', '/app/fnclearup/api/sysclean/manifests');
+    const first = list.data.manifests[0];
+    assert.ok(first, 'should have at least one manifest');
+
+    const { status, data } = await httpRequest('GET', `/app/fnclearup/api/sysclean/manifest?path=${encodeURIComponent(first.path)}`);
+    assert.strictEqual(status, 200);
+    assert.strictEqual(data.tool, 'fnclearup sysclean');
+    assert.ok(Array.isArray(data.items));
+  });
+
+  it('GET /api/sysclean/manifest rejects path-traversal', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/manifest?path=' + encodeURIComponent('/etc/passwd'));
+    assert.strictEqual(status, 403);
+    assert.ok(data.error.includes('not allowed'));
+  });
+
+  it('GET /api/sysclean/manifest rejects missing path', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/manifest');
+    assert.strictEqual(status, 400);
+    assert.ok(data.error.includes('missing'));
+  });
 });
 
 // ══════════════════════════════
