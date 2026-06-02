@@ -12,6 +12,7 @@ import { handleTempScan, handleTempDelete } from './api/temp.js';
 import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleDupExport, handleDupStop, handleDupPause, handleDupResume, dupJobs, setDupPaths } from './api/dup.js';
 import { handleEmptyDirScan, handleEmptyDirStop, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
 import { handleSysCleanScan, handleSysCleanClean, handleSysCleanListManifests, handleSysCleanGetManifest } from './api/sysclean.js';
+import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -113,6 +114,9 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/sysclean/clean') { await handleSysCleanClean(req, res); return; }
       if (method === 'GET' && path === '/api/sysclean/manifests') { handleSysCleanListManifests(req, res); return; }
       if (method === 'GET' && path === '/api/sysclean/manifest') { await handleSysCleanGetManifest(req, res); return; }
+      if (method === 'GET' && path === '/api/trash/scan') { handleTrashScan(req, res); return; }
+      if (method === 'GET' && path === '/api/trash/browse') { handleTrashBrowse(req, res); return; }
+      if (method === 'POST' && path === '/api/trash/clean') { await handleTrashClean(req, res); return; }
       sendJSON(res, 404, { error: 'API endpoint not found' });
       return;
     }
@@ -184,7 +188,53 @@ sockServer.on('error', (e) => {
 });
 sockServer.listen(SOCK_PATH, () => console.log(`fnclearup UNIX socket listening on ${SOCK_PATH}`));
 
-// ── Graceful shutdown ──
+// ── Trash handlers ──
+function handleTrashScan(req, res) {
+  try {
+    const data = scanTrash();
+    sendJSON(res, 200, { ok: true, ...data });
+  } catch (err) {
+    sendJSON(res, 500, { error: err.message || String(err) });
+  }
+}
+
+function handleTrashBrowse(req, res) {
+  const u = new URL(req.url, 'http://x');
+  const dir = u.searchParams.get('path') || '';
+  if (typeof dir !== 'string') {
+    sendJSON(res, 400, { error: 'path must be a string' });
+    return;
+  }
+  try {
+    const tree = browseTrash(dir);
+    if (tree && tree.error) {
+      sendJSON(res, 400, tree);
+      return;
+    }
+    sendJSON(res, 200, { ok: true, tree });
+  } catch (err) {
+    sendJSON(res, 500, { error: err.message || String(err) });
+  }
+}
+
+async function handleTrashClean(req, res) {
+  let body = {};
+  try { body = await parseBody(req); } catch {}
+  const ageDays = Number(body.ageDays);
+  if (!Number.isFinite(ageDays) || ageDays < 0) {
+    sendJSON(res, 400, { error: 'ageDays must be a non-negative number (0 = clean all)' });
+    return;
+  }
+  const withManifest = body.manifest !== false;
+  try {
+    const result = cleanTrash(ageDays, withManifest);
+    sendJSON(res, 200, { ok: true, ...result });
+  } catch (err) {
+    sendJSON(res, 500, { error: err.message || String(err) });
+  }
+}
+
+// ── Shutdown ──
 function shutdown() {
   for (const [jobId, job] of dupJobs) {
     if (job.proc) { try { job.proc.kill(); } catch(e) {} }

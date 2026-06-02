@@ -1424,6 +1424,217 @@ document.addEventListener('change', (e) => {
 let _startupCountdownTimer = null;
 let _startupCountdownLeft = 3;
 
+// ── Trash tab ──
+let _trashLastScan = null;
+let _trashCleanAge = 30;
+
+function _escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function _formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return '0 B';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n >= 100 || i === 0 ? 0 : n >= 10 ? 1 : 2) + ' ' + u[i];
+}
+
+async function trashScan() {
+  const btn = $('trashScanBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>扫描中...</span>'; }
+  $('trash-status').innerHTML = '<div class="kpi-loading">⏳ 扫描所有 vol/UID 下的 trash 目录...</div>';
+  try {
+    const r = await apiFetch('/api/trash/scan');
+    if (!r || !r.ok) {
+      $('trash-status').innerHTML = '<div class="kpi-error">❌ 扫描失败：' + _escHtml((r && r.error) || 'unknown') + '</div>';
+      return;
+    }
+    _trashLastScan = r;
+    // KPI
+    const b = r.buckets || {};
+    const totalCleanable = (b.lt90?.size || 0) + (b.lt365?.size || 0) + (b.gte365?.size || 0);
+    $('trashKpi30').textContent = _formatBytes(b.lt90?.size || 0);
+    $('trashKpi90').textContent = _formatBytes(b.lt365?.size || 0);
+    $('trashKpi365').textContent = _formatBytes(b.gte365?.size || 0);
+    $('trashKpiTotal').textContent = _formatBytes(r.totals?.size || 0);
+    $('trashKpiTopDirs').textContent = (r.myTrash || []).reduce((s, t) => s + (t.dirs || 0), 0);
+
+    // List my trash
+    const list = $('trash-list');
+    if (!r.myTrash || r.myTrash.length === 0) {
+      list.innerHTML = '<div class="kpi-info">✨ 所有 vol 上没有自己的 trash 目录（可能还没被用过回收站功能）</div>';
+    } else {
+      let html = '<div class="data-table"><table><thead><tr><th>卷</th><th>路径</th><th>文件数</th><th>目录数</th><th>大小</th><th>最老 mtime</th></tr></thead><tbody>';
+      for (const t of r.myTrash) {
+        const mtime = t.mtime ? new Date(t.mtime).toLocaleString('zh-CN') : '?';
+        html += `<tr>
+          <td>${_escHtml(t.vol)}</td>
+          <td><code>${_escHtml(t.path)}</code></td>
+          <td>${t.files}</td>
+          <td>${t.dirs}</td>
+          <td><strong>${_formatBytes(t.size)}</strong></td>
+          <td><small>${_escHtml(mtime)}</small></td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+      list.innerHTML = html;
+    }
+
+    // Other UID trash (灰化)
+    const other = $('trash-other');
+    if (r.otherTrash && r.otherTrash.length > 0) {
+      let oh = '<h4 style="margin-top:12px;color:var(--color-text-secondary)">👥 其他用户的 trash（仅展示，不清理）</h4>';
+      oh += '<div class="data-table"><table><thead><tr><th>用户</th><th>卷</th><th>大小</th></tr></thead><tbody>';
+      for (const t of r.otherTrash) {
+        oh += `<tr class="grayed">
+          <td>UID ${_escHtml(t.uid)}</td>
+          <td><code>${_escHtml(t.path)}</code></td>
+          <td>${_formatBytes(t.size)}</td>
+        </tr>`;
+      }
+      oh += '</tbody></table></div>';
+      other.innerHTML = oh;
+    } else {
+      other.innerHTML = '';
+    }
+
+    $('trash-status').innerHTML = '<div class="kpi-info">✅ 扫描完成：' + _formatBytes(r.totals?.size || 0) + '，其中 30+ 天可清 ' + _formatBytes(totalCleanable) + '</div>';
+    $('trash-empty').style.display = 'none';
+    // 启用清理按钮
+    for (const id of ['trashClean30Btn', 'trashClean90Btn', 'trashClean365Btn', 'trashCleanAllBtn', 'trashBrowseBtn']) {
+      const b = $(id); if (b) b.disabled = false;
+    }
+  } catch (e) {
+    $('trash-status').innerHTML = '<div class="kpi-error">❌ 扫描失败：' + _escHtml(e.message || String(e)) + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔍</span><span>扫描回收站</span>'; }
+  }
+}
+
+function trashClean(ageDays) {
+  _trashCleanAge = ageDays;
+  if (!_trashLastScan) {
+    showToast('请先点击「扫描回收站」', 'warn');
+    return;
+  }
+  // 弹确认框
+  const ageText = ageDays === 0 ? '全部内容' : `mtime 超过 ${ageDays} 天的内容`;
+  $('trashDeleteAgeDesc').textContent = '范围：' + ageText;
+  // 估算将删数量（从 buckets 推算）
+  const b = _trashLastScan.buckets || {};
+  let willDelete = 0, willSize = 0;
+  if (ageDays === 0) {
+    willSize = _trashLastScan.totals?.size || 0;
+    willDelete = (_trashLastScan.myTrash || []).reduce((s, t) => s + (t.files || 0) + (t.dirs || 0), 0);
+  } else if (ageDays === 30) {
+    willSize = (b.lt90?.size || 0) + (b.lt365?.size || 0) + (b.gte365?.size || 0);
+    willDelete = (b.lt90?.count || 0) + (b.lt365?.count || 0) + (b.gte365?.count || 0);
+  } else if (ageDays === 90) {
+    willSize = (b.lt365?.size || 0) + (b.gte365?.size || 0);
+    willDelete = (b.lt365?.count || 0) + (b.gte365?.count || 0);
+  } else if (ageDays === 365) {
+    willSize = b.gte365?.size || 0;
+    willDelete = b.gte365?.count || 0;
+  }
+  $('trashDeleteCount').textContent = willDelete;
+  $('trashDeleteSize').textContent = _formatBytes(willSize);
+  // 路径预览
+  const pathsEl = $('trashDeletePaths');
+  if (willDelete === 0) {
+    pathsEl.innerHTML = '<em style="color:var(--color-text-secondary)">当前没有可清理的内容</em>';
+  } else {
+    let ph = '<ul style="margin:0;padding-left:20px">';
+    for (const t of (_trashLastScan.myTrash || [])) {
+      ph += `<li><code>${_escHtml(t.path)}</code> · ${_formatBytes(t.size)}</li>`;
+    }
+    ph += '</ul>';
+    pathsEl.innerHTML = ph;
+  }
+  $('trashDeleteModal').classList.add('visible');
+}
+
+function hideTrashDeleteModal() {
+  $('trashDeleteModal')?.classList.remove('visible');
+}
+
+async function doTrashClean() {
+  const age = _trashCleanAge;
+  const btn = $('trashDeleteConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '清理中...'; }
+  $('trash-status').innerHTML = '<div class="kpi-loading">⏳ 清理中（写入 manifest + 删除文件）...</div>';
+  hideTrashDeleteModal();
+  try {
+    const r = await apiFetch('/api/trash/clean', {
+      method: 'POST', body: { ageDays: age, manifest: true }
+    });
+    if (!r || !r.ok) {
+      $('trash-status').innerHTML = '<div class="kpi-error">❌ 清理失败：' + _escHtml((r && r.error) || 'unknown') + '</div>';
+      return;
+    }
+    const deletedCount = (r.deleted || []).length;
+    const failedCount = (r.failed || []).length;
+    const freedSize = (r.deleted || []).reduce((s, d) => s + (d.size || 0), 0);
+    let msg = '✅ 清理完成：删除 ' + deletedCount + ' 个目录，释放 ' + _formatBytes(freedSize);
+    if (failedCount > 0) msg += '，失败 ' + failedCount + ' 个';
+    if (r.manifestPath) msg += '<br><small style="color:var(--color-text-secondary)">📦 manifest: ' + _escHtml(r.manifestPath) + '</small>';
+    $('trash-status').innerHTML = '<div class="kpi-info">' + msg + '</div>';
+    showToast(`清理 ${deletedCount} 项，释放 ${_formatBytes(freedSize)}`, 'success');
+    // 自动重新扫描
+    await trashScan();
+  } catch (e) {
+    $('trash-status').innerHTML = '<div class="kpi-error">❌ 清理失败：' + _escHtml(e.message || String(e)) + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '确认清理'; }
+  }
+}
+
+async function trashBrowseList() {
+  if (!_trashLastScan || !_trashLastScan.myTrash || _trashLastScan.myTrash.length === 0) {
+    showToast('请先扫描回收站', 'warn');
+    return;
+  }
+  $('trashBrowseDesc').textContent = '正在加载所有 vol 的回收站树...';
+  $('trashBrowseTree').innerHTML = '<div class="kpi-loading">⏳ 加载中...</div>';
+  $('trashBrowseModal').classList.add('visible');
+  try {
+    let html = '';
+    for (const t of _trashLastScan.myTrash) {
+      html += '<h4 style="margin:8px 0 4px"><code>' + _escHtml(t.path) + '</code></h4>';
+      const r = await apiFetch('/api/trash/browse?path=' + encodeURIComponent(t.path));
+      if (!r || !r.ok) {
+        html += '<div class="kpi-error">❌ ' + _escHtml((r && r.error) || '加载失败') + '</div>';
+        continue;
+      }
+      html += _renderTrashTree(r.tree, 0);
+    }
+    $('trashBrowseTree').innerHTML = html || '<em>回收站为空</em>';
+    $('trashBrowseDesc').textContent = '共 ' + (_trashLastScan.myTrash || []).length + ' 个 trash 目录的完整文件树（只读）';
+  } catch (e) {
+    $('trashBrowseTree').innerHTML = '<div class="kpi-error">❌ ' + _escHtml(e.message || String(e)) + '</div>';
+  }
+}
+
+function _renderTrashTree(node, depth) {
+  if (!node) return '';
+  let html = '';
+  const indent = depth * 16;
+  if (node.type === 'dir') {
+    const sizeStr = node.size > 0 ? ' (' + _formatBytes(node.size) + ')' : '';
+    html += '<div style="padding-left:' + indent + 'px">📁 <strong>' + _escHtml(node.name) + '</strong>' + sizeStr + '</div>';
+    if (node.children && depth < 4) {
+      for (const c of node.children) html += _renderTrashTree(c, depth + 1);
+    } else if (node.children && node.children.length > 0) {
+      html += '<div style="padding-left:' + (indent + 16) + 'px;color:var(--color-text-secondary)">…(' + node.children.length + ' 项，更深层省略)</div>';
+    }
+  } else {
+    html += '<div style="padding-left:' + indent + 'px;color:var(--color-text-secondary)">📄 ' + _escHtml(node.name) + ' · ' + _formatBytes(node.size || 0) + '</div>';
+  }
+  return html;
+}
+
+function hideTrashBrowseModal() {
+  $('trashBrowseModal')?.classList.remove('visible');
+}
+
 // Show the warning modal on every app open. The "我已知晓风险" button is
 // disabled for 3 seconds (forces user to actually read the message). "稍后再说"
 // closes the modal but does NOT mark anything — the warning re-appears the
@@ -1517,6 +1728,8 @@ function init() {
     toggleSysCleanBackup, getSysCleanBackupEnabled, showSysCleanManifests, hideSysCleanManifests,
     downloadSysCleanManifest, viewSysCleanManifest,
     showStartupWarning, closeStartupWarning,
+    trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
+    trashBrowseList, hideTrashBrowseModal,
   };
   Object.assign(window, exports);
 

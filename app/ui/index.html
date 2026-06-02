@@ -32,6 +32,7 @@
       <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false">📋 去重</button>
       <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false">📭 去空</button>
       <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false">🧹 系统</button>
+      <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false">🗑 回收站</button>
     </div>
 
     <!-- Tab 1: 应用残余 -->
@@ -302,6 +303,29 @@
         <div id="sysclean-empty" class="dup-empty-state"><div class="dup-empty-icon">🧹</div><h3>尚未开始扫描</h3><p>扫描 APT 缓存、NPM/PIP 缓存、系统日志轮转文件、缩略图、浏览器缓存等可清理项。</p></div>
       </div>
     </div>
+
+    <!-- Tab 8: 回收站清理 -->
+    <div class="tab-panel" id="trashPanel" data-panel="trash" hidden>
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon">🗑️</div><div class="kpi-body"><div class="kpi-label">30 天+</div><div class="kpi-value" id="trashKpi30">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">🗑</div><div class="kpi-body"><div class="kpi-label">90 天+</div><div class="kpi-value" id="trashKpi90">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">🪦</div><div class="kpi-body"><div class="kpi-label">1 年+</div><div class="kpi-value" id="trashKpi365">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">📦</div><div class="kpi-body"><div class="kpi-label">总占用</div><div class="kpi-value" id="trashKpiTotal">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">📂</div><div class="kpi-body"><div class="kpi-label">顶级目录</div><div class="kpi-value" id="trashKpiTopDirs">-</div></div></div>
+      </div>
+      <div class="section-header">
+        <button type="button" class="btn btn-primary" id="trashScanBtn" onclick="trashScan()"><span>🔍</span><span>扫描回收站</span></button>
+        <button type="button" class="btn btn-danger" id="trashClean30Btn" onclick="trashClean(30)" disabled><span>🗑</span><span>清理 30 天+</span></button>
+        <button type="button" class="btn btn-danger" id="trashClean90Btn" onclick="trashClean(90)" disabled><span>🗑</span><span>清理 90 天+</span></button>
+        <button type="button" class="btn btn-danger" id="trashClean365Btn" onclick="trashClean(365)" disabled><span>🗑</span><span>清理 1 年+</span></button>
+        <button type="button" class="btn btn-danger" id="trashCleanAllBtn" onclick="trashClean(0)" disabled><span>🔥</span><span>全部清空</span></button>
+        <button type="button" class="btn btn-secondary" id="trashBrowseBtn" onclick="trashBrowseList()" disabled><span>👁</span><span>浏览内容</span></button>
+      </div>
+      <div id="trash-status" style="margin-top:12px"></div>
+      <div id="trash-list" style="margin-top:12px"></div>
+      <div id="trash-other" style="margin-top:16px"></div>
+      <div id="trash-empty" class="dup-empty-state"><div class="dup-empty-icon">🗑️</div><h3>尚未开始扫描</h3><p>扫描 /vol*/UID/.@#local/trash/ 下的过期文件，按 30/90/365 天分级清理。删除前自动写 manifest 备份到 <code>data/manifests/</code>。</p></div>
+    </div>
   </div>
 
   <!-- 启动警告弹窗（首次打开时显示，确认后不再弹） -->
@@ -459,6 +483,33 @@
       <div class="paths-preview" id="syscleanManifestsList" style="max-height:340px;overflow-y:auto;margin-top:8px"></div>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideSysCleanManifests()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 回收站清理确认弹窗 -->
+  <div class="modal-overlay" id="trashDeleteModal">
+    <div class="modal">
+      <h3><span>🗑️</span><span>确认清理回收站</span></h3>
+      <p>即将删除 <strong id="trashDeleteCount">0</strong> 个回收站顶级目录，可释放 <strong id="trashDeleteSize">0 B</strong></p>
+      <p style="color:var(--color-text-secondary);font-size:13px" id="trashDeleteAgeDesc">范围：mtime 超过指定天数的所有内容</p>
+      <div class="paths-preview" id="trashDeletePaths" style="max-height:200px;overflow-y:auto"></div>
+      <p style="color:var(--color-text-secondary);font-size:12px;margin-top:8px">⚠️ 回收站文件删除后无法恢复。清理前会写一份 manifest 到 <code>data/manifests/</code> 供审计。</p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideTrashDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" id="trashDeleteConfirmBtn" onclick="doTrashClean()">确认清理</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 回收站浏览弹窗 -->
+  <div class="modal-overlay" id="trashBrowseModal" onclick="if(event.target===this)hideTrashBrowseModal()">
+    <div class="modal modal-md" style="max-width:780px" onclick="event.stopPropagation()">
+      <h3><span>👁</span><span>回收站内容浏览</span></h3>
+      <p style="color:var(--color-text-secondary);font-size:13px" id="trashBrowseDesc">选择 vol 查看对应 trash 目录的文件树（只读）</p>
+      <div id="trashBrowseTree" style="max-height:400px;overflow-y:auto;background:var(--color-bg-secondary);padding:8px;border-radius:6px;margin-top:8px"></div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="hideTrashBrowseModal()">关闭</button>
       </div>
     </div>
   </div>
