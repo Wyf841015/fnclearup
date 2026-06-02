@@ -44,11 +44,12 @@ export function execCmd(cmd, args, timeout = 30000) {
 }
 
 export function isSafePath(p) {
+  if (!p) return false;
   const n = resolve(p);
-  // Standard whitelist: /vol* paths
-  if ([...SAFE_PREFIXES].some(pre => n.startsWith(pre))) return true;
+  // Standard whitelist: /vol* paths (allow the dir itself like /vol2 or any subdir like /vol2/foo)
+  if ([...SAFE_PREFIXES].some(pre => n === pre.slice(0, -1) || n.startsWith(pre))) return true;
   // Test fixture allowlist: when TRM_FNCLEARUP_TEST=1, allow /tmp/fnclearup_test paths
-  if (process.env.TRM_FNCLEARUP_TEST === '1' && n.startsWith('/tmp/fnclearup_test')) return true;
+  if (process.env.TRM_FNCLEARUP_TEST === '1' && (n === '/tmp/fnclearup_test' || n.startsWith('/tmp/fnclearup_test/'))) return true;
   return false;
 }
 

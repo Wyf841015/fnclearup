@@ -411,6 +411,27 @@ describe('API: Path Whitelist (Security)', () => {
     assert.strictEqual(status, 403);
     assert.ok(data.error);
   });
+  it('GET /api/browse with /vol2 is allowed (the dir itself, not just subdirs)', async () => {
+    // Reproduces fnOS UI bug: browse modal could not list /vol2 because isSafePath
+    // only matched "/volN/" prefix, not the bare "/volN" dir.
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol2');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.entries), 'entries should be an array');
+  });
+  it('GET /api/browse with /vol2/1000 is allowed (subdir)', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol2/1000');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.entries));
+  });
+  it('GET /api/browse with /vol20 is rejected (not in /vol1-10)', async () => {
+    const { status } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol20');
+    assert.strictEqual(status, 403);
+  });
+  it('GET /api/browse with /vol2/../etc is rejected (path traversal)', async () => {
+    // resolve('/vol2/../etc') === '/etc', so this must be rejected
+    const { status } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol2/../etc');
+    assert.strictEqual(status, 403);
+  });
 });
 
 describe('API: 404 Handling', () => {
