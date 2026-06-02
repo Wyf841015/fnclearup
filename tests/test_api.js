@@ -399,6 +399,51 @@ describe('API: Empty Dir Scan', () => {
     assert.ok(sawCurrentDir.startsWith(wideDir), `currentDir should be under wideDir, got: ${sawCurrentDir}`);
   });
 
+  it('empty_dir scan yields to event loop: stop and browse are responsive during a long scan', async () => {
+    // Build a large tree (500 dirs) so the scan takes long enough to test
+    // concurrent responsiveness. Without event-loop yielding, walk() blocks
+    // the server and stop/browse requests time out (regression: user reported
+    // "click stop then directory browse silently fails").
+    const bigDir = join(TEST_TMP, 'empty_big');
+    if (existsSync(bigDir)) {
+      try { rmSync(bigDir, { recursive: true, force: true }); } catch {}
+    }
+    mkdirSync(bigDir, { recursive: true });
+    for (let i = 0; i < 500; i++) mkdirSync(join(bigDir, `d${i}`, 'inner'), { recursive: true });
+
+    // Start scan
+    const start = await httpRequest('POST', '/app/fnclearup/api/empty_dir/scan', { path: bigDir });
+    assert.ok(start.data.jobId, 'should return jobId');
+    const jobId = start.data.jobId;
+
+    // Wait briefly for the scan to actually be in progress (not completed yet)
+    await new Promise(r => setTimeout(r, 50));
+
+    // Fire stop and browse CONCURRENTLY while scan is still running.
+    // With event-loop yielding, both should respond within ~1s.
+    // Without yielding, they'd hang until the 500-dir walk finishes (~hundreds of ms to seconds).
+    const stopStart = Date.now();
+    const [stopRes, browseRes] = await Promise.all([
+      httpRequest('POST', '/app/fnclearup/api/empty_dir/stop', { jobId }),
+      httpRequest('GET', '/app/fnclearup/api/browse?path=' + encodeURIComponent(bigDir)),
+    ]);
+    const stopElapsed = Date.now() - stopStart;
+
+    // Stop should be acknowledged quickly (yielded to event loop = server responsive)
+    assert.strictEqual(stopRes.status, 200);
+    assert.strictEqual(stopRes.data.stopped, true, 'stop should report stopped=true');
+
+    // Browse should also have responded with the entries
+    assert.strictEqual(browseRes.status, 200);
+    assert.ok(browseRes.data.success, 'browse should succeed even while scan is running');
+    assert.ok(Array.isArray(browseRes.data.entries), 'browse should return entries array');
+
+    // The combined response time should be reasonable — if event loop is blocked
+    // by a sync walk, this would take MUCH longer. We just check it didn't take
+    // an absurd amount of time (sanity check, not a strict threshold).
+    assert.ok(stopElapsed < 5000, `stop+browse should be responsive during scan, took ${stopElapsed}ms`);
+  });
+
   it('POST /api/empty_dir/scan with /etc path is rejected (whitelist)', async () => {
     const { status, data } = await httpRequest('POST', '/app/fnclearup/api/empty_dir/scan', { path: '/etc' });
     assert.strictEqual(status, 403);

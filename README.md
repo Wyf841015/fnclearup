@@ -4,6 +4,14 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.7.9 更新
+
+- **修复：扫描期间点击其他功能（如目录浏览）无响应** — 根因是空目录扫描的 `walk()` 是同步递归调用，会**阻塞整个 Node.js 事件循环**。扫描运行时整个 server 停止响应所有 HTTP，浏览/stop 请求排队等扫描完才被处理
+- **修复：walk/collect 改为 async，每 200 目录 `await setImmediate()` 让出事件循环** — 这样扫描期间 server 仍能响应 browse/stop
+- **修复：emptyDirJobs 在 setTimeout 前先注册** — 这样 stop 请求**立即**能找到 job（之前要等 runScan 整个 promise 链完成后才注册）
+- **新增 stop 提前到达的处理** — 用 `aborted_flag.early` 标记 stop 比 scan 早到的情况，runScan 解析后检查并立即退出
+- **测试 60/60 通过** — 新增用例：扫描 500 目录中途并发发 stop + browse，验证两者都在 5s 内响应
+
 ## v0.7.8 更新
 
 - **新增启动警告弹窗** — 每次打开应用立即弹出「⚠️ 清理有风险，确认需谨慎！！！」，必须阅读 3 秒后才能点「✅ 我已知晓风险」（防止用户没读就点）
@@ -140,6 +148,13 @@
 | `/api/empty_dir/delete` | POST | 删除空目录 |
 
 ## 版本历史
+
+### v0.7.9 (2026-06-02)
+
+- 修复：空目录扫描期间浏览/stop 无响应（walk 同步阻塞事件循环）
+- 修复：emptyDirJobs 注册时机（stop 提前到达能立即被处理）
+- walk/collect 改为 async，每 200 目录 yield 一次
+- 测试 60/60 通过
 
 ### v0.7.8 (2026-06-02)
 

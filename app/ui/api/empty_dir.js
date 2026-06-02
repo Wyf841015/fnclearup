@@ -11,6 +11,22 @@ export function setEmptyDirPaths(stateDir, _scanScript) {
   mkdirSync(stateDir, { recursive: true });
 }
 
+// Yield to the event loop every N directories so other HTTP requests
+// (browse / stop) can be served while a scan is running. Without this,
+// walk() blocks the entire Node.js event loop and the server looks "frozen"
+// — clicks in other tabs (e.g. open directory browser) appear to silently
+// fail until the scan completes.
+const YIELD_EVERY = 200;
+let _yieldSinceLast = 0;
+function maybeYield() {
+  _yieldSinceLast++;
+  if (_yieldSinceLast >= YIELD_EVERY) {
+    _yieldSinceLast = 0;
+    return new Promise(resolve => setImmediate(resolve));
+  }
+  return null;
+}
+
 // ── 同进程异步扫描（不用 spawn 子进程） ──
 // Stream + parent-only tracking: don't retain dirMap for all dirs
 // Each directory only needs to know "do I have a child that has a file"
@@ -55,8 +71,14 @@ function runScan(jobId, scanPath) {
   const allPaths = [];
   const fileCount = new Map();  // dir -> number of direct files
 
-  function walk(p) {
+  async function walk(p) {
     if (aborted) return;
+    // Yield to event loop every N dirs so other HTTP requests (browse/stop)
+    // can be served. Without this, walk() blocks the entire server and
+    // interactive features like "open directory browser" silently fail
+    // until the scan completes.
+    const y = maybeYield();
+    if (y) await y;
     let entries;
     try { entries = readdirSync(p); } catch { return; }
     let fileN = 0;
@@ -78,79 +100,87 @@ function runScan(jobId, scanPath) {
     // Update progress: first directory IMMEDIATELY so UI shows feedback within ~1s,
     // then every 5 directories after that (was every 10 — felt too slow on big trees).
     if (visitCount === 1 || visitCount % 5 === 0) update('scanning', [], null, p);
-    for (const c of childDirs) walk(c);
-  }
-
-  try {
-    walk(scanPath);
-
-    // Pass 2: bottom-up — for each dir, hasFile = (own files > 0) OR (any child hasFile)
-    // Sort by depth (desc) so deepest processed first
-    const hasFile = new Map();
-    allPaths.sort((a, b) => b.split('/').length - a.split('/').length);
-    for (const p of allPaths) {
-      const own = (fileCount.get(p) || 0) > 0;
-      // hasFile includes child dirs that have files
-      // We check each child by looking it up
-      let childHasFile = false;
-      try {
-        const entries = readdirSync(p);
-        for (const name of entries) {
-          if (shouldSkipDir(name)) continue;
-          const fp = join(p, name);
-          try {
-            const st = lstatSync(fp);
-            if (st.isDirectory() && !st.isSymbolicLink() && hasFile.get(fp)) {
-              childHasFile = true;
-              break;
-            }
-          } catch {}
-        }
-      } catch {}
-      hasFile.set(p, own || childHasFile);
-    }
-
-    // Pass 3: collect empty dirs (top-down, but only output leaves)
-    const results = [];
-    function collect(p) {
+    for (const c of childDirs) {
       if (aborted) return;
-      if (!hasFile.get(p)) {
-        results.push({ path: p, name: basename(p), type: 'dir' });
-        return;  // empty leaf
-      }
-      try {
-        const entries = readdirSync(p);
-        for (const name of entries) {
-          if (shouldSkipDir(name)) continue;
-          const fp = join(p, name);
-          try {
-            const st = lstatSync(fp);
-            if (st.isDirectory() && !st.isSymbolicLink()) collect(fp);
-          } catch {}
-        }
-      } catch {}
-    }
-    collect(scanPath);
-
-    // Free memory
-    allPaths.length = 0;
-    fileCount.clear();
-    hasFile.clear();
-
-    update('complete', results, null);
-  } catch (e) {
-    console.error('[empty_dir] runScan ERROR', e);
-    if (!aborted) update('error', [], e.message || '扫描异常');
-  } finally {
-    console.log('[empty_dir] runScan FINALLY', { jobId, aborted, visitCount, willUnlink: aborted });
-    emptyDirJobs.delete(jobId);
-    // Only unlink state file on abort/error — keep complete state so client can poll
-    if (aborted) {
-      try { unlinkSync(stateFile); } catch (e2) { console.error('[empty_dir] unlink fail', e2); }
+      await walk(c);
     }
   }
 
-  return { abort: () => { aborted = true; } };
+  return (async () => {
+    try {
+      await walk(scanPath);
+
+      // Pass 2: bottom-up — for each dir, hasFile = (own files > 0) OR (any child hasFile)
+      // Sort by depth (desc) so deepest processed first
+      const hasFile = new Map();
+      allPaths.sort((a, b) => b.split('/').length - a.split('/').length);
+      for (const p of allPaths) {
+        if (aborted) return;
+        const y2 = maybeYield();
+        if (y2) await y2;
+        const own = (fileCount.get(p) || 0) > 0;
+        // hasFile includes child dirs that have files
+        // We check each child by looking it up
+        let childHasFile = false;
+        try {
+          const entries = readdirSync(p);
+          for (const name of entries) {
+            if (shouldSkipDir(name)) continue;
+            const fp = join(p, name);
+            try {
+              const st = lstatSync(fp);
+              if (st.isDirectory() && !st.isSymbolicLink() && hasFile.get(fp)) {
+                childHasFile = true;
+                break;
+              }
+            } catch {}
+          }
+        } catch {}
+        hasFile.set(p, own || childHasFile);
+      }
+
+      // Pass 3: collect empty dirs (top-down, but only output leaves)
+      const results = [];
+      async function collect(p) {
+        if (aborted) return;
+        const y3 = maybeYield();
+        if (y3) await y3;
+        if (!hasFile.get(p)) {
+          results.push({ path: p, name: basename(p), type: 'dir' });
+          return;  // empty leaf
+        }
+        try {
+          const entries = readdirSync(p);
+          for (const name of entries) {
+            if (shouldSkipDir(name)) continue;
+            const fp = join(p, name);
+            try {
+              const st = lstatSync(fp);
+              if (st.isDirectory() && !st.isSymbolicLink()) await collect(fp);
+            } catch {}
+          }
+        } catch {}
+      }
+      await collect(scanPath);
+
+      // Free memory
+      allPaths.length = 0;
+      fileCount.clear();
+      hasFile.clear();
+
+      update('complete', results, null);
+    } catch (e) {
+      console.error('[empty_dir] runScan ERROR', e);
+      if (!aborted) update('error', [], e.message || '扫描异常');
+    } finally {
+      console.log('[empty_dir] runScan FINALLY', { jobId, aborted, visitCount, willUnlink: aborted });
+      emptyDirJobs.delete(jobId);
+      // Only unlink state file on abort/error — keep complete state so client can poll
+      if (aborted) {
+        try { unlinkSync(stateFile); } catch (e2) { console.error('[empty_dir] unlink fail', e2); }
+      }
+    }
+  })().then(() => ({ abort: () => { aborted = true; } }));
 }
 
 // ── POST /api/empty_dir/scan ──
@@ -183,9 +213,24 @@ export async function handleEmptyDirScan(req, res) {
   // 先返回响应，再异步扫描
   sendJSON(res, 200, { jobId, status: 'started', success: true });
 
-  setTimeout(() => {
-    const handle = runScan(jobId, scanPath);
-    emptyDirJobs.set(jobId, { stateFile, scanPath, startTime, abort: handle.abort });
+  // Register the job BEFORE the scan starts so /api/empty_dir/stop can find it
+  // immediately. Abort handle is set after the async runScan resolves, but stop
+  // can still find the job and will just no-op on the abort call until then
+  // (worst case: stop arrives before walk starts, scan never runs, status stays
+  // in memory briefly until runScan completes its setup, then sees aborted=true).
+  let abortFn = () => { aborted_flag.early = true; };
+  const aborted_flag = { early: false };
+  emptyDirJobs.set(jobId, { stateFile, scanPath, startTime, abort: () => abortFn() });
+
+  setTimeout(async () => {
+    const handle = await runScan(jobId, scanPath);
+    // If stop arrived BEFORE runScan resolved, set aborted flag so the scan
+    // loop sees it and exits immediately.
+    if (aborted_flag.early) handle.abort();
+    abortFn = handle.abort;
+    // Re-register with the real abort fn
+    const job = emptyDirJobs.get(jobId);
+    if (job) job.abort = handle.abort;
   }, 0);
 }
 
