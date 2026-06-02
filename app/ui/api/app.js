@@ -1,7 +1,40 @@
-import { existsSync, readdirSync } from 'node:fs';
-import { join, basename, dirname } from 'node:path';
+import { existsSync, readdirSync, renameSync, cpSync, mkdirSync } from 'node:fs';
+import { join, basename, dirname, extname } from 'node:path';
 import { sendJSON, execCmd, isSafePath, parseBody } from '../lib/util.js';
 import { VOL_GLOBS } from '../lib/config.js';
+
+// Move a path to its volume's recycle bin: /volN/UID/.@#local/trash/...
+// For /vol02 netdisk mounts, the cloud filesystem doesn't support .@#local trash
+// (fuse mount, mkdir is denied) — return false so caller falls back to rm -rf.
+function moveToTrash(p) {
+  // /volN/UID/... or /vol02/<mount-id>/... — UID/mount-id may contain digits, letters, dashes
+  const m = p.match(/^(\/(?:mnt\/)?vol\d+\/[\w-]+)\/(.+)/);
+  if (!m) return false;
+  // /vol02 is fnOS netdisk mount — no .@#local trash support
+  if (m[1].startsWith('/vol02/')) return false;
+  const trashDir = `${m[1]}/.@#local/trash`;
+  const dest = join(trashDir, m[2]);
+  try {
+    mkdirSync(dirname(dest), { recursive: true });
+    let finalDest = dest;
+    let counter = 1;
+    while (existsSync(finalDest)) {
+      const ext = extname(dest);
+      finalDest = join(dirname(dest), `${basename(dest).slice(0, ext.length || basename(dest).length)}_${counter}${ext}`);
+      counter++;
+    }
+    try {
+      renameSync(p, finalDest);
+      return true;
+    } catch (e) {
+      if (e.code !== 'EXDEV') throw e;
+      // Cross-device: copy then remove original
+      cpSync(p, finalDest, { recursive: true });
+      try { execCmd('rm', ['-rf', p], 60000); } catch {}
+      return true;
+    }
+  } catch { return false; }
+}
 
 // POST /api/scan
 export async function handleScan(req, res) {
@@ -46,10 +79,12 @@ export async function handleScan(req, res) {
 }
 
 // POST /api/delete
+// Body: { paths: [...], mode: 'trash'|'permanent' (default trash), delete_users: bool, delete_appshare_residual: bool }
 export async function handleDelete(req, res) {
   const data = await parseBody(req);
   const deleteUsers = !!data.delete_users;
   const deleteAppshare = !!data.delete_appshare_residual;
+  const mode = data.mode === 'permanent' ? 'permanent' : 'trash';
   const rawPaths = data.paths || [];
   const paths = rawPaths.filter(p => isSafePath(p));
   const skipped = rawPaths.length - paths.length;
@@ -58,12 +93,11 @@ export async function handleDelete(req, res) {
     try {
       await execCmd('chattr', ['-i', p], 5000).catch(() => {});
       if (existsSync(p)) {
-        // If deleteAppshare, also remove sibling @appshare/.../app directory
-        let r;
+        // If deleteAppshare, also remove sibling @appshare/.../app directory (always permanent — appshare is system)
         if (deleteAppshare) {
-          const m = p.match(/^(\/(?:mnt\/)?vol\d+\/\d+\/)(.+)/);
+          const m = p.match(/^(\/(?:mnt\/)?vol\d+\/[\w-]+)\/(.+)/);
           if (m) {
-            const appsharePath = `${m[1]}@appshare/${m[2]}`;
+            const appsharePath = `${m[1]}/@appshare/${m[2]}`;
             await execCmd('chattr', ['-i', appsharePath], 5000).catch(() => {});
             if (existsSync(appsharePath)) {
               const ra = await execCmd('rm', ['-rf', appsharePath], 60000);
@@ -71,9 +105,24 @@ export async function handleDelete(req, res) {
             }
           }
         }
-        r = await execCmd('rm', ['-rf', p], 60000);
-        if (r.code === 0) deleted.push(p);
+        // Per user request: netdisk / vol02 residuals are user data — default to trash, not permanent rm -rf
+        let ok = false;
+        if (mode === 'trash') {
+          ok = moveToTrash(p);
+          if (!ok) {
+            // Fall back to rm -rf if path isn't in /volN/UID/... (e.g. /volN itself)
+            const r = await execCmd('rm', ['-rf', p], 60000);
+            ok = (r.code === 0);
+          }
+        } else {
+          const r = await execCmd('rm', ['-rf', p], 60000);
+          ok = (r.code === 0);
+        }
+        if (ok) deleted.push(p);
         else failed.push(p);
+      } else {
+        // Path doesn't exist; report as skipped (not failed) so UI can distinguish
+        skipped++;
       }
     } catch { failed.push(p); }
   }

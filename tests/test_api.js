@@ -432,6 +432,18 @@ describe('API: Path Whitelist (Security)', () => {
     const { status } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol2/../etc');
     assert.strictEqual(status, 403);
   });
+  it('GET /api/browse with /vol02 is allowed (fnOS netdisk mount root)', async () => {
+    // /vol02 is fnOS's real netdisk mount root, NOT /vol2. Netdisk residuals like
+    // /vol02/1000-1-HEXHASH/... must be browsable.
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol02');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.entries));
+  });
+  it('GET /api/browse with /vol02/1000-1-HEXHASH is allowed (netdisk residual)', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol02/1000-1-0985cb1c');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.entries));
+  });
 });
 
 describe('API: 404 Handling', () => {
