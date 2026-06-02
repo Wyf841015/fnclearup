@@ -10,10 +10,16 @@
 - **KPI 五联** — 30 天+ / 90 天+ / 1 年+ / 总占用 / 顶级目录数（颜色梯度从浅到深绿）
 - **5 档清理按钮** — `30 天+` / `90 天+` / `1 年+` / `🔥 全部清空`（二次确认）/ `👁 浏览内容`（只读）
 - **多 vol × 多 UID 扫描** — 自动扫 `/vol1-10` + `/vol01-09` + `/vol02`（fnOS 网盘 fuse mount）× 所有数字 UID
-- **其他 UID trash 灰化展示** — 显示但不清理，避免误清家庭成员数据
 - **路径遍历防护** — `isTrashPath` 严格白名单 + `..` 段直接拒
 - **Manifest 备份** — 清理前自动写 JSON 到 `data/manifests/`，记录 path/size/mtime/note「回收站删除后无法恢复」
-- **多 vol 支持** — 自动扫描所有 vol × 所有 UID
+- **root 权限包含所有用户** — fnclearup 以 root 跑，扫描全设备 trash 目录，单表展示（vol + UID + 路径 + 文件数 + 目录数 + 大小 + 最老 mtime）
+- **回收站清理预览按 mtime 过滤** — 弹窗只列实际会被删的目录（之前 bug：列了全部 4 个 trash 目录不管 mtime）
+- **回收站 Tab 移动端自适应** — 5 个 KPI 保持全局 3 列布局（跟其他面板一致），移动端 480px 下按钮变 2 列网格 + 表格切卡片布局 + 2 个 modal 全屏
+- **新增「🧹 系统清理」Tab** — 17 项扫描目标：APT 缓存/列表、syslog .gz/.1、journal、npm/pip/uv/node-gyp/typescript 缓存、4 个浏览器缓存、Playwright、其它 ~/.cache、应用日志 (>50MB)、旧内核（危险默认不勾）
+- **系统清理风险过滤** — 全部 / 仅低 / 中+低 三档 radio，KPI 实时显示可清理项 / 总可释放 / 已选中
+- **「✅ 推荐清理」一键按钮** — 自动勾选 10 项 100% 无风险的（apt / syslog / npm / pip / uv / node-gyp / typescript），其他项系统自动重建
+- **清理前自动备份 manifest** — 开关默认 ON（localStorage 持久化），清理前写 JSON 到 `data/manifests/`
+- **「📜 历史清单」按钮** — 弹窗列出所有历史 manifest（mtime 倒序），支持「👁 查看」+「⬇ 下载」
 
 ## v0.7.9 更新
 
@@ -76,7 +82,7 @@
 - **孤立目录检测** — 交叉比对已安装应用列表与实际文件目录，精准识别残留孤立目录
 - **多选删除** — 支持批量勾选，一键清理，附确认弹窗与路径预览
 - **明暗主题** — 支持手动切换（深色/浅色）
-- **Tab 切换** — 应用 / 网盘 / Docker / tmp / 去重 / 去空 独立展示
+- **Tab 切换** — 应用 / 网盘 / Docker / tmp / 去重 / 去空 / 系统清理 / 回收站 独立展示
 - **KPI 卡片** — 显示卷总数、已挂载数量、未挂载数量
 - **Docker 卷管理** — 查看在用卷/残余卷，一键批量删除
 - **Docker 网络管理** — 扫描未使用网络，一键批量删除
@@ -87,6 +93,9 @@
 - **去重多线程哈希** — 10 线程并行计算文件哈希，动态调度
 - **空目录清理** — 扫描指定目录下的空目录（全空目录合并显示），支持回收站/永久删除
 - **目录浏览选择** — 内置文件选择器，支持浏览并选择扫描目录
+- **系统清理** — 17 项扫描目标（apt / syslog / journal / 包管理器缓存 / 浏览器 / Playwright / 旧内核），三档风险过滤 + 一键推荐清理 + 清理前 manifest 备份
+- **回收站批量清理** — 扫描所有 vol × 所有 UID 的 `.@#local/trash/`，按 mtime 30/90/365 天分级清理，root 权限包含全部用户
+- **启动警告弹窗** — 每次进入应用立即弹「⚠️ 清理有风险」红底警示（3 秒倒计时）
 - **响应式布局** — 适配桌面端与移动端
 - **轻量架构** — 纯 Node.js ESM 实现，零 npm 依赖
 
@@ -104,7 +113,9 @@
 │   │   ├── docker.js     # Docker 资源管理
 │   │   ├── temp.js       # 临时文件清理
 │   │   ├── dup.js        # 去重引擎
-│   │   └── empty_dir.js  # 空目录扫描/删除
+│   │   ├── empty_dir.js  # 空目录扫描/删除
+│   │   ├── sysclean.js   # 系统清理（apt/syslog/缓存/旧内核）
+│   │   └── trash.js      # 回收站批量清理
 │   ├── lib/              # 通用工具
 │   │   ├── config.js     # 全局常量（版本、目录等）
 │   │   └── util.js       # 工具函数
@@ -114,6 +125,7 @@
 ├── app/dup_scan.js       # 去重扫描子进程
 ├── app/dup_hash_pool.js  # 10线程哈希计算池
 ├── app/dup_hash_worker.js# 哈希计算工作线程
+├── data/manifests/       # 清理前备份（PKGVAR 下）
 ├── cmd/                  # FnOS 生命周期脚本
 ├── config/               # 权限配置
 └── wizard/               # 安装向导
@@ -157,8 +169,27 @@
 | `/api/empty_dir/scan` | POST | 开始空目录扫描 |
 | `/api/empty_dir/status` | GET | 获取空目录扫描状态 |
 | `/api/empty_dir/delete` | POST | 删除空目录 |
+| `/api/sysclean/scan` | GET | 扫描系统清理目标（17 项） |
+| `/api/sysclean/clean` | POST | 清理选中的项（写 manifest + 删除） |
+| `/api/sysclean/manifests` | GET | 列出历史 manifest |
+| `/api/sysclean/manifest` | GET | 下载/查看单个 manifest |
+| `/api/trash/scan` | GET | 扫描所有 vol × UID 的 trash 目录 |
+| `/api/trash/browse` | GET | 浏览某 trash 目录的文件树（只读） |
+| `/api/trash/clean` | POST | 清理 trash（按 mtime 阈值 + manifest 备份） |
 
 ## 版本历史
+
+### v0.7.10 (2026-06-02)
+
+- 新增「🗑 回收站」Tab — 批量清理 `/vol<N>/<UID>/.@#local/trash/`，按 mtime 30/90/365 天分级清理，root 权限包含全部用户
+- 新增「🧹 系统清理」Tab — 17 项扫描目标（apt/syslog/journal/包管理器缓存/浏览器/Playwright/旧内核），三档风险过滤 + 一键推荐清理 + 清理前 manifest 备份
+- 回收站清理预览按 mtime 阈值过滤（之前 bug：列了全部 trash 目录不管 mtime）
+- 回收站 Tab 移动端自适应（480px：按钮 2 列 + 表格切卡片 + modal 全屏）
+- 修：API 调用 `apiFetch` → `API.get/post`（fnclearup 用的是 `API.base` 模式）
+- 修：API.base 末尾斜杠导致双斜杠路径 404
+- 修：诊断 BUILD 版本号 + 时间戳（防止 fnOS 僵尸旧 server 进程）
+- 修：trash 不区分用户，root 包含所有用户的 trash（撤销 otherTrash 灰化）
+- 测试 60/60 通过
 
 ### v0.7.9 (2026-06-02)
 
