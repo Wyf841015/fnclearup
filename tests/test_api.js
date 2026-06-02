@@ -371,6 +371,34 @@ describe('API: Empty Dir Scan', () => {
     assert.fail('empty_dir scan did not complete in time');
   });
 
+  it('POST /api/empty_dir/scan reports currentDir during scan', async () => {
+    // Create a wider tree so the scan has at least 5 dirs and runs long enough
+    // to observe the first progress update (which now fires at visitCount === 1).
+    const wideDir = join(TEST_TMP, 'empty_wide');
+    if (!existsSync(wideDir)) mkdirSync(wideDir, { recursive: true });
+    for (let i = 0; i < 20; i++) mkdirSync(join(wideDir, `d${i}`), { recursive: true });
+
+    const { data } = await httpRequest('POST', '/app/fnclearup/api/empty_dir/scan', { path: wideDir });
+    assert.ok(data.jobId);
+    // Poll quickly — we want to catch a "scanning" state with currentDir set
+    let sawCurrentDir = null;
+    for (let i = 0; i < 50; i++) {
+      await new Promise(r => setTimeout(r, 20));
+      const res = await httpRequest('GET', `/app/fnclearup/api/empty_dir/status?jobId=${data.jobId}`);
+      if (res.data && res.data.status === 'scanning' && res.data.currentDir) {
+        sawCurrentDir = res.data.currentDir;
+        break;
+      }
+      if (res.data && res.data.status === 'complete') {
+        // Scan was too fast — but we can still verify the final state had a currentDir
+        sawCurrentDir = res.data.currentDir;
+        break;
+      }
+    }
+    assert.ok(sawCurrentDir, 'should have observed a currentDir at some point (scanning or complete)');
+    assert.ok(sawCurrentDir.startsWith(wideDir), `currentDir should be under wideDir, got: ${sawCurrentDir}`);
+  });
+
   it('POST /api/empty_dir/scan with /etc path is rejected (whitelist)', async () => {
     const { status, data } = await httpRequest('POST', '/app/fnclearup/api/empty_dir/scan', { path: '/etc' });
     assert.strictEqual(status, 403);

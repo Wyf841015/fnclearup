@@ -940,6 +940,8 @@ function startEmptyScan() {
   $('empty-pending').textContent = '-';
   $('empty-elapsed').textContent = '-';
   const bar = $('emptyProgressBar'); if (bar) bar.style.width = '0%';
+  // Immediately show "启动中..." so user sees feedback before first poll
+  const cdEl0 = $('emptyCurrentDir'); if (cdEl0) cdEl0.textContent = '⏳ 启动中...';
   API.post('api/empty_dir/scan', { path: scanPath }, 60000).then(r => {
     if (r.error || !r.success) { finishEmptyScan(false, r.error || '扫描失败'); return; }
     EmptyDirState.jobId = r.jobId;
@@ -983,7 +985,7 @@ function pollEmptyProgress() {
     if (r.status === 'complete' || r.status === 'error') {
       finishEmptyScan(r.status !== 'error', r.error, r);
     } else {
-      setTimeout(pollEmptyProgress, 1500);
+      setTimeout(pollEmptyProgress, 800);
     }
   }).catch(() => {
     if (EmptyDirState.checking) setTimeout(pollEmptyProgress, 2000);

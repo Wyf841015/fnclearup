@@ -75,7 +75,9 @@ function runScan(jobId, scanPath) {
     fileCount.set(p, fileN);
     allPaths.push(p);
     visitCount++;
-    if (visitCount % 10 === 0) update('scanning', [], null, p);
+    // Update progress: first directory IMMEDIATELY so UI shows feedback within ~1s,
+    // then every 5 directories after that (was every 10 — felt too slow on big trees).
+    if (visitCount === 1 || visitCount % 5 === 0) update('scanning', [], null, p);
     for (const c of childDirs) walk(c);
   }
 
