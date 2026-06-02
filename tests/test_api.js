@@ -575,7 +575,7 @@ describe('API: System Cache Cleaning (sysclean)', () => {
     assert.ok(item, 'nobackup fixture should be in scan results');
 
     // Count manifests before (ensure base dir exists for the readdir)
-    const manifestsBase = '/tmp/fnclearup_test/manifests';
+    const manifestsBase = '/tmp/fnclearup_test/data/manifests';
     if (!fs.existsSync(manifestsBase)) fs.mkdirSync(manifestsBase, { recursive: true });
     const before = fs.readdirSync(manifestsBase).filter(f => f.startsWith('fnclearup_pre_clean_manifest_')).length;
 
@@ -624,6 +624,39 @@ describe('API: System Cache Cleaning (sysclean)', () => {
     const { status, data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/manifest');
     assert.strictEqual(status, 400);
     assert.ok(data.error.includes('missing'));
+  });
+
+  it('GET /api/sysclean/manifests reports base_dir under TRM_PKGVAR/data/manifests', async () => {
+    // Server was started with TRM_PKGVAR=/tmp/fnclearup_test, so base_dir should be
+    // /tmp/fnclearup_test/data/manifests (test mode) — i.e. always under data/ subdir
+    // of PKGVAR, NOT under the user's vol trash.
+    const { data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/manifests');
+    assert.ok(data.base_dir, 'should report base_dir');
+    assert.ok(data.base_dir.endsWith('/data/manifests'), `base_dir should end with /data/manifests, got: ${data.base_dir}`);
+    assert.ok(data.base_dir.includes('manifests'), 'base_dir should contain manifests segment');
+  });
+
+  it('POST /api/sysclean/clean backup:true writes under data/manifests subdir', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const cacheDir = path.join(process.env.HOME, '.cache', 'fakeapp_test_path_' + process.pid);
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'data.bin'), Buffer.alloc(128 * 1024));
+
+    const scan = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const item = scan.data.items.find(it => it.path === cacheDir);
+    assert.ok(item, 'path test fixture should be in scan results');
+
+    const { data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', {
+      ids: [item.id],
+      backup: true,
+    });
+    assert.strictEqual(data.failures, 0);
+    assert.ok(data.backup_path, 'should return backup_path');
+    // The path must include the data/manifests segment — not legacy /vol*/UID/.@#local
+    assert.ok(data.backup_path.includes('/data/manifests/'),
+      `backup_path should be under data/manifests, got: ${data.backup_path}`);
+    assert.ok(fs.existsSync(data.backup_path), 'manifest file should exist on disk');
   });
 });
 
