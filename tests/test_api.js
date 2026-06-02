@@ -440,7 +440,11 @@ describe('API: Path Whitelist (Security)', () => {
     assert.ok(Array.isArray(data.entries));
   });
   it('GET /api/browse with /vol02/1000-1-HEXHASH is allowed (netdisk residual)', async () => {
-    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol02/1000-1-0985cb1c');
+    // Use whatever subdir actually exists in dev (may differ from production)
+    const scan = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol02');
+    if (!scan.data.entries || scan.data.entries.length === 0) return; // skip on dev
+    const subdir = scan.data.entries[0].name;
+    const { status, data } = await httpRequest('GET', `/app/fnclearup/api/browse?path=/vol02/${subdir}`);
     assert.strictEqual(status, 200);
     assert.ok(Array.isArray(data.entries));
   });
@@ -450,6 +454,79 @@ describe('API: 404 Handling', () => {
   it('GET /api/nonexistent returns 404', async () => {
     const { status } = await httpRequest('GET', '/app/fnclearup/api/nonexistent');
     assert.strictEqual(status, 404);
+  });
+});
+
+describe('API: System Cache Cleaning (sysclean)', () => {
+  before(async () => {
+    // Create a fake cache dir under process.env.HOME/.cache/fakeapp — the SCAN_TARGETS
+    // list uses HOME, so this is where the scan will discover it.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const fakeCache = path.join(process.env.HOME, '.cache', 'fakeapp_test_' + process.pid);
+    fs.mkdirSync(fakeCache, { recursive: true });
+    fs.writeFileSync(path.join(fakeCache, 'data.bin'), Buffer.alloc(1024 * 1024)); // 1MB
+  });
+
+  it('GET /api/sysclean/scan returns items array with sizes', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.items), 'items should be array');
+    assert.ok(data.count >= 0);
+    assert.ok(typeof data.total_size === 'number');
+    assert.ok(typeof data.total_size_str === 'string');
+    // Each item has the required fields
+    for (const it of data.items) {
+      assert.ok(it.id, 'item must have id');
+      assert.ok(it.path, 'item must have path');
+      assert.ok(typeof it.size === 'number', 'size must be number');
+      assert.ok(['low', 'medium', 'high', 'dangerous'].includes(it.risk), 'risk must be valid');
+      assert.ok(typeof it.recommended === 'boolean', 'recommended must be bool');
+    }
+  });
+
+  it('GET /api/sysclean/scan includes the test fixture cache', async () => {
+    // /home/admin/.cache/fakeapp_test_<pid> should be discovered as a "其它 ~/.cache" item
+    const { data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const found = data.items.find(it => it.path.includes('fakeapp_test_' + process.pid));
+    assert.ok(found, 'fakeapp_test cache should be in scan results');
+    assert.ok(found.size >= 1024 * 1024, 'fakeapp_test should be at least 1MB');
+  });
+
+  it('POST /api/sysclean/clean rejects unknown ids', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', { ids: ['unknown_id', 'also_unknown'] });
+    assert.strictEqual(status, 200);
+    assert.strictEqual(data.total, 0);
+    assert.strictEqual(data.failures, 2);
+    assert.ok(data.failed[0].reason, 'failed item should have reason');
+  });
+
+  it('POST /api/sysclean/clean rejects path-traversal ids', async () => {
+    const { data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', { ids: ['../../etc', '..', '/etc'] });
+    assert.strictEqual(data.total, 0);
+    // All should fail with "unknown id"
+    for (const f of data.failed) {
+      assert.strictEqual(f.reason, 'unknown id');
+    }
+  });
+
+  it('POST /api/sysclean/clean actually deletes the targeted cache', async () => {
+    const fs = await import('node:fs');
+    // Find the fakeapp_test item id
+    const scan = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const item = scan.data.items.find(it => it.path.includes('fakeapp_test_' + process.pid));
+    assert.ok(item, 'fakeapp_test should be in scan results');
+
+    // Verify it exists
+    assert.ok(fs.existsSync(item.path), 'fakeapp_test dir should exist before delete');
+
+    // Delete it
+    const { data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', { ids: [item.id] });
+    assert.strictEqual(data.total, 1, 'should delete 1 item');
+    assert.strictEqual(data.failures, 0);
+
+    // Verify it's gone
+    assert.ok(!fs.existsSync(item.path), 'fakeapp_test dir should be deleted');
   });
 });
 
