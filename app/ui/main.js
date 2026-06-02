@@ -9,7 +9,7 @@ const App = {
 };
 
 const API = {
-  base: '/app/fnclearup/',
+  base: '/app/fnclearup',
   async get(path, timeoutMs=15000) {
     const ac = new AbortController();
     const t = setTimeout(()=>ac.abort(), timeoutMs);
