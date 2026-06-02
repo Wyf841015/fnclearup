@@ -166,6 +166,7 @@ httpServer.on('error', (e) => {
 });
 httpServer.listen(httpPort, '0.0.0.0', () => {
   console.log(`fnclearup HTTP listening on ${httpPort}`);
+  console.log(`BUILD: ${VERSION} (${new Date().toISOString()})`);
 });
 
 // ── UNIX socket server ──
