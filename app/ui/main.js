@@ -1417,6 +1417,59 @@ document.addEventListener('change', (e) => {
 });
 
 // ════════════════════════════════
+// Startup warning modal
+// ════════════════════════════════
+let _startupCountdownTimer = null;
+let _startupCountdownLeft = 3;
+
+// Show the warning modal on every app open. The "我已知晓风险" button is
+// disabled for 3 seconds (forces user to actually read the message). "稍后再说"
+// closes the modal but does NOT mark anything — the warning re-appears the
+// next time the user clicks any delete button (we re-call showStartupWarning()
+// from there too, see _bumpStartupWarning()).
+function showStartupWarning() {
+  const modal = $('startupWarningModal');
+  if (!modal) return;
+  // Reset countdown
+  _startupCountdownLeft = 3;
+  const btn = $('startupWarningConfirmBtn');
+  const cd = $('startupWarningCountdown');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '我已知晓风险（<span id="startupWarningCountdown">3</span>）';
+  }
+  if (cd) cd.textContent = '3';
+  modal.classList.add('visible');
+  // Start countdown
+  if (_startupCountdownTimer) clearInterval(_startupCountdownTimer);
+  _startupCountdownTimer = setInterval(() => {
+    _startupCountdownLeft--;
+    const cd2 = $('startupWarningCountdown');
+    const btn2 = $('startupWarningConfirmBtn');
+    if (_startupCountdownLeft <= 0) {
+      if (_startupCountdownTimer) { clearInterval(_startupCountdownTimer); _startupCountdownTimer = null; }
+      if (cd2) cd2.textContent = '0';
+      if (btn2) {
+        btn2.disabled = false;
+        btn2.innerHTML = '✅ 我已知晓风险';
+      }
+    } else {
+      if (cd2) cd2.textContent = String(_startupCountdownLeft);
+    }
+  }, 1000);
+}
+
+function closeStartupWarning(confirmed) {
+  const modal = $('startupWarningModal');
+  if (modal) modal.classList.remove('visible');
+  if (_startupCountdownTimer) { clearInterval(_startupCountdownTimer); _startupCountdownTimer = null; }
+  if (confirmed) {
+    // Just a soft toast — the modal is the actual deterrent
+    showToast('✅ 已确认。继续操作前请确保已备份重要数据。', 'success', 3000);
+  }
+}
+
+// ════════════════════════════════
 // Init
 // ════════════════════════════════
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
@@ -1461,6 +1514,7 @@ function init() {
     updateSysCleanSelectInfo, showSysCleanDeleteModal, hideSysCleanDeleteModal, doSysCleanDelete,
     toggleSysCleanBackup, getSysCleanBackupEnabled, showSysCleanManifests, hideSysCleanManifests,
     downloadSysCleanManifest, viewSysCleanManifest,
+    showStartupWarning, closeStartupWarning,
   };
   Object.assign(window, exports);
 
@@ -1501,6 +1555,9 @@ function init() {
   // Initialize sysclean backup toggle from localStorage (default ON)
   const backupCb = document.getElementById('syscleanBackupCb');
   if (backupCb) backupCb.checked = getSysCleanBackupEnabled();
+
+  // Show startup warning modal on every app open (force user to acknowledge risk)
+  showStartupWarning();
 }
 
 })();
