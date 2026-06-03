@@ -61,7 +61,6 @@
 - **删除用户强警告** — 双重 `confirm()` 弹窗 + ⚠️ 红色警告
 - **Docker 删除确认** — 3 个 docker 删除（卷/网络/镜像）加 modal-overlay 确认弹窗
 - **empty_dir 重写** — 加 stop API、跳过 `@app*` 系统目录、流式扫描 + state file 保留（修复 complete 状态提前消失 bug）
-- **飞书推送重构** — 抽 `cmd/lib/feishu_push.sh` 公共库，install/upgrade_callback 各自从 65 行简化为 12 行
 - **数据隐私清理** — 删除 `app/data/` 4 个测试 JSON（含真实扫描路径）
 - **CORS 环境变量** — 改用 `CORS_ORIGINS` 逗号分隔
 - **删除冗余代码** — `app/ui/utils.js` 3 个未使用函数清理
@@ -179,7 +178,7 @@
 
 ## 版本历史
 
-### v0.7.10 (2026-06-02)
+### v0.7.10 (2026-06-03)
 
 - 新增「🗑 回收站」Tab — 批量清理 `/vol<N>/<UID>/.@#local/trash/`，按 mtime 30/90/365 天分级清理，root 权限包含全部用户
 - 新增「🧹 系统清理」Tab — 17 项扫描目标（apt/syslog/journal/包管理器缓存/浏览器/Playwright/旧内核），三档风险过滤 + 一键推荐清理 + 清理前 manifest 备份
@@ -227,7 +226,6 @@
 - P0/P1 安全修复：4 个删除端点 isSafePath 白名单、handleBrowse /vol* 白名单、CSV 注入防护
 - 删除用户强警告（双重 confirm）+ 3 个 docker 删除加 modal 确认
 - empty_dir 重写：stop API、跳过 @app*、流式扫描、state file 修复 complete 状态保留
-- 飞书推送重构为 cmd/lib/feishu_push.sh 公共库
 - 删除 app/data/ 隐私数据 + app/ui/utils.js 冗余代码
 - CORS 改 CORS_ORIGINS 环境变量
 - 测试 39/39 通过（新增路径遍历、CSV 注入、HTML onclick 契约测试）
