@@ -60,9 +60,6 @@ const SCAN_TARGETS = [
       return false;
     },
     dynamicChildren: true },
-  // Old kernels — listed but NOT recommended for deletion
-  { id: 'old-kernels', label: '旧内核 (危险, 默认不勾选)', path: '/boot', recurse: false, risk: 'dangerous', recommended: false,
-    filter: (n) => n.startsWith('vmlinuz-') || n.startsWith('initrd.img-') || n.startsWith('System.map-') },
 ];
 
 // Walk directory and sum file sizes; for filter mode, return matching items.
