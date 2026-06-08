@@ -602,7 +602,7 @@ async function doDeleteTemp() {
 // ════════════════════════════════
 // Duplicate File Scanning
 // ════════════════════════════════
-const DupState = { music: { jobId: null, duplicates: [], checking: false }, files: { jobId: null, duplicates: [], checking: false } };
+const DupState = { music: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0 }, files: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0 } };
 
 function getDupIds(tab) {
   return { pathInput: tab+'Path', scanBtn: tab+'ScanBtn', stopBtn: tab+'StopBtn', deleteBtn: tab+'DeleteBtn', exportBtn: tab+'ExportBtn', progress: tab+'Progress', progressBar: tab+'ProgressBar', progressText: tab+'ProgressText', progressCount: tab+'ProgressCount', currentFile: tab+'CurrentFile', status: tab+'Status', results: tab+'Results', stats: tab+'Stats', dupList: tab+'DupList', actions: tab+'Actions', selectedCount: tab+'SelectedCount', selectedSize: tab+'SelectedSize', empty: tab+'Empty' };
@@ -658,7 +658,7 @@ async function pollDupProgress(tab) {
   const poll = async () => {
     if (!DupState[tab].checking) return;
     try {
-      const data = await API.get('api/dup/status?jobId='+DupState[tab].jobId);
+      const data = await API.get('api/dup/status?jobId='+DupState[tab].jobId+'&start=0&limit=50');
       if (!data || data.error) { DupState[tab].checking=false; finishDupScan(tab, null); return; }
       const p = data.progress||{}, total = p.total||0, processed = p.processed||0;
       const pct = total > 0 ? Math.round((processed/total)*100) : 0;
@@ -686,20 +686,23 @@ function finishDupScan(tab, data) {
     const ee=$(ids.empty); if(ee){ee.style.display='';const h3=ee.querySelector('h3');if(h3)h3.textContent='❌ 扫描失败';}
     return;
   }
-  const dups = data.duplicates||[], stats = data.stats||{};
+  const dups = data.duplicates||[], stats = data.stats||{}, pagination = data.pagination||{};
+  DupState[tab].start = 0;
+  DupState[tab].pagination = pagination;
   if(dups.length===0) {
     const ee=$(ids.empty); if(ee){ee.style.display='';const h3=ee.querySelector('h3');if(h3)h3.textContent='🎉 未发现重复文件';const p=ee.querySelector('p');if(p)p.textContent='共扫描 '+(stats.totalFiles||0)+' 个文件';}
     if(se)se.innerHTML='✅ 无重复'; showToast('未发现重复文件','success'); return;
   }
   DupState[tab].duplicates = dups;
-  const stEl=$(ids.stats); if(stEl){stEl.style.display='';stEl.innerHTML='<div class="dup-stat-card"><div class="dup-stat-value">'+(stats.totalFiles||0)+'</div><div class="dup-stat-label">扫描文件</div></div><div class="dup-stat-card"><div class="dup-stat-value">'+dups.length+'</div><div class="dup-stat-label">重复组</div></div><div class="dup-stat-card warning"><div class="dup-stat-value">'+(stats.duplicateFiles||0)+'</div><div class="dup-stat-label">重复文件</div></div><div class="dup-stat-card danger"><div class="dup-stat-value">'+(stats.wastedHuman||'0 B')+'</div><div class="dup-stat-label">浪费空间</div></div>';}
+  const totalGroups = pagination.total || dups.length;
+  const stEl=$(ids.stats); if(stEl){stEl.style.display='';stEl.innerHTML='<div class="dup-stat-card"><div class="dup-stat-value">'+(stats.totalFiles||0)+'</div><div class="dup-stat-label">扫描文件</div></div><div class="dup-stat-card"><div class="dup-stat-value">'+totalGroups+'</div><div class="dup-stat-label">重复组</div></div><div class="dup-stat-card warning"><div class="dup-stat-value">'+(stats.duplicateFiles||0)+'</div><div class="dup-stat-label">重复文件</div></div><div class="dup-stat-card danger"><div class="dup-stat-value">'+(stats.wastedHuman||'0 B')+'</div><div class="dup-stat-label">浪费空间</div></div>';}
   if(se)se.innerHTML='✅ 完成';
   renderDupList(tab, dups);
   $(ids.results)&&($(ids.results).style.display='');
   $(ids.empty)&&($(ids.empty).style.display='none');
   $(ids.actions)?.classList.add('visible');
   $(ids.deleteBtn)&&($(ids.deleteBtn).disabled=false);
-  showToast('发现 '+dups.length+' 组重复文件','info');
+  showToast('发现 '+(pagination.total||dups.length)+' 组重复文件','info');
   // Show failed files warning
   var failed=data.failedFiles||[]; if(failed.length>0){showToast(failed.length+' 个文件哈希失败, 已跳过','warning');var fl=$(ids.currentFile);if(fl){var fhtml='<span style="color:var(--color-warning)">⚠️ '+failed.length+' 个文件哈希失败:</span><br>';for(var k=0;k<Math.min(failed.length,5);k++){fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">'+escHtml(failed[k].path)+': '+escHtml(failed[k].error)+'</span><br>';}if(failed.length>5)fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">... 还有 '+(failed.length-5)+' 个</span>';fl.innerHTML=fhtml;}}
 }
@@ -756,7 +759,94 @@ function renderDupList(tab, duplicates) {
     });
     div.appendChild(hdr); div.appendChild(body); container.appendChild(div);
   });
+
+  // "加载更多" button
+  var pag = DupState[tab].pagination;
+  if(pag && pag.hasMore) {
+    var loadMore = document.createElement('div');
+    loadMore.className = 'load-more-row';
+    loadMore.id = tab+'LoadMore';
+    loadMore.innerHTML = '<button class="btn btn-secondary" onclick="loadMoreDupResults(\''+tab+'\')">加载更多 ('+(pag.total-pag.start-pag.limit)+' 组剩余)</button>';
+    container.appendChild(loadMore);
+  }
+
   updateDupSelectedCount();
+}
+
+function loadMoreDupResults(tab) {
+  var ids = getDupIds(tab);
+  var btn = document.querySelector('#'+tab+'LoadMore button');
+  if(btn) { btn.disabled = true; btn.textContent = '加载中...'; }
+  var nextStart = DupState[tab].start + 50;
+  API.get('api/dup/status?jobId='+DupState[tab].jobId+'&start='+nextStart+'&limit=50').then(function(data){
+    if(!data || !data.duplicates) return;
+    DupState[tab].start = nextStart;
+    DupState[tab].pagination = data.pagination || {};
+    // Remove old loadMore button
+    var oldBtn = document.getElementById(tab+'LoadMore');
+    if(oldBtn) oldBtn.remove();
+    // Render new page
+    var container = $(ids.dupList);
+    if(!container) return;
+    data.duplicates.forEach(function(group, gi) {
+      // Same rendering as renderDupList but using container.appendChild
+      var div = document.createElement('div'); div.className='dup-group';
+      var hdr = document.createElement('div'); hdr.className='dup-group-header open';
+      hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span></div><span class="dup-toggle">▼</span>';
+      var body = document.createElement('div'); body.className='dup-group-body open';
+      hdr.classList.add('open');
+      (function(t, b){
+        var btn2 = document.createElement('button');
+        btn2.className = 'dup-group-delete-btn';
+        btn2.textContent = '\u{1F5D1}';
+        btn2.title = '删除本组重复文件（保留第一个原始文件）';
+        btn2.onclick = function(e){
+          e.stopPropagation();
+          document.querySelectorAll('.dup-file-cb:not(.group-select-all)').forEach(function(c){c.checked=false;});
+          b.querySelectorAll('.dup-file-cb:not(.group-select-all):not(:disabled)').forEach(function(c){c.checked=true;c.dispatchEvent(new Event('change'));});
+          showDupDeleteModal(t);
+        };
+        hdr.appendChild(btn2);
+      })(tab, body);
+      hdr.addEventListener('click', function(e){if(e.target.closest('input')||e.target.closest('button'))return;this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');this.querySelector('.dup-toggle').textContent=this.classList.contains('open')?'\u25BC':'\u25B6';});
+      var selAll = document.createElement('div'); selAll.className='select-all-row';
+      var selLabel = document.createElement('label'); selLabel.className='select-all-label';
+      var selAllCb = document.createElement('input'); selAllCb.type='checkbox'; selAllCb.className='group-select-all'; selAllCb.checked=true;
+      selAllCb.addEventListener('change', function(){
+        body.querySelectorAll('.dup-file-cb:not(.group-select-all)').forEach(function(cb){cb.checked=this.checked;cb.dispatchEvent(new Event('change'));});
+      });
+      selLabel.appendChild(selAllCb); selLabel.appendChild(document.createTextNode(' 全选本组（保留第一个原始文件）'));
+      selAll.appendChild(selLabel); body.appendChild(selAll);
+      group.files.forEach(function(file, fi) {
+        var item = document.createElement('div'); item.className='dup-file-item';
+        var isFirst = fi===0; var isChecked = !isFirst;
+        var cb = document.createElement('input'); cb.type='checkbox'; cb.className='dup-file-cb';
+        cb.dataset.path=file.path; cb.dataset.size=file.size; cb.checked=isChecked;
+        if(isFirst)cb.disabled=true;
+        cb.addEventListener('change', function(){updateDupSelectedCount();});
+        var label = document.createElement('span'); label.className='dup-file-label';
+        var sizeSpan = document.createElement('span'); sizeSpan.className='dup-file-size'; sizeSpan.textContent=' ('+file.sizeHuman+')';
+        label.textContent=' '+file.path; label.prepend(cb);
+        var tag = document.createElement('span'); tag.className='dup-file-tag'; tag.textContent=isFirst?'原始文件':'重复文件';
+        item.appendChild(label); item.appendChild(sizeSpan); item.appendChild(tag); body.appendChild(item);
+      });
+      div.appendChild(hdr); div.appendChild(body); container.appendChild(div);
+    });
+    // New loadMore if still hasMore
+    var pag2 = DupState[tab].pagination;
+    if(pag2 && pag2.hasMore) {
+      var loadMore2 = document.createElement('div');
+      loadMore2.className = 'load-more-row';
+      loadMore2.id = tab+'LoadMore';
+      loadMore2.innerHTML = '<button class="btn btn-secondary" onclick="loadMoreDupResults(\''+tab+'\')">加载更多 ('+(pag2.total-pag2.start-pag2.limit)+' 组剩余)</button>';
+      container.appendChild(loadMore2);
+    }
+    updateDupSelectedCount();
+  }).catch(function(e){
+    showToast('加载更多失败: '+e.message, 'error');
+    var oldBtn2 = document.getElementById(tab+'LoadMore');
+    if(oldBtn2) { oldBtn2.innerHTML = '<button class="btn btn-secondary" onclick="loadMoreDupResults(\''+tab+'\')">加载失败，重试</button>'; }
+  });
 }
 
 function updateDupSelectedCount() {

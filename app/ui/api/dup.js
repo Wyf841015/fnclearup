@@ -213,7 +213,7 @@ async function checkPause(state, stateFile, update) {
   return wasAborted;
 }
 
-// GET /api/dup/status?jobId=xxx
+// GET /api/dup/status?jobId=xxx&start=0&limit=50
 export function handleDupStatus(req, res) {
   const rawUrl = typeof req.url === 'string' ? req.url : String(req.url);
   const qIndex = rawUrl.indexOf('?');
@@ -232,14 +232,24 @@ export function handleDupStatus(req, res) {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     const stats = raw.stats || {};
+    const allDups = raw.duplicates || [];
+    const total = allDups.length;
+
+    // 分页参数: start 不存在时只返回 stats/进度（轮询节省带宽）
+    const hasStart = params.start !== undefined;
+    const start = hasStart ? Math.max(0, parseInt(params.start) || 0) : 0;
+    const limit = hasStart ? Math.min(200, Math.max(1, parseInt(params.limit) || 50)) : 0;
+    const page = allDups.slice(start, start + limit);
+
     const formatted = {
       id: raw.id, scanType: raw.scanType, status: raw.status, progress: raw.progress, rootPath: raw.rootPath,
-      duplicates: (raw.duplicates || []).map(g => ({
+      duplicates: page.map(g => ({
         hash: g.hash, count: g.count, wasted: g.wasted, wastedHuman: formatBytes(g.wasted),
         files: g.files.map(f => ({ path: f.path, name: basename(f.path), size: f.size, sizeHuman: formatBytes(f.size), ext: f.ext, id3: f.id3 })),
       })),
       stats: { totalFiles: stats.totalFiles || 0, duplicateGroups: stats.duplicateGroups || 0, duplicateFiles: stats.duplicateFiles || 0, wastedBytes: stats.wastedBytes || 0, wastedHuman: formatBytes(stats.wastedBytes || 0) },
       error: raw.error, startTime: raw.startTime, failedFiles: raw.failedFiles || [],
+      pagination: { total, start, limit, hasMore: start + limit < total },
     };
     sendJSON(res, 200, formatted);
   } catch (e) { sendJSON(res, 500, { error: e.message, success: false }); }
