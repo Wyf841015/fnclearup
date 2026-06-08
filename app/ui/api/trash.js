@@ -253,7 +253,7 @@ export function cleanTrash(ageDays, withManifest = true) {
       manifestPath = join(base, filename);
       const manifest = {
         tool: 'fnclearup trash',
-        version: '0.7.10',
+        version: '0.7.11',
         timestamp: new Date().toISOString(),
         action: `trash-clean:age=${ageDays}`,
         hostname: process.env.HOSTNAME || 'unknown',

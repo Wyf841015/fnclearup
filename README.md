@@ -4,6 +4,10 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.7.11 更新
+
+- **修复：系统清理忽略 `/boot` 目录** — 移除 SCAN_TARGETS 中的 `old-kernels` 项（vmlinuz/initrd.img/System.map 等关键内核文件），避免误删导致系统无法启动。内核清理应通过 `apt` 单独处理
+
 ## v0.7.10 更新
 
 - **新增「🗑 回收站」Tab** — 批量清理 `/vol<N>/<UID>/.@#local/trash/`，按 mtime 30/90/365 天分级清理
@@ -177,6 +181,10 @@
 | `/api/trash/clean` | POST | 清理 trash（按 mtime 阈值 + manifest 备份） |
 
 ## 版本历史
+
+### v0.7.11 (2026-06-04)
+
+- 修复：系统清理忽略 `/boot` 目录 — 移除 SCAN_TARGETS 中的 `old-kernels` 项，避免误删内核文件
 
 ### v0.7.10 (2026-06-03)
 
