@@ -872,7 +872,7 @@ function checkVersion() {
   const badge = document.getElementById('versionBadge');
   if (!badge) return;
   // Try to get current version from API
-  fetch('/app/fnclearup/api/version').then(r=>r.json()).then(d=>{
+  fetch('/app/fnclearup/api/version', { signal: AbortSignal.timeout(5000) }).then(r=>r.json()).then(d=>{
     const cur = d.version || '0.7.2';
     badge.textContent = 'v' + cur;
     // Fetch remote version from FnDepot
@@ -965,14 +965,14 @@ async function loadBrowseDir(dirPath) {
   if (pathEl) pathEl.textContent = dirPath;
   if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-text-secondary);cursor:default">⏳ 加载中...</div>';
   try {
-    const r = await fetch('/app/fnclearup/api/browse?path=' + encodeURIComponent(dirPath));
+    const r = await fetch('/app/fnclearup/api/browse?path=' + encodeURIComponent(dirPath), { signal: AbortSignal.timeout(15000) });
     const data = await r.json();
     if (!data.success) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + (data.error||'加载失败') + '</div>'; return; }
     if (list) {
       let html = '';
       if (data.parent) html += '<div class="browse-item dir" onclick="browseGoUp()" style="color:var(--color-primary)">⬆ ..</div>';
       for (const e of data.entries) {
-        if (e.isDirectory) html += '<div class="browse-item dir" onclick="loadBrowseDir(\'' + e.path.replace(/'/g,"\\'") + '\')">📁 ' + escHtml(e.name) + '</div>';
+        if (e.isDirectory) html += '<div class="browse-item dir" onclick="loadBrowseDir(\'' + e.path.replace(/'/g,"\\'").replace(/"/g,'&quot;') + '\')">📁 ' + escHtml(e.name) + '</div>';
         else html += '<div class="browse-item file">📄 ' + escHtml(e.name) + '</div>';
       }
       if (data.entries.length === 0) html = '<div class="browse-item" style="justify-content:center;color:var(--color-text-secondary);cursor:default">📂 空目录</div>';
@@ -1134,7 +1134,7 @@ function renderEmptyList(items) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td><input type="checkbox" class="empty-cb" data-path="' + escHtml(item.path) + '" onclick="updateEmptySelectInfo()"></td>' +
       '<td title="' + escHtml(item.path) + '">' + escHtml(item.path) + '</td>' +
-      '<td><button type="button" class="btn btn-danger btn-sm" onclick="confirmEmptyDeleteOne(\'' + item.path.replace(/'/g, "\\'") + '\')">🗑</button></td>';
+      '<td><button type="button" class="btn btn-danger btn-sm" onclick="confirmEmptyDeleteOne(\'' + item.path.replace(/'/g, "\\'").replace(/"/g,'&quot;') + '\')">🗑</button></td>';
     tbody.appendChild(tr);
   });
   tbl.appendChild(tbody);
@@ -1414,7 +1414,7 @@ function hideSysCleanManifests() { $('syscleanManifestsModal')?.classList.remove
 async function downloadSysCleanManifest(path, name) {
   try {
     const url = `api/sysclean/manifest?path=${encodeURIComponent(path)}`;
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
       let msg = `下载失败 (HTTP ${res.status})`;
       try { const j = await res.json(); if (j.error) msg = `下载失败: ${j.error}`; } catch {}
@@ -1457,7 +1457,7 @@ async function viewSysCleanManifest(path, name) {
   if (pre) pre.textContent = '⏳ 加载中...';
   m.classList.add('visible');
   try {
-    const res = await fetch(`api/sysclean/manifest?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
+    const res = await fetch(`api/sysclean/manifest?path=${encodeURIComponent(path)}`, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
       let msg = `加载失败 (HTTP ${res.status})`;
       try { const j = await res.json(); if (j.error) msg = `加载失败: ${j.error}`; } catch {}
@@ -1825,7 +1825,7 @@ function init() {
     stopDupScan,
     showDupDeleteModal, hideDupDeleteModal,
     confirmDupDelete,
-    updateDupSelectedCount,
+    updateDupSelectedCount, loadMoreDupResults,
     showBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
     startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
     showEmptyDeleteModal, hideEmptyDeleteModal, confirmEmptyDelete, confirmEmptyDeleteOne,
@@ -1848,7 +1848,13 @@ function init() {
       el.addEventListener('click', function(e) {
         const match = attr.match(/\(([^)]*)\)/);
         if (match && match[1].trim()) {
-          const args = match[1].split(',').map(a => a.trim().replace(/^['"]|['"]$/g, ''));
+          const args = match[1].split(',').map(a => {
+            let v = a.trim().replace(/^['"]|['"]$/g, '');
+            if (v === 'true') return true;
+            if (v === 'false') return false;
+            if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
+            return v;
+          });
           window[fnName](...args);
         } else {
           window[fnName]();

@@ -298,7 +298,7 @@ export async function handleDupDelete(req, res) {
           try { renameSync(fp, finalDest); }
           catch (e2) { if (e2.code === 'EXDEV') { cpSync(fp, finalDest); unlinkSync(fp); } else throw e2; }
         } else {
-          if (existsSync(fp)) unlinkSync(fp);
+          failed.push({ path: fp, reason: '路径格式不支持回收站: ' + fp + ' (需 /volN/UID/... 格式)' });
         }
       }
       deleted++;

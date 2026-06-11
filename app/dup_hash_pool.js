@@ -156,6 +156,7 @@ export class HashPool {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(function() {
         this.activeBatches.delete(batchId);
+        this.pendingBatches = this.pendingBatches.filter(b => b.batchId !== batchId);
         reject(new Error('Batch ' + batchId + ' timed out after ' + (this.batchTimeoutMs / 1000) + 's (' + files.length + ' files)'));
       }.bind(this), this.batchTimeoutMs);
 
