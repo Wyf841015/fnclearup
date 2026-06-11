@@ -45,7 +45,11 @@ async function reloadControl(stateDir, jobId, state) {
           const r = JSON.parse(readFileSync(path, 'utf-8'));
           if (r._aborted) { state._aborted = true; state.status = 'aborted'; writeState(stateDir, jobId, state); return false; }
           if (!r._paused) { state._paused = false; state.status = state._prev_status || 'counting'; writeState(stateDir, jobId, state); return true; }
-        } catch {}
+        } catch {
+          // If state file is corrupted, retry a few times then bail
+          breakCounter = (breakCounter || 0) + 1;
+          if (breakCounter > 60) { state._paused = false; writeState(stateDir, jobId, state); return true; }
+        }
       }
     }
   } catch (e) {
@@ -146,7 +150,7 @@ async function main() {
   let processed = 0;
 
   for (let batchStart = 0; batchStart < filesToHash.length; batchStart += batchSize) {
-    if (!reloadControl(stateDir, jobId, state)) {
+    if (!(await reloadControl(stateDir, jobId, state))) {
       await pool.terminate();
       return;
     }

@@ -35,7 +35,16 @@ setEmptyDirPaths(EMPTY_STATE_DIR, EMPTY_SCAN_SCRIPT);
 function handleBrowse(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const dirPath = url.searchParams.get('path') || '/';
-  if (dirPath !== '/' && !isSafePath(dirPath)) {
+  if (dirPath === '/') {
+    // Show only safe volumes at root instead of exposing system directories
+    const entries = VOL_GLOBS.filter(v => existsSync(v)).map(v => {
+      const st = statSync(v);
+      return { name: v.slice(1), path: v, type: 'dir', size: st.size, mtime: st.mtimeMs };
+    });
+    sendJSON(res, 200, { success: true, path: '/', entries, parent: null });
+    return;
+  }
+  if (!isSafePath(dirPath)) {
     sendJSON(res, 403, { error: '路径越界：仅允许 /vol* 下的目录' });
     return;
   }
@@ -164,7 +173,7 @@ httpServer.on('error', (e) => {
     console.error('[FATAL] HTTP server error:', e.message);
   }
 });
-httpServer.listen(httpPort, '0.0.0.0', () => {
+httpServer.listen(httpPort, '127.0.0.1', () => {
   console.log(`fnclearup HTTP listening on ${httpPort}`);
   console.log(`BUILD: ${VERSION} (${new Date().toISOString()})`);
 });

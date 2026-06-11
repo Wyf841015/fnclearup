@@ -220,7 +220,9 @@ export async function handleSysCleanClean(req, res) {
         note: 'Manifest only — caches auto-rebuild. Use this as audit trail; no files were preserved.',
       };
       try { mkdirSync(trashBase, { recursive: true }); } catch {}
-      writeFileSync(backupPath, JSON.stringify(manifest, null, 2), 'utf8');
+      const tmp = backupPath + '.tmp';
+      writeFileSync(tmp, JSON.stringify(manifest, null, 2), 'utf8');
+      renameSync(tmp, backupPath);
     } catch (e) {
       // Backup failed — abort cleanup to avoid user losing audit trail
       sendJSON(res, 500, { success: false, error: 'backup failed: ' + e.message, backup_error: true });

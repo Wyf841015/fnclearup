@@ -53,7 +53,9 @@ function runScan(jobId, scanPath) {
       raw.total = items.length || 0;
       raw.error = error || null;
       if (currentDir !== undefined) raw.currentDir = currentDir;
-      writeFileSync(stateFile, JSON.stringify(raw));
+      const tmp = stateFile + '.tmp';
+      writeFileSync(tmp, JSON.stringify(raw));
+      renameSync(tmp, stateFile);
     } catch {}
   }
 
@@ -207,7 +209,9 @@ export async function handleEmptyDirScan(req, res) {
   const startTime = Date.now();
   const initialState = { id: jobId, rootPath: scanPath, status: 'scanning', items: [], total: 0, error: null, startTime };
   console.log('[empty_dir] handleEmptyDirScan: EMPTY_STATE_DIR=', EMPTY_STATE_DIR, 'stateFile=', stateFile, 'scanPath=', scanPath);
-  writeFileSync(stateFile, JSON.stringify(initialState));
+  const tmp = stateFile + '.tmp';
+      writeFileSync(tmp, JSON.stringify(initialState));
+      renameSync(tmp, stateFile);
   console.log('[empty_dir] wrote initial state, existsSync=', existsSync(stateFile));
 
   // 先返回响应，再异步扫描
@@ -223,6 +227,8 @@ export async function handleEmptyDirScan(req, res) {
   emptyDirJobs.set(jobId, { stateFile, scanPath, startTime, abort: () => abortFn() });
 
   setTimeout(async () => {
+    // If stop arrived before runScan started, don't run at all
+    if (aborted_flag.early) return;
     const handle = await runScan(jobId, scanPath);
     // If stop arrived BEFORE runScan resolved, set aborted flag so the scan
     // loop sees it and exits immediately.
@@ -307,7 +313,8 @@ export async function handleEmptyDirDelete(req, res) {
           try { renameSync(fp, finalDest); }
           catch (e2) { if (e2.code === 'EXDEV') { cpSync(fp, finalDest); unlinkSync(fp); } else throw e2; }
         } else {
-          rmSync(fp, { recursive: true, force: true });
+          // Path doesn't match vol pattern — can't move to trash, fail instead of silent rmSync
+          throw new Error('路径格式不支持回收站: ' + fp + ' (需 /volN/UID/... 格式)');
         }
       }
       deleted++;

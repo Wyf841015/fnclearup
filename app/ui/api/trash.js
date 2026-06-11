@@ -262,7 +262,9 @@ export function cleanTrash(ageDays, withManifest = true) {
         items: itemsForManifest,
         note: 'Files removed from .@#local/trash. No recovery possible after this point.',
       };
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+      const tmp = manifestPath + '.tmp';
+      writeFileSync(tmp, JSON.stringify(manifest, null, 2), 'utf8');
+      renameSync(tmp, manifestPath);
     } catch (err) {
       manifestPath = null;
     }
