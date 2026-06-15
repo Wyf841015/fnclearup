@@ -33,6 +33,7 @@
       <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false">📭 去空</button>
       <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false">🧹 系统</button>
       <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false">🗑 回收站</button>
+      <button type="button" class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="false">⏰ 定时</button>
     </div>
 
     <!-- Tab 1: 应用残余 -->
@@ -325,6 +326,97 @@
       <div id="trash-list" style="margin-top:12px"></div>
       <div id="trash-other" style="margin-top:16px"></div>
       <div id="trash-empty" class="dup-empty-state"><div class="dup-empty-icon">🗑️</div><h3>尚未开始扫描</h3><p>扫描 /vol*/UID/.@#local/trash/ 下的过期文件，按 30/90/365 天分级清理。删除前自动写 manifest 备份到 <code>data/manifests/</code>。</p></div>
+    </div>
+
+    <!-- Tab 9: 定时清理 -->
+    <div class="tab-panel" data-panel="schedule">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon">⏰</div><div class="kpi-body"><div class="kpi-label">状态</div><div class="kpi-value" id="scheduleStatus">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">📅</div><div class="kpi-body"><div class="kpi-label">下次执行</div><div class="kpi-value" id="scheduleNext">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">已执行</div><div class="kpi-value" id="scheduleRunCount">0</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">📋</div><div class="kpi-body"><div class="kpi-label">上次执行</div><div class="kpi-value" id="scheduleLastRun">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span>⏰</span><span>定时清理设置</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" id="scheduleSaveBtn" onclick="saveSchedule()"><span>💾</span><span>保存设置</span></button>
+            <button type="button" class="btn btn-outline" id="scheduleTriggerBtn" onclick="triggerSchedule()"><span>▶</span><span>立即执行</span></button>
+          </div>
+        </div>
+        <div class="schedule-form">
+          <div class="schedule-row">
+            <label class="schedule-toggle">
+              <input type="checkbox" id="scheduleEnabled" onchange="toggleSchedule()">
+              <span class="toggle-track"><span class="toggle-knob"></span></span>
+              <span class="toggle-label">启用定时清理</span>
+            </label>
+          </div>
+          <div class="schedule-row">
+            <label class="form-label">执行时间</label>
+            <div class="schedule-time-row">
+              <input type="number" id="scheduleHour" min="0" max="23" class="schedule-input" value="3" style="width:80px">
+              <span>:</span>
+              <input type="number" id="scheduleMinute" min="0" max="59" class="schedule-input" value="0" style="width:80px">
+              <span class="schedule-hint">每天这个时间自动执行清理</span>
+            </div>
+          </div>
+          <div class="schedule-row">
+            <label class="form-label">清理类型</label>
+            <div class="schedule-types-grid">
+              <!-- 应用残余 -->
+              <div class="schedule-type-card">
+                <label class="schedule-type-header"><input type="checkbox" id="scApp" data-type="app"><span>📦 应用残余</span></label>
+                <div class="schedule-type-opts">
+                  <label class="schedule-opt"><input type="checkbox" id="scAppClean"><span>自动清理残留目录</span></label>
+                </div>
+              </div>
+              <!-- 网盘残余 -->
+              <div class="schedule-type-card">
+                <label class="schedule-type-header"><input type="checkbox" id="scDisk" data-type="disk"><span>💿 网盘残余</span></label>
+                <div class="schedule-type-opts">
+                  <label class="schedule-opt"><input type="checkbox" id="scDiskClean"><span>自动清理残余目录</span></label>
+                </div>
+              </div>
+              <!-- Docker -->
+              <div class="schedule-type-card">
+                <label class="schedule-type-header"><input type="checkbox" id="scDocker" data-type="docker"><span>🐳 Docker</span></label>
+                <div class="schedule-type-opts">
+                  <label class="schedule-opt"><input type="checkbox" id="scDockerImages"><span>🖼️ 清理未使用镜像</span></label>
+                  <label class="schedule-opt"><input type="checkbox" id="scDockerVolumes"><span>💾 清理孤立卷</span></label>
+                  <label class="schedule-opt"><input type="checkbox" id="scDockerNetworks"><span>🌐 清理未使用网络</span></label>
+                </div>
+              </div>
+              <!-- 临时文件 -->
+              <div class="schedule-type-card">
+                <label class="schedule-type-header"><input type="checkbox" id="scTemp" data-type="temp"><span>🕐 临时文件</span></label>
+                <div class="schedule-type-opts">
+                  <label class="schedule-opt">清理超过 <input type="number" id="scTempHours" min="1" max="720" value="24" style="width:60px"> 小时未访问的文件</label>
+                </div>
+              </div>
+              <!-- 回收站 -->
+              <div class="schedule-type-card">
+                <label class="schedule-type-header"><input type="checkbox" id="scTrash" data-type="trash"><span>🗑 回收站</span></label>
+                <div class="schedule-type-opts">
+                  <label class="schedule-opt">清理超过 <input type="number" id="scTrashDays" min="1" max="730" value="30" style="width:60px"> 天的过期文件</label>
+                </div>
+              </div>
+            </div>
+            <div class="schedule-note">⏰ 定时任务自动执行扫描+清理，无需人工确认。去重/去空/系统/回收站需要人工审核，不加入定时。</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span>📋</span><span>执行历史</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-ghost" onclick="loadScheduleHistory()"><span>🔄</span><span>刷新</span></button>
+          </div>
+        </div>
+        <div id="scheduleHistoryList" class="schedule-history-list">
+          <p class="schedule-empty">暂无执行记录</p>
+        </div>
+      </div>
     </div>
   </div>
 

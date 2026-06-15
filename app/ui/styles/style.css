@@ -104,6 +104,15 @@ html.dark .tab-panel[data-panel="docker"] .kpi-card:nth-child(3) .kpi-icon{backg
 html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(1) .kpi-icon{background:linear-gradient(135deg,#312e81,#3730a3)}
 html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(2) .kpi-icon{background:linear-gradient(135deg,#78350f,#92400e)}
 html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{background:linear-gradient(135deg,#064e3b,#065f46)}
+/* Schedule tab KPI colors */
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(1) .kpi-icon{background:linear-gradient(135deg,#eef2ff,#e0e7ff);box-shadow:0 4px 12px rgba(99,102,241,.2)}
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(2) .kpi-icon{background:linear-gradient(135deg,#f0fdf4,#dcfce7);box-shadow:0 4px 12px rgba(16,185,129,.2)}
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(3) .kpi-icon{background:linear-gradient(135deg,#fef2f2,#fee2e2);box-shadow:0 4px 12px rgba(239,68,68,.2)}
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{background:linear-gradient(135deg,#fff7ed,#ffedd5);box-shadow:0 4px 12px rgba(245,158,11,.2)}
+html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(1) .kpi-icon{background:linear-gradient(135deg,#312e81,#3730a3)}
+html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(2) .kpi-icon{background:linear-gradient(135deg,#064e3b,#065f46)}
+html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(3) .kpi-icon{background:linear-gradient(135deg,#7f1d1d,#991b1b)}
+html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{background:linear-gradient(135deg,#78350f,#92400e)}
 
 /* Card */
 .card{background:var(--color-card-bg);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
@@ -313,6 +322,8 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   /* Trash: 跟其他面板一致 3 列 + 按钮可换行 */
   .tab-panel[data-panel="trash"] .section-header .btn{flex:1 1 auto;min-width:0;justify-content:center;padding:8px 10px;font-size:12px}
   .tab-panel[data-panel="trash"] .section-header .btn span:last-child{overflow:hidden;text-overflow:ellipsis}
+  /* Schedule: 4 cards → 2×2 even at 768px */
+  .tab-panel[data-panel="schedule"] .kpi-row{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:480px){
   h1{font-size:18px}
@@ -328,6 +339,10 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   .kpi-icon{width:32px;height:32px;font-size:16px;border-radius:8px;flex-shrink:0}
   .kpi-card:hover{transform:none}
   .kpi-card::before{display:none}
+  /* Schedule tab has 4 KPI cards → 2×2 grid */
+  .tab-panel[data-panel="schedule"] .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .tab-panel[data-panel="schedule"] .kpi-card{padding:10px 6px;gap:6px}
+  .tab-panel[data-panel="schedule"] .kpi-value{font-size:14px}
   .kpi-value{font-size:18px;font-weight:700;letter-spacing:-0.5px}
   .kpi-label{font-size:11px;white-space:nowrap}
   .section-actions{gap:6px}
@@ -373,4 +388,197 @@ html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{backgro
   #trashBrowseTree{font-size:13px;word-break:break-all}
   #trashBrowseTree>div{line-height:1.6}
   #trashBrowseDesc{font-size:12px}
+}
+
+/* ═══════════════════════════
+   Schedule Tab
+   ═══════════════════════════ */
+
+.schedule-form {
+  padding: 4px 0;
+}
+.schedule-row {
+  margin-bottom: 18px;
+}
+.schedule-row .form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 8px;
+}
+.schedule-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.schedule-input {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+.schedule-hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.schedule-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+.schedule-toggle input[type="checkbox"] {
+  display: none;
+}
+.toggle-track {
+  width: 44px;
+  height: 24px;
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+  position: relative;
+  transition: background var(--transition);
+}
+.toggle-knob {
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: left var(--transition);
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.schedule-toggle input:checked + .toggle-track {
+  background: var(--color-primary);
+}
+.schedule-toggle input:checked + .toggle-track .toggle-knob {
+  left: 22px;
+}
+.toggle-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.schedule-types-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.schedule-type-card {
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+.schedule-type-card:hover {
+  border-color: var(--color-primary);
+}
+.schedule-type-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--color-primary-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+.schedule-type-header input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+.schedule-type-opts {
+  padding: 8px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.schedule-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.schedule-opt input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-primary);
+}
+.schedule-opt input[type="number"] {
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  font-size: 13px;
+  text-align: center;
+}
+.schedule-type-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+  font-size: 14px;
+}
+.schedule-type-item:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+.schedule-type-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+}
+.schedule-note {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  padding: 8px 12px;
+  background: var(--color-primary-bg);
+  border-radius: var(--radius-sm);
+  line-height: 1.5;
+}
+.schedule-history-list {
+  margin-top: 8px;
+}
+.schedule-history-table {
+  overflow-x: auto;
+}
+.schedule-history-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.schedule-history-table th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+.schedule-history-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.schedule-empty {
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: 20px;
+  font-size: 14px;
 }
