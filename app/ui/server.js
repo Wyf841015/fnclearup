@@ -13,6 +13,7 @@ import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleD
 import { handleEmptyDirScan, handleEmptyDirStop, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
 import { handleSysCleanScan, handleSysCleanClean, handleSysCleanListManifests, handleSysCleanGetManifest } from './api/sysclean.js';
 import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js';
+import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -126,6 +127,11 @@ async function handle(req, res) {
       if (method === 'GET' && path === '/api/trash/scan') { handleTrashScan(req, res); return; }
       if (method === 'GET' && path === '/api/trash/browse') { handleTrashBrowse(req, res); return; }
       if (method === 'POST' && path === '/api/trash/clean') { await handleTrashClean(req, res); return; }
+      // Schedule
+      if (path === '/api/schedule') { await handleSchedule(req, res); return; }
+      if (method === 'POST' && path === '/api/schedule/trigger') { await handleScheduleTrigger(req, res); return; }
+      if (method === 'GET' && path === '/api/schedule/history') { await handleScheduleHistory(req, res); return; }
+      if (method === 'GET' && path === '/api/schedule/report') { await handleScheduleReport(req, res); return; }
       sendJSON(res, 404, { error: 'API endpoint not found' });
       return;
     }
@@ -176,6 +182,8 @@ httpServer.on('error', (e) => {
 httpServer.listen(httpPort, '127.0.0.1', () => {
   console.log(`fnclearup HTTP listening on ${httpPort}`);
   console.log(`BUILD: ${VERSION} (${new Date().toISOString()})`);
+  // Init schedule after server is ready
+  initSchedule(DATA_DIR, httpPort);
 });
 
 // ── UNIX socket server ──

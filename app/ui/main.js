@@ -1789,6 +1789,180 @@ function closeStartupWarning(confirmed) {
 }
 
 // ════════════════════════════════
+// Schedule
+// ════════════════════════════════
+
+async function loadSchedule() {
+  try {
+    const data = await API.get('api/schedule');
+    if (!data || !data.success) return;
+    $('#scheduleEnabled').checked = data.enabled;
+    $('#scheduleHour').value = data.hour;
+    $('#scheduleMinute').value = data.minute;
+    $('#scheduleStatus').textContent = data.enabled ? '🟢 已启用' : '🔴 已停用';
+    $('#scheduleNext').textContent = data.nextRun ? new Date(data.nextRun).toLocaleString('zh-CN') : '-';
+    $('#scheduleRunCount').textContent = data.runCount || 0;
+    $('#scheduleLastRun').textContent = data.lastRun ? new Date(data.lastRun).toLocaleString('zh-CN') : '-';
+    // Restore cleanup type checkboxes (new format: objects with sub-options)
+    if (data.cleanupTypes) {
+      for (const [k, v] of Object.entries(data.cleanupTypes)) {
+        const cfg = typeof v === 'object' ? v : { enabled: !!v };
+        const masterCb = document.getElementById('sc' + k.charAt(0).toUpperCase() + k.slice(1));
+        if (masterCb) masterCb.checked = cfg.enabled;
+        // Restore sub-options
+        if (k === 'app') {
+          const cb = document.getElementById('scAppClean');
+          if (cb) cb.checked = cfg.cleanOrphans !== false;
+        } else if (k === 'disk') {
+          const cb = document.getElementById('scDiskClean');
+          if (cb) cb.checked = cfg.cleanResiduals !== false;
+        } else if (k === 'docker') {
+          const ci = document.getElementById('scDockerImages');
+          if (ci) ci.checked = cfg.images !== false;
+          const cv = document.getElementById('scDockerVolumes');
+          if (cv) cv.checked = cfg.volumes !== false;
+          const cn = document.getElementById('scDockerNetworks');
+          if (cn) cn.checked = cfg.networks !== false;
+        } else if (k === 'temp') {
+          const inp = document.getElementById('scTempHours');
+          if (inp) inp.value = cfg.olderThanHours || 24;
+        } else if (k === 'trash') {
+          const cb = document.getElementById('scTrash');
+          if (cb) cb.checked = cfg.enabled;
+          const inp = document.getElementById('scTrashDays');
+          if (inp) inp.value = cfg.olderThanDays || 30;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[schedule] load error:', e);
+  }
+}
+
+async function saveSchedule() {
+  const data = {
+    enabled: $('#scheduleEnabled').checked,
+    hour: parseInt($('#scheduleHour').value) || 3,
+    minute: parseInt($('#scheduleMinute').value) || 0,
+    cleanupTypes: {
+      app: { enabled: $('#scApp').checked, cleanOrphans: $('#scAppClean').checked },
+      disk: { enabled: $('#scDisk').checked, cleanResiduals: $('#scDiskClean').checked },
+      docker: {
+        enabled: $('#scDocker').checked,
+        images: $('#scDockerImages').checked,
+        volumes: $('#scDockerVolumes').checked,
+        networks: $('#scDockerNetworks').checked,
+      },
+      temp: { enabled: $('#scTemp').checked, olderThanHours: parseInt($('#scTempHours').value) || 24 },
+      trash: { enabled: $('#scTrash').checked, olderThanDays: parseInt($('#scTrashDays').value) || 30 },
+    },
+  };
+  try {
+    const result = await API.post('api/schedule', data);
+    if (result && result.success) {
+      showToast('✅ 定时设置已保存', 'success');
+      loadSchedule(); // Refresh display
+    } else {
+      showToast('❌ 保存失败', 'error');
+    }
+  } catch (e) {
+    showToast('❌ 保存失败: ' + e.message, 'error');
+  }
+}
+
+function toggleSchedule() {
+  // Just visual feedback, actual save happens on "保存设置" button
+  const enabled = $('#scheduleEnabled').checked;
+  $('#scheduleStatus').textContent = enabled ? '🟡 已修改（需保存）' : '🔴 已停用';
+}
+
+async function triggerSchedule() {
+  try {
+    const result = await API.post('api/schedule/trigger');
+    if (result && result.success) {
+      showToast('▶ 定时清理已触发', 'info');
+      // Refresh schedule display
+      setTimeout(loadSchedule, 2000);
+    } else {
+      showToast('❌ 触发失败', 'error');
+    }
+  } catch (e) {
+    showToast('❌ 触发失败: ' + e.message, 'error');
+  }
+}
+
+async function loadScheduleHistory() {
+  try {
+    const data = await API.get('api/schedule/history');
+    const list = $('#scheduleHistoryList');
+    if (!list) return;
+    if (!data || !data.history || data.history.length === 0) {
+      list.innerHTML = '<p class="schedule-empty">暂无执行记录</p>';
+      return;
+    }
+    let html = '<div class="schedule-history-table"><table><thead><tr><th>时间</th><th>耗时</th><th>清理项</th><th>释放</th><th>结果</th><th></th></tr></thead><tbody>';
+    for (const h of data.history) {
+      const time = h.completedAt ? new Date(h.completedAt).toLocaleString('zh-CN') : '-';
+      const duration = h.duration ? (h.duration / 1000).toFixed(1) + 's' : '-';
+      const items = (h.deleted || []).map(d => d.detail).join('<br>') || '无';
+      const bytes = h.totalBytes ? formatBytes(h.totalBytes) : '-';
+      const errors = (h.errors || []).length;
+      const status = errors > 0 ? '⚠️ ' + errors + ' 个错误' : '✅';
+      const reportName = h.reportFile || '';
+      const reportBtn = reportName ? `<button class="btn btn-ghost btn-xs" onclick="viewScheduleReport('${reportName}')">📄</button>` : '';
+      html += `<tr><td>${escHtml(time)}</td><td>${escHtml(duration)}</td><td>${items}</td><td>${bytes}</td><td>${status}</td><td>${reportBtn}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    list.innerHTML = html;
+  } catch (e) {
+    console.error('[schedule] history load error:', e);
+  }
+}
+
+async function viewScheduleReport(name) {
+  try {
+    const data = await API.get('api/schedule/report?name=' + encodeURIComponent(name));
+    if (!data || !data.report) { showToast('无法加载报告', 'error'); return; }
+    const r = data.report;
+    let html = '<div class="report-detail"><h3>定时清理报告</h3>';
+    html += `<p><strong>开始时间:</strong> ${new Date(r.startedAt).toLocaleString('zh-CN')}</p>`;
+    html += `<p><strong>完成时间:</strong> ${new Date(r.completedAt).toLocaleString('zh-CN')}</p>`;
+    html += `<p><strong>耗时:</strong> ${(r.duration / 1000).toFixed(1)}s</p>`;
+    if (r.deleted && r.deleted.length > 0) {
+      html += '<h4>清理明细</h4><ul>';
+      for (const d of r.deleted) {
+        html += `<li>${escHtml(d.detail || d.type + ': ' + (d.count || 0) + '项')}</li>`;
+      }
+      html += '</ul>';
+    }
+    if (r.errors && r.errors.length > 0) {
+      html += '<h4>错误</h4><ul style="color:var(--color-danger)">';
+      for (const e of r.errors) html += `<li>${escHtml(e.type)}: ${escHtml(e.error)}</li>`;
+      html += '</ul>';
+    }
+    html += '</div>';
+    // Show in a modal or overlay
+    const existing = document.getElementById('scheduleReportModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'scheduleReportModal';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    modal.innerHTML = `<div class="modal modal-lg" onclick="event.stopPropagation()">
+      <div class="modal-header"><span class="modal-title">📋 清理报告</span>
+        <button class="btn-icon" onclick="this.closest('.modal-overlay').remove()">✕</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh;overflow-y:auto">${html}</div>
+      <div class="modal-footer"><button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>
+    </div>`;
+    modal.addEventListener('click', function() { this.remove(); });
+    document.body.appendChild(modal);
+  } catch (e) {
+    showToast('加载报告失败: ' + e.message, 'error');
+  }
+}
+
+// ════════════════════════════════
 // Init
 // ════════════════════════════════
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
@@ -1799,6 +1973,9 @@ function init() {
 
   // Check version from FnDepot
   checkVersion();
+
+  // Load schedule config
+  loadSchedule();
 
   // Export all functions to window for inline onclick and event delegation
   const exports = {
@@ -1836,6 +2013,7 @@ function init() {
     showStartupWarning, closeStartupWarning,
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
+    loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
   };
   Object.assign(window, exports);
 
