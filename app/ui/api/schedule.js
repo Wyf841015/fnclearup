@@ -174,10 +174,10 @@ async function executeCleanup() {
     try {
       if (dockerCfg.images) {
         const imgRes = await callLocalAPI('GET', '/api/images');
-        const unused = (imgRes.data?.unused || []).filter(i => i.used === false);
+        const unused = imgRes.data?.images?.unused || [];
         if (unused.length > 0) {
           const ids = unused.map(i => i.id);
-          const delRes = await callLocalAPI('POST', '/api/images/delete', { ids });
+          const delRes = await callLocalAPI('POST', '/api/images/delete', { images: ids });
           const deleted = delRes.data?.deleted || 0;
           report.deleted.push({ type: 'docker-images', count: deleted, detail: `${deleted} 个未使用镜像` });
           dockerResults.images = { found: unused.length, deleted };
@@ -187,10 +187,10 @@ async function executeCleanup() {
       }
       if (dockerCfg.volumes) {
         const volRes = await callLocalAPI('GET', '/api/volumes');
-        const orphans = (volRes.data?.orphans || []).filter(v => v.used === false);
+        const orphans = volRes.data?.volumes?.orphan || [];
         if (orphans.length > 0) {
           const names = orphans.map(v => v.name);
-          const delRes = await callLocalAPI('POST', '/api/volumes/delete', { names });
+          const delRes = await callLocalAPI('POST', '/api/volumes/delete', { volumes: names });
           const deleted = delRes.data?.deleted || 0;
           report.deleted.push({ type: 'docker-volumes', count: deleted, detail: `${deleted} 个孤立卷` });
           dockerResults.volumes = { found: orphans.length, deleted };
@@ -200,10 +200,10 @@ async function executeCleanup() {
       }
       if (dockerCfg.networks) {
         const netRes = await callLocalAPI('GET', '/api/networks');
-        const unused = (netRes.data?.networks || []).filter(n => n.used === false);
+        const unused = netRes.data?.networks?.unused || [];
         if (unused.length > 0) {
           const ids = unused.map(n => n.id);
-          const delRes = await callLocalAPI('POST', '/api/networks/delete', { ids });
+          const delRes = await callLocalAPI('POST', '/api/networks/delete', { networks: ids });
           const deleted = delRes.data?.deleted || 0;
           report.deleted.push({ type: 'docker-networks', count: deleted, detail: `${deleted} 个未使用网络` });
           dockerResults.networks = { found: unused.length, deleted };
