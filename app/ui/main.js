@@ -75,6 +75,7 @@ async function switchTab(tabName) {
   else if(tabName==='docker') { App.dockerVolumesLoaded=false; await loadDockerVolumes(); switchInnerTab('volumes'); }
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
+  else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
 }
 
 // ════════════════════════════════
@@ -1891,6 +1892,15 @@ async function triggerSchedule() {
   }
 }
 
+function toggleFileList(btn) {
+  const list = btn.nextElementSibling;
+  if (list && list.classList) {
+    const hidden = list.style.display === 'none';
+    list.style.display = hidden ? 'block' : 'none';
+    btn.textContent = hidden ? '📂' + btn.textContent.replace(/[^0-9]/g, '') : '📁' + btn.textContent.replace(/[^0-9]/g, '');
+  }
+}
+
 async function loadScheduleHistory() {
   try {
     const data = await API.get('api/schedule/history');
@@ -1904,13 +1914,31 @@ async function loadScheduleHistory() {
     for (const h of data.history) {
       const time = h.completedAt ? new Date(h.completedAt).toLocaleString('zh-CN') : '-';
       const duration = h.duration ? (h.duration / 1000).toFixed(1) + 's' : '-';
-      const items = (h.deleted || []).map(d => d.detail).join('<br>') || '无';
       const bytes = h.totalBytes ? formatBytes(h.totalBytes) : '-';
       const errors = (h.errors || []).length;
       const status = errors > 0 ? '⚠️ ' + errors + ' 个错误' : '✅';
       const reportName = h.reportFile || '';
       const reportBtn = reportName ? `<button class="btn btn-ghost btn-xs" onclick="viewScheduleReport('${reportName}')">📄</button>` : '';
-      html += `<tr><td>${escHtml(time)}</td><td>${escHtml(duration)}</td><td>${items}</td><td>${bytes}</td><td>${status}</td><td>${reportBtn}</td></tr>`;
+      // Build items column with file lists
+      let itemsHtml = '';
+      if (!h.deleted || h.deleted.length === 0) {
+        itemsHtml = '无';
+      } else {
+        const parts = [];
+        for (const d of h.deleted) {
+          const fileCount = (d.files && d.files.length > 0) ? d.files.length : 0;
+          let itemStr = escHtml(d.detail);
+          if (fileCount > 0) {
+            const idx = parts.length;
+            const fileList = d.files.map(f => '<li>' + escHtml(f) + '</li>').join('');
+            itemStr += `<button class="btn btn-ghost btn-xs" style="margin-left:4px" onclick="toggleFileList(this)">📂${fileCount}</button>`;
+            itemStr += `<div class="schedule-file-list" id="sfl-${idx}" style="display:none"><ul>${fileList}</ul></div>`;
+          }
+          parts.push(itemStr);
+        }
+        itemsHtml = parts.join('<br>');
+      }
+      html += `<tr><td>${escHtml(time)}</td><td>${escHtml(duration)}</td><td>${itemsHtml}</td><td>${bytes}</td><td>${status}</td><td>${reportBtn}</td></tr>`;
     }
     html += '</tbody></table></div>';
     list.innerHTML = html;
@@ -2014,6 +2042,7 @@ function init() {
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
+    toggleFileList,
   };
   Object.assign(window, exports);
 

@@ -582,3 +582,19 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   padding: 20px;
   font-size: 14px;
 }
+.schedule-file-list {
+  margin: 4px 0 2px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.schedule-file-list ul {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+.schedule-file-list li {
+  word-break: break-all;
+  line-height: 1.4;
+  padding: 1px 0;
+}
