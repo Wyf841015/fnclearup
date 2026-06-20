@@ -141,7 +141,7 @@ async function executeCleanup() {
       if (orphanPaths.length > 0 && appCfg.cleanOrphans) {
         const delRes = await callLocalAPI('POST', '/api/delete', { paths: orphanPaths });
         const deleted = delRes.data?.deleted || 0;
-        report.deleted.push({ type: 'app', paths: orphanPaths.length, deleted, detail: `${deleted}/${orphanPaths.length} 应用残留已清理` });
+        report.deleted.push({ type: 'app', paths: orphanPaths.length, deleted, files: [...orphanPaths], detail: `${deleted}/${orphanPaths.length} 应用残留已清理` });
         report.types.app = { status: 'done', found: orphanPaths.length, deleted };
       } else {
         report.types.app = { status: 'done', found: orphanPaths.length, deleted: 0, note: '未发现残余或未启用清理' };
@@ -229,7 +229,7 @@ async function executeCleanup() {
         const totalSize = expired.reduce((s, f) => s + (f.size || 0), 0);
         const delRes = await callLocalAPI('POST', '/api/temp/delete', { paths });
         const deleted = delRes.data?.deleted || 0;
-        report.deleted.push({ type: 'temp', count: deleted, bytes: totalSize, detail: `${deleted} 个过期临时文件 (${formatBytes(totalSize)})` });
+        report.deleted.push({ type: 'temp', count: deleted, bytes: totalSize, files: [...paths], detail: `${deleted} 个过期临时文件 (${formatBytes(totalSize)})` });
         report.totalBytes += totalSize;
         report.types.temp = { status: 'done', found: expired.length, deleted, bytes: totalSize };
       } else {
@@ -251,7 +251,8 @@ async function executeCleanup() {
       if (totalItems > 0) {
         const cleanRes = await callLocalAPI('POST', '/api/trash/clean', { ageDays: olderThanDays, withManifest: true });
         const cleaned = cleanRes.data?.cleaned || 0;
-        report.deleted.push({ type: 'trash', count: cleaned, bytes: totalSize, detail: `${cleaned} 个回收站文件 (${olderThanDays}天+, ${formatBytes(totalSize)})` });
+        const trashFiles = (cleanRes.data?.deleted || []).map(d => d.path);
+        report.deleted.push({ type: 'trash', count: cleaned, bytes: totalSize, files: trashFiles, detail: `${cleaned} 个回收站文件 (${olderThanDays}天+, ${formatBytes(totalSize)})` });
         report.totalBytes += totalSize;
         report.types.trash = { status: 'done', found: totalItems, cleaned, days: olderThanDays };
       } else {
@@ -317,7 +318,7 @@ function logRunHistory(report) {
     types: Object.fromEntries(
       Object.entries(report.types).map(([k, v]) => [k, typeof v === 'object' ? v.status || 'done' : v])
     ),
-    deleted: report.deleted.map(d => ({ type: d.type, count: d.count || d.deleted || d.paths || 0, detail: d.detail })),
+    deleted: report.deleted.map(d => ({ type: d.type, count: d.count || d.deleted || d.paths || 0, detail: d.detail, files: d.files || [] })),
     errors: report.errors,
     totalBytes: report.totalBytes,
     reportFile: `cleanup_${new Date(report.startedAt).toISOString().replace(/[:.]/g, '-').slice(0, 16)}.json`,
