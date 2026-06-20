@@ -1,7 +1,7 @@
 // ── Scheduled Cleanup Module ──
 // Reliable periodic cleanup scheduler with disk-persisted config and detailed reports.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import http from 'node:http';
 import { sendJSON } from '../lib/util.js';
@@ -36,8 +36,12 @@ export function initSchedule(dataDir, port) {
   httpPort = port || 47938;
   configPath = join(dataDir, 'schedule.json');
   reportsDir = join(dataDir, 'schedule_reports');
-  if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
-  if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
+  try {
+    if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+    if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
+  } catch (e) {
+    console.warn('[schedule] failed to create data/reports dir:', e.message);
+  }
 
   if (existsSync(configPath)) {
     try {
@@ -63,7 +67,11 @@ export function initSchedule(dataDir, port) {
 
 function saveConfig() {
   if (!configPath) return;
-  try { writeFileSync(configPath, JSON.stringify(config, null, 2)); } catch (e) { console.error('[schedule] save error:', e.message); }
+  try {
+    const tmp = configPath + '.tmp';
+    writeFileSync(tmp, JSON.stringify(config, null, 2));
+    renameSync(tmp, configPath);
+  } catch (e) { console.error('[schedule] save error:', e.message); }
 }
 
 function calcNextRun() {
@@ -116,6 +124,7 @@ function callLocalAPI(method, path, body) {
 async function executeCleanup() {
   if (isRunning) { console.log('[schedule] previous cleanup still running, skipping'); scheduleNext(); return; }
   isRunning = true;
+  try {
   const startedAt = new Date().toISOString();
   const report = { startedAt, types: {}, errors: [], deleted: [], totalBytes: 0 };
 
@@ -153,12 +162,11 @@ async function executeCleanup() {
   if (diskCfg.enabled) {
     try {
       const scanRes = await callLocalAPI('GET', '/api/vol02');
-      if (scanRes.data?.success && Array.isArray(scanRes.data.orphans)) {
-        const orphans = scanRes.data.orphans;
-        report.types.disk = { status: 'done', found: orphans.length };
-        if (orphans.length > 0 && diskCfg.cleanResiduals) {
-          // For now just report - actual delete needs mapping
-          report.types.disk.note = `${orphans.length} 个挂载残余待手动确认`;
+      const volDirs = scanRes.data?.vol02_dirs || [];
+      if (scanRes.data?.success && volDirs.length > 0) {
+        report.types.disk = { status: 'done', found: volDirs.length };
+        if (diskCfg.cleanResiduals) {
+          report.types.disk.note = `${volDirs.length} 个挂载残余待手动确认`;
         }
       } else {
         report.types.disk = { status: 'done', found: 0 };
@@ -177,7 +185,7 @@ async function executeCleanup() {
         if (unused.length > 0) {
           const ids = unused.map(i => i.id);
           const delRes = await callLocalAPI('POST', '/api/images/delete', { images: ids });
-          const deleted = delRes.data?.deleted || 0;
+          const deleted = delRes.data?.total || 0;
           report.deleted.push({ type: 'docker-images', count: deleted, detail: `${deleted} 个未使用镜像` });
           dockerResults.images = { found: unused.length, deleted };
         } else {
@@ -278,6 +286,7 @@ async function executeCleanup() {
   logRunHistory(report);
   // Schedule next run
   scheduleNext();
+  } finally { isRunning = false; }
 }
 
 function formatBytes(bytes) {
@@ -295,7 +304,9 @@ function saveDetailedReport(report) {
   const timestamp = new Date(report.startedAt).toISOString().replace(/[:.]/g, '-').slice(0, 16);
   const reportFile = join(reportsDir, `cleanup_${timestamp}.json`);
   try {
-    writeFileSync(reportFile, JSON.stringify(report, null, 2));
+    const tmp = reportFile + '.tmp';
+    writeFileSync(tmp, JSON.stringify(report, null, 2));
+    renameSync(tmp, reportFile);
     console.log(`[schedule] report saved: ${reportFile}`);
   } catch (e) {
     console.error('[schedule] failed to save report:', e.message);
@@ -324,7 +335,7 @@ function logRunHistory(report) {
   };
   history.push(summary);
   if (history.length > 100) history = history.slice(-100);
-  try { writeFileSync(historyPath, JSON.stringify(history, null, 2)); } catch (e) { console.error('[schedule] history write error:', e.message); }
+  try { const tmp = historyPath + '.tmp'; writeFileSync(tmp, JSON.stringify(history, null, 2)); renameSync(tmp, historyPath); } catch (e) { console.error('[schedule] history write error:', e.message); }
 }
 
 // ── API: GET/POST /api/schedule ──
