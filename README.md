@@ -4,7 +4,20 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
-## v0.8.0 更新
+## v0.8.1 更新
+
+- **修复：定时清理全面代码审计** — 审查发现并修复 8 项 P1 问题，涵盖 API 字段不匹配、路径提取错误、HTML 属性注入等
+
+  - **应用残余不清理** — `/api/scan` 返回 `orphan` 对象数组未取 `.path`，全被 `isSafePath` 过滤
+  - **Docker 清理不工作** — `imgRes.data?.unused` 路径错误（应为 `?.images?.unused`），`volRes.data?.orphans` 路径错误（应为 `?.volumes?.orphan`），`netRes.data?.networks` 是对象不是数组 → 崩溃
+  - **Temp 清理不工作** — 用 `f.atime` 过滤但 API 返 `age_hours`，`delRes.data?.deleted` 是数组当数字
+  - **Trash 清理不工作** — `data.totalItems/size` 不存在（实际在 `data.totals`），`cleanRes.data?.cleaned` 不存在（实际是 `deleted.length`）
+  - **镜像删除计数为 0** — 读 `deleted` 但 API 返 `total`
+  - **磁盘清理死代码** — 读 `orphans` 但 API 返 `vol02_dirs`
+  - **🧾 文件清单按钮无反应** — `JSON.stringify` 双引号闭合 HTML `onclick` 属性
+  - **3 处非原子写入** — `writeFileSync` 直接写，崩溃丢数据
+  - **mkdirSync 无异常保护** — 磁盘满时崩溃
+  - **isRunning 锁无 finally** — 异常时永久锁死定时器
 
 - **新增：定时清理计划** — 支持 5 种清理类型（应用残余/网盘挂载/Docker/tmp/回收站），可配置时间、间隔，自动执行并生成清理报告
 - **新增：定时清理前端配置** — 独立设置面板，各清理类型可独立启停，支持子选项（Docker 镜像/卷/网络分别控制）
