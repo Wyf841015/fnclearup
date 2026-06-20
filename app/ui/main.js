@@ -1951,12 +1951,12 @@ async function loadScheduleHistory() {
     for (const h of data.history) {
       const time = h.completedAt ? new Date(h.completedAt).toLocaleString('zh-CN') : '-';
       const duration = h.duration ? (h.duration / 1000).toFixed(1) + 's' : '-';
-      const items = (h.deleted || []).map(d => d.detail).join('<br>') || '无';
+      const items = (h.deleted || []).map(d => escHtml(d.detail)).join('<br>') || '无';
       const bytes = h.totalBytes ? formatBytes(h.totalBytes) : '-';
       const errors = (h.errors || []).length;
       const status = errors > 0 ? '⚠️ ' + errors + ' 个错误' : '✅';
       const reportName = h.reportFile || '';
-      const reportBtn = reportName ? `<button class="btn btn-ghost btn-xs" onclick="viewScheduleReport('${reportName}')">📄</button>` : '';
+      const reportBtn = reportName ? `<button class="btn btn-ghost btn-xs" data-report="${encodeURIComponent(reportName)}" onclick="viewScheduleReportFromAttr(this)">📄</button>` : '';
       // 文件清单按钮 — 始终显示，弹窗查看
       const filesBtn = `<button class="btn btn-ghost btn-xs" data-files="${encodeURIComponent(JSON.stringify(h.deleted || []))}" onclick="viewScheduleFilesFromAttr(this)">🧾</button>`;
       html += `<tr><td>${escHtml(time)}</td><td>${escHtml(duration)}</td><td>${items}</td><td>${bytes}</td><td>${status}</td><td>${reportBtn}${filesBtn}</td></tr>`;
@@ -1966,6 +1966,12 @@ async function loadScheduleHistory() {
   } catch (e) {
     console.error('[schedule] history load error:', e);
   }
+}
+
+function viewScheduleReportFromAttr(btn) {
+  const raw = btn.getAttribute('data-report');
+  if (!raw) return;
+  viewScheduleReport(decodeURIComponent(raw));
 }
 
 async function viewScheduleReport(name) {
@@ -2063,7 +2069,7 @@ function init() {
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
-    viewScheduleFilesFromAttr,
+    viewScheduleFilesFromAttr, viewScheduleReportFromAttr,
   };
   Object.assign(window, exports);
 
