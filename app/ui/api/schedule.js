@@ -128,19 +128,18 @@ async function executeCleanup() {
     try {
       const scanRes = await callLocalAPI('POST', '/api/scan', {});
       const data = scanRes.data || {};
-      // App scan may return orphan as object or array
       let orphanPaths = [];
       const orphans = data.orphan;
-      if (orphans && typeof orphans === 'object' && !Array.isArray(orphans)) {
+      if (Array.isArray(orphans)) {
+        orphanPaths = orphans.map(o => o.path).filter(Boolean);
+      } else if (orphans && typeof orphans === 'object') {
         for (const paths of Object.values(orphans)) {
           if (Array.isArray(paths)) orphanPaths.push(...paths);
         }
-      } else if (Array.isArray(orphans)) {
-        orphanPaths = orphans;
       }
       if (orphanPaths.length > 0 && appCfg.cleanOrphans) {
         const delRes = await callLocalAPI('POST', '/api/delete', { paths: orphanPaths });
-        const deleted = delRes.data?.deleted || 0;
+        const deleted = delRes.data?.total || 0;
         report.deleted.push({ type: 'app', paths: orphanPaths.length, deleted, files: [...orphanPaths], detail: `${deleted}/${orphanPaths.length} 应用残留已清理` });
         report.types.app = { status: 'done', found: orphanPaths.length, deleted };
       } else {

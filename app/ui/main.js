@@ -1892,7 +1892,11 @@ async function triggerSchedule() {
   }
 }
 
-function viewScheduleFiles(deleted) {
+function viewScheduleFilesFromAttr(btn) {
+  const raw = btn.getAttribute('data-files');
+  if (!raw) { showToast('无可查看的文件清单', 'info'); return; }
+  let deleted;
+  try { deleted = JSON.parse(decodeURIComponent(raw)); } catch { showToast('文件清单数据异常', 'error'); return; }
   let html = '<div class="schedule-files-modal"><h3>🧾 被清理文件清单</h3>';
   if (!deleted || deleted.length === 0) {
     html += '<p style="color:var(--color-text-secondary)">无清理记录</p>';
@@ -1954,7 +1958,7 @@ async function loadScheduleHistory() {
       const reportName = h.reportFile || '';
       const reportBtn = reportName ? `<button class="btn btn-ghost btn-xs" onclick="viewScheduleReport('${reportName}')">📄</button>` : '';
       // 文件清单按钮 — 始终显示，弹窗查看
-      const filesBtn = `<button class="btn btn-ghost btn-xs" onclick="viewScheduleFiles(${JSON.stringify(h.deleted || [])})">🧾</button>`;
+      const filesBtn = `<button class="btn btn-ghost btn-xs" data-files="${encodeURIComponent(JSON.stringify(h.deleted || []))}" onclick="viewScheduleFilesFromAttr(this)">🧾</button>`;
       html += `<tr><td>${escHtml(time)}</td><td>${escHtml(duration)}</td><td>${items}</td><td>${bytes}</td><td>${status}</td><td>${reportBtn}${filesBtn}</td></tr>`;
     }
     html += '</tbody></table></div>';
@@ -2059,7 +2063,7 @@ function init() {
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
-    viewScheduleFiles,
+    viewScheduleFilesFromAttr,
   };
   Object.assign(window, exports);
 
