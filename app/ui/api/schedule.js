@@ -221,13 +221,12 @@ async function executeCleanup() {
       const scanRes = await callLocalAPI('GET', '/api/temp/scan');
       const files = scanRes.data?.files || [];
       const olderThan = tempCfg.olderThanHours || 24;
-      const cutoff = Date.now() - olderThan * 3600000;
-      const expired = files.filter(f => f.atime && f.atime < cutoff);
+      const expired = files.filter(f => f.age_hours >= olderThan);
       if (expired.length > 0) {
         const paths = expired.map(f => f.path);
         const totalSize = expired.reduce((s, f) => s + (f.size || 0), 0);
         const delRes = await callLocalAPI('POST', '/api/temp/delete', { paths });
-        const deleted = delRes.data?.deleted || 0;
+        const deleted = delRes.data?.total || 0;
         report.deleted.push({ type: 'temp', count: deleted, bytes: totalSize, files: [...paths], detail: `${deleted} 个过期临时文件 (${formatBytes(totalSize)})` });
         report.totalBytes += totalSize;
         report.types.temp = { status: 'done', found: expired.length, deleted, bytes: totalSize };
@@ -244,13 +243,14 @@ async function executeCleanup() {
       const scanRes = await callLocalAPI('GET', '/api/trash/scan');
       const data = scanRes.data || {};
       const olderThanDays = trashCfg.olderThanDays || 30;
-      // Get trash stats - the scan may return counts per age bracket
-      const totalItems = data.totalItems || 0;
-      const totalSize = data.totalSize || 0;
+      const totals = data.totals || {};
+      const totalItems = (totals.files || 0) + (totals.dirs || 0);
+      const totalSize = totals.size || 0;
       if (totalItems > 0) {
         const cleanRes = await callLocalAPI('POST', '/api/trash/clean', { ageDays: olderThanDays, withManifest: true });
-        const cleaned = cleanRes.data?.cleaned || 0;
-        const trashFiles = (cleanRes.data?.deleted || []).map(d => d.path);
+        const deletedArr = cleanRes.data?.deleted || [];
+        const cleaned = deletedArr.length;
+        const trashFiles = deletedArr.map(d => d.path);
         report.deleted.push({ type: 'trash', count: cleaned, bytes: totalSize, files: trashFiles, detail: `${cleaned} 个回收站文件 (${olderThanDays}天+, ${formatBytes(totalSize)})` });
         report.totalBytes += totalSize;
         report.types.trash = { status: 'done', found: totalItems, cleaned, days: olderThanDays };
