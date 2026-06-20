@@ -1892,13 +1892,46 @@ async function triggerSchedule() {
   }
 }
 
-function toggleFileList(btn) {
-  const list = btn.nextElementSibling;
-  if (list && list.classList) {
-    const hidden = list.style.display === 'none';
-    list.style.display = hidden ? 'block' : 'none';
-    btn.textContent = hidden ? '📂' + btn.textContent.replace(/[^0-9]/g, '') : '📁' + btn.textContent.replace(/[^0-9]/g, '');
+function viewScheduleFiles(deleted) {
+  let html = '<div class="schedule-files-modal"><h3>🧾 被清理文件清单</h3>';
+  if (!deleted || deleted.length === 0) {
+    html += '<p style="color:var(--color-text-secondary)">无清理记录</p>';
+  } else {
+    let hasFiles = false;
+    for (const d of deleted) {
+      html += `<h4 style="margin:12px 0 4px">${escHtml(d.detail)}</h4>`;
+      if (d.files && d.files.length > 0) {
+        hasFiles = true;
+        html += '<ul class="schedule-file-list" style="display:block">';
+        for (const f of d.files) {
+          html += '<li>' + escHtml(f) + '</li>';
+        }
+        html += '</ul>';
+      } else {
+        html += '<p style="color:var(--color-text-tertiary);font-size:13px;margin:4px 0 8px">（无详细路径记录）</p>';
+      }
+    }
+    if (!hasFiles) {
+      html = '<div class="schedule-files-modal"><h3>🧾 被清理文件清单</h3><p style="color:var(--color-text-secondary)">该记录未保存文件级路径，升级后新执行的清理会自动记录。</p>';
+    }
   }
+  html += '</div>';
+  // Show in overlay modal
+  const existing = document.getElementById('scheduleFilesModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'scheduleFilesModal';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'flex';
+  modal.innerHTML = `<div class="modal modal-lg" onclick="event.stopPropagation()">
+    <div class="modal-header"><span class="modal-title">🧾 被清理文件清单</span>
+      <button class="btn-icon" onclick="this.closest('.modal-overlay').remove()">✕</button>
+    </div>
+    <div class="modal-body" style="max-height:70vh;overflow-y:auto">${html}</div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>
+  </div>`;
+  modal.addEventListener('click', function() { this.remove(); });
+  document.body.appendChild(modal);
 }
 
 async function loadScheduleHistory() {
@@ -1914,31 +1947,15 @@ async function loadScheduleHistory() {
     for (const h of data.history) {
       const time = h.completedAt ? new Date(h.completedAt).toLocaleString('zh-CN') : '-';
       const duration = h.duration ? (h.duration / 1000).toFixed(1) + 's' : '-';
+      const items = (h.deleted || []).map(d => d.detail).join('<br>') || '无';
       const bytes = h.totalBytes ? formatBytes(h.totalBytes) : '-';
       const errors = (h.errors || []).length;
       const status = errors > 0 ? '⚠️ ' + errors + ' 个错误' : '✅';
       const reportName = h.reportFile || '';
       const reportBtn = reportName ? `<button class="btn btn-ghost btn-xs" onclick="viewScheduleReport('${reportName}')">📄</button>` : '';
-      // Build items column with file lists
-      let itemsHtml = '';
-      if (!h.deleted || h.deleted.length === 0) {
-        itemsHtml = '无';
-      } else {
-        const parts = [];
-        for (const d of h.deleted) {
-          const fileCount = (d.files && d.files.length > 0) ? d.files.length : 0;
-          let itemStr = escHtml(d.detail);
-          if (fileCount > 0) {
-            const idx = parts.length;
-            const fileList = d.files.map(f => '<li>' + escHtml(f) + '</li>').join('');
-            itemStr += `<button class="btn btn-ghost btn-xs" style="margin-left:4px" onclick="toggleFileList(this)">📂${fileCount}</button>`;
-            itemStr += `<div class="schedule-file-list" id="sfl-${idx}" style="display:none"><ul>${fileList}</ul></div>`;
-          }
-          parts.push(itemStr);
-        }
-        itemsHtml = parts.join('<br>');
-      }
-      html += `<tr><td>${escHtml(time)}</td><td>${escHtml(duration)}</td><td>${itemsHtml}</td><td>${bytes}</td><td>${status}</td><td>${reportBtn}</td></tr>`;
+      // 文件清单按钮 — 始终显示，弹窗查看
+      const filesBtn = `<button class="btn btn-ghost btn-xs" onclick="viewScheduleFiles(${JSON.stringify(h.deleted || [])})">🧾</button>`;
+      html += `<tr><td>${escHtml(time)}</td><td>${escHtml(duration)}</td><td>${items}</td><td>${bytes}</td><td>${status}</td><td>${reportBtn}${filesBtn}</td></tr>`;
     }
     html += '</tbody></table></div>';
     list.innerHTML = html;
@@ -2042,7 +2059,7 @@ function init() {
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
-    toggleFileList,
+    viewScheduleFiles,
   };
   Object.assign(window, exports);
 
