@@ -4,6 +4,19 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.9.0 更新
+
+- **🐳 新增：Docker 清理 Tab** — 一键清理已停止容器 (`exited`/`created`/`dead` 状态) 和 Docker Build Cache
+  - 容器 ID 严格 regex 校验（`^[a-f0-9]{12,64}$`），防止参数注入
+  - `dry_run: true` 默认强制预览，删除前必显式确认
+  - `/var/run/docker.sock` 不存在 → 干净降级到「Docker 未检测到」独立 panel
+- **🐘 新增：大文件查找器 Tab** — 跨 `/vol*` 卷扫描 ≥ 100 MB 文件 Top 100，支持 minSize/topN/depth 三档过滤，5min hard timeout + setImmediate yield 可在 ~1s 内停止
+- **🧹 修复：sysclean HOME 硬编码**（P0 真 bug）— `root` 跑只清 root 缓存，多用户 NAS 漏清理其他用户的 npm/pip/uv/Chromium 等
+  - `getUserHomes()` 自动发现所有 `/vol<N>/<UID>` 数字 UID 目录
+  - USER_CACHE_TEMPLATES × N 用户展开成独立清理项
+  - `excludeSingleChildNames` 防重复
+- **测试覆盖：60 → 78**（+18 新增，含恶意 ID 注入防护测试）
+
 ## v0.8.1 更新
 
 - **修复：定时清理全面代码审计** — 审查发现并修复 8 项 P1 问题，涵盖 API 字段不匹配、路径提取错误、HTML 属性注入等
