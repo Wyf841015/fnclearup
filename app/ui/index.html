@@ -34,6 +34,7 @@
       <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false">🧹 系统</button>
       <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false">🗑 回收站</button>
       <button type="button" class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="false">⏰ 定时</button>
+      <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false">🐘 大文件</button>
     </div>
 
     <!-- Tab 1: 应用残余 -->
@@ -419,6 +420,45 @@
             💡 点击 🧾 查看每次清理的文件清单
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Tab 10: 大文件查找器 -->
+    <div class="tab-panel" data-panel="bigfiles">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon">📊</div><div class="kpi-body"><div class="kpi-label">扫描候选</div><div class="kpi-value" id="bigfiles-candidates">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">📋</div><div class="kpi-body"><div class="kpi-label">返回结果</div><div class="kpi-value" id="bigfiles-results">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">候选总占用</div><div class="kpi-value" id="bigfiles-total-size">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">耗时</div><div class="kpi-value" id="bigfiles-elapsed">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span>🐘</span><span>大文件查找器</span></h2>
+          <div class="section-actions">
+            <select id="bigfiles-path" class="form-select" style="width:auto;min-width:120px">
+              <option value="/vol*" selected>所有 /vol 卷</option>
+              <option value="/vol1">/vol1</option>
+              <option value="/vol2">/vol2</option>
+              <option value="/vol3">/vol3</option>
+            </select>
+            <select id="bigfiles-minsize" class="form-select" style="width:auto;min-width:120px">
+              <option value="0">无最小值</option>
+              <option value="104857600" selected>≥ 100 MB</option>
+              <option value="524288000">≥ 500 MB</option>
+              <option value="1073741824">≥ 1 GB</option>
+              <option value="5368709120">≥ 5 GB</option>
+            </select>
+            <select id="bigfiles-topn" class="form-select" style="width:auto;min-width:120px">
+              <option value="50">Top 50</option>
+              <option value="100" selected>Top 100</option>
+              <option value="200">Top 200</option>
+            </select>
+            <button type="button" class="btn btn-primary" onclick="doBigFilesScan()" id="bigfilesBtn"><span>🔍</span><span>扫描</span></button>
+            <button type="button" class="btn btn-ghost" onclick="stopBigFiles()" id="bigfilesStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+          </div>
+        </div>
+        <div id="bigfiles-status"></div>
+        <div id="bigfiles-list"></div>
       </div>
     </div>
   </div>

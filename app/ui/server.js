@@ -14,6 +14,7 @@ import { handleEmptyDirScan, handleEmptyDirStop, handleEmptyDirDelete, handleEmp
 import { handleSysCleanScan, handleSysCleanClean, handleSysCleanListManifests, handleSysCleanGetManifest } from './api/sysclean.js';
 import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js';
 import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
+import { handleBigFilesScan, handleBigFilesStop } from './api/bigfiles.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -132,6 +133,9 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/schedule/trigger') { await handleScheduleTrigger(req, res); return; }
       if (method === 'GET' && path === '/api/schedule/history') { await handleScheduleHistory(req, res); return; }
       if (method === 'GET' && path === '/api/schedule/report') { await handleScheduleReport(req, res); return; }
+      // Big files
+      if (method === 'GET' && path === '/api/bigfiles/scan') { await handleBigFilesScan(req, res); return; }
+      if (method === 'POST' && path === '/api/bigfiles/stop') { handleBigFilesStop(req, res); return; }
       sendJSON(res, 404, { error: 'API endpoint not found' });
       return;
     }

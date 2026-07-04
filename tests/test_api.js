@@ -16,6 +16,13 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'app', 'ui');
 const TEST_TMP = '/tmp/fnclearup_test';
 
+// Allow bigfiles tests to scan a non-/vol tmp dir via env. We point this
+// at TEST_TMP/bigfiles_test_root; the per-suite before() creates the tree.
+// Must be set before the global before() spawns the server, so it inherits
+// the env via { ...process.env } below.
+const BIGFILES_TMP_ROOT = join(TEST_TMP, 'bigfiles_test_root');
+process.env.TRM_BIGFILES_EXTRA_ROOTS = BIGFILES_TMP_ROOT;
+
 function httpRequest(method, path, body = null) {
   return new Promise((resolve, reject) => {
     const url = new URL(path, BASE);
@@ -730,6 +737,200 @@ describe('API: System Cache Cleaning (sysclean)', () => {
     assert.ok(data.backup_path.includes('/data/manifests/'),
       `backup_path should be under data/manifests, got: ${data.backup_path}`);
     assert.ok(fs.existsSync(data.backup_path), 'manifest file should exist on disk');
+  });
+
+  // ── Multi-user HOME coverage (W1: HOME 硬编码 → 所有用户扫描) ──
+
+  it('GET /api/sysclean/scan includes per-user npm cache items (one per discovered HOME)', async () => {
+    // Each user HOME discovered by getUserHomes() should produce a `npm:<username>` item.
+    // We can't assert exact usernames (depends on /vol1..10 layout), but can
+    // assert: total items >= 1 for npm, all distinct ids, all paths exist-or-not.
+    const { data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const npmItems = data.items.filter(it => it.id.startsWith('npm:'));
+    // At least one for $HOME (= /home/admin in dev) + possibly root + vol UIDs
+    assert.ok(npmItems.length >= 1, `expected npm items for at least 1 user, got ${npmItems.length}`);
+    const ids = new Set(npmItems.map(it => it.id));
+    assert.strictEqual(ids.size, npmItems.length, 'npm item ids must be unique per user');
+    // Every npm item id follows '<npm>:<username>' format
+    for (const it of npmItems) {
+      assert.match(it.id, /^npm:[^:]+$/, `id format ${it.id}`);
+      assert.ok(it.path.startsWith('/'), `path must be absolute: ${it.path}`);
+      assert.strictEqual(it.risk, 'low', 'npm must be low risk');
+      assert.strictEqual(it.recommended, true, 'npm must be recommended');
+    }
+  });
+
+  it('GET /api/sysclean/scan includes per-user pip/uv/pip cache items', async () => {
+    const { data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const bases = ['pip', 'uv', 'node-gyp', 'typescript'];
+    for (const b of bases) {
+      const items = data.items.filter(it => it.id.startsWith(b + ':'));
+      assert.ok(items.length >= 1, `expected at least 1 ${b} item, got ${items.length}`);
+    }
+  });
+
+  it('POST /api/sysclean/clean per-user cache item succeeds and respects whitelist', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    // Create a fake cache dir under $HOME for the per-user scan
+    const cacheDir = path.join(process.env.HOME, '.cache', 'fakeapp_test_peruser_' + process.pid);
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'data.bin'), Buffer.alloc(256 * 1024));
+
+    try {
+      // Scan should find it as cache-other:<user>:<name>
+      const scan = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+      const item = scan.data.items.find(it => it.path === cacheDir);
+      assert.ok(item, 'fixture must be discovered as per-user cache-other item');
+      assert.match(item.id, /^cache-other:[^:]+:fakeapp_test_peruser_/, 'id must follow cache-other:<user>:<child> pattern');
+
+      // Clean — the critical W1 fix (per-user dynamicChildren id resolution)
+      const { data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', {
+        ids: [item.id],
+      });
+      assert.strictEqual(data.total, 1, 'should delete 1 item — per-user cache-other id resolution must work');
+      assert.strictEqual(data.failures, 0, `no failures expected, got: ${JSON.stringify(data.failed)}`);
+      assert.ok(!fs.existsSync(cacheDir), 'per-user fixture dir should be deleted');
+    } finally {
+      try { fs.rmSync(cacheDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('POST /api/sysclean/clean rejects fake per-user ids whose username is unknown', async () => {
+    const { data } = await httpRequest('POST', '/app/fnclearup/api/sysclean/clean', {
+      ids: ['cache-other:ghostuser:fakeapp_evil', 'npm:bogus_uid_99999'],
+    });
+    // Both should fail — no user with that name, so resolution must collapse to "unknown id"
+    assert.strictEqual(data.total, 0);
+    assert.strictEqual(data.failures, 2);
+    for (const f of data.failed) {
+      assert.ok(f.reason, 'failed reason should be set');
+    }
+  });
+
+  it('GET /api/sysclean/scan per-user item paths are all inside discovered HOMEs', async () => {
+    // Build the same HOME set the server uses by spawning a one-shot Node script.
+    // Easier: assert by structural invariant — every per-user item path begins
+    // with one of /root, /home/admin, or /vol<N>/<UID>.
+    const { data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const perUserPrefixes = ['npm:', 'pip:', 'uv:', 'node-gyp:', 'typescript:',
+      'playwright:', 'chrome-cache:', 'firefox-cache:', 'brave-cache:'];
+    for (const it of data.items) {
+      if (!perUserPrefixes.some(p => it.id.startsWith(p))) continue;
+      const ok = it.path === '/root/.npm' || it.path === '/root/.cache/pip' // skip detailed checks
+        || it.path.startsWith('/vol') || it.path.startsWith('/home/')
+        || it.path === '/root/.cache/uv' || it.path === '/root/.cache/node-gyp'
+        || it.path === '/root/.cache/typescript' || it.path === '/root/.cache/ms-playwright'
+        || it.path === '/root/.cache/google-chrome' || it.path === '/root/.cache/mozilla'
+        || it.path === '/root/.cache/BraveSoftware';
+      assert.ok(ok, `per-user item path must be under a HOME: ${it.id} -> ${it.path}`);
+    }
+  });
+});
+
+// ══════════════════════════════
+// Big Files Finder
+// ══════════════════════════════
+describe('API: Big Files Finder', () => {
+  let tmpRoot;
+  before(async () => {
+    // Build a tiny test tree under TEST_TMP. The backend accepts it via
+    // TRM_BIGFILES_EXTRA_ROOTS (set as module-level constant above so the
+    // spawned server inherits it). Production never sets that env var.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    tmpRoot = BIGFILES_TMP_ROOT;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    fs.mkdirSync(path.join(tmpRoot, 'small'), { recursive: true });
+    fs.mkdirSync(path.join(tmpRoot, 'big'), { recursive: true });
+    fs.writeFileSync(path.join(tmpRoot, 'small', 'tiny.txt'), 'hi');          // <1KB
+    fs.writeFileSync(path.join(tmpRoot, 'big', 'huge.bin'), Buffer.alloc(2 * 1024 * 1024)); // 2MB
+    fs.writeFileSync(path.join(tmpRoot, 'big', 'medium.bin'), Buffer.alloc(256 * 1024));   // 256KB
+  });
+  after(async () => {
+    const fs = await import('node:fs');
+    if (tmpRoot) try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+  });
+
+  it('POST /api/bigfiles/stop is a no-op when no scan is in flight', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/bigfiles/stop', {});
+    assert.strictEqual(status, 200);
+    assert.strictEqual(data.stopped, true);
+  });
+
+  it('GET /api/bigfiles/scan rejects paths outside /vol*', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/bigfiles/scan?path=/etc');
+    assert.strictEqual(status, 403);
+    assert.ok(data.error && data.error.includes('/vol*'), 'should mention /vol* whitelist');
+  });
+
+  it('GET /api/bigfiles/scan returns the expected shape (files, total_candidates, etc.)', async () => {
+    // Scan the tmp fixture root via TRM_BIGFILES_EXTRA_ROOTS — avoids the
+    // /vol* default sweep which can be 35GB+ on real fnOS hardware.
+    const vol = bigfilesRoot();
+    if (!vol) return;
+    const { data } = await httpRequest('GET', `/app/fnclearup/api/bigfiles/scan?path=${encodeURIComponent(vol)}&minSize=1048576&topN=10&depth=3`);
+    assert.ok(Array.isArray(data.files), 'files must be an array');
+    assert.strictEqual(typeof data.total_candidates, 'number');
+    assert.strictEqual(typeof data.scanned_paths, 'number');
+    assert.strictEqual(typeof data.elapsed_ms, 'number');
+    assert.strictEqual(typeof data.truncated, 'boolean');
+    assert.ok(data.min_size >= 1048576);
+    assert.ok(data.top_n > 0);
+    assert.ok(Array.isArray(data.roots_scanned));
+  });
+
+  // Helper: return the per-suite tmpRoot (set up in `before` above).
+  // All bigfiles tests scan this tree via TRM_BIGFILES_EXTRA_ROOTS so we
+  // never touch a real /volN (which can hold millions of inodes on fnOS).
+  function bigfilesRoot() {
+    return tmpRoot;
+  }
+
+  it('GET /api/bigfiles/scan accepts a single /vol-style path', async () => {
+    const vol = bigfilesRoot();
+    if (!vol) return; // defensive: skip if before() didn't run
+    const { status, data } = await httpRequest('GET', `/app/fnclearup/api/bigfiles/scan?path=${encodeURIComponent(vol)}&minSize=1048576`);
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.files));
+    assert.strictEqual(data.roots_scanned[0], vol);
+  });
+
+  it('GET /api/bigfiles/scan respects topN cap', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const vol = bigfilesRoot();
+    if (!vol) return;
+    // Seed a few oversized files so the scan definitely has candidates to cap
+    const seedDir = path.join(vol, '.bigfiles_topn');
+    try {
+      fs.mkdirSync(seedDir, { recursive: true });
+      for (let i = 0; i < 10; i++) {
+        fs.writeFileSync(path.join(seedDir, `big_${i}.bin`), Buffer.alloc(2 * 1024 * 1024));
+      }
+      const { data } = await httpRequest('GET', `/app/fnclearup/api/bigfiles/scan?path=${encodeURIComponent(vol)}&topN=5&minSize=1`);
+      assert.ok(data.files.length <= 5, `topN cap must hold, got ${data.files.length}`);
+    } finally {
+      try { fs.rmSync(seedDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('GET /api/bigfiles/scan files are sorted by size desc and have required fields', async () => {
+    const vol = bigfilesRoot();
+    if (!vol) return;
+    // The fixture already includes 2MB huge.bin — scan and verify sort + shape
+    const { data } = await httpRequest('GET', `/app/fnclearup/api/bigfiles/scan?path=${encodeURIComponent(vol)}&minSize=1048576&topN=10`);
+    if (data.files.length >= 2) {
+      for (let i = 1; i < data.files.length; i++) {
+        assert.ok(data.files[i - 1].size >= data.files[i].size, 'files must be sorted by size desc');
+      }
+    }
+    for (const f of data.files) {
+      assert.ok(typeof f.path === 'string' && f.path.startsWith('/'), 'path must be absolute');
+      assert.ok(typeof f.size === 'number' && f.size >= 1048576);
+      assert.ok(typeof f.size_str === 'string' && f.size_str.length > 0);
+      assert.ok(typeof f.name === 'string');
+    }
   });
 });
 
