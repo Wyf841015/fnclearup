@@ -28,6 +28,11 @@ const DEFAULT_TOPN = 100;
 const DEFAULT_MINSIZE = 100 * 1024 * 1024; // 100 MB
 const SCAN_BUDGET_MS = 1000 * 60 * 5; // 5 min hard timeout
 const YIELD_INTERVAL = 100; // setImmediate every N entries
+// Per-directory sibling count threshold: dirs with more entries than this
+// are likely huge content stores (app icons, photo thumbnails, torrent
+// seeders) where recursing burns the entire budget for negligible gain.
+// We still pick up sibling files in this directory — we just don't descend.
+const SIBLING_THRESHOLD = 5000;
 
 let activeJob = null; // { stopped, found, scannedPaths }
 export function cancelBigFilesJob() { if (activeJob) activeJob.stopped = true; }
@@ -98,6 +103,9 @@ export async function handleBigFilesScan(req, res) {
       let entries;
       try { entries = readdirSync(dir, { withFileTypes: true }); }
       catch { continue; }
+      // Per-dir sibling threshold: huge dirs (app icons, photo thumbs) waste
+      // the whole run if we recurse. We keep sibling files but skip children.
+      const skipRecurse = entries.length > SIBLING_THRESHOLD;
       for (const e of entries) {
         if (job.stopped) return;
         const full = join(dir, e.name);
@@ -113,10 +121,12 @@ export async function handleBigFilesScan(req, res) {
                 size_str: formatBytes(st.size),
                 mtime: st.mtimeMs,
                 depth: level,
+                skipped_subtree: skipRecurse, // marker for UI/debug
               });
             }
           } else if (e.isDirectory()) {
             if (level >= depth) continue;
+            if (skipRecurse) continue; // ← big files in this dir are still picked up above
             queue.push([full, level + 1]);
           }
           // symlinks and special nodes are ignored silently (safe default)
