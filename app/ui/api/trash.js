@@ -1,9 +1,10 @@
 // app/ui/api/trash.js
 // fnclearup 回收站批量清理 API
 import {
-  readdirSync, statSync, rmSync, existsSync, writeFileSync, mkdirSync
+  readdirSync, statSync, rmSync, existsSync, writeFileSync, mkdirSync,
+  renameSync, cpSync, unlinkSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename, dirname, extname } from 'node:path';
 import { getManifestDir } from '../lib/util.js';
 
 // fnOS 真实卷 + 网盘挂载根（vol1-10 + vol01-09 + vol02 fuse mount）
@@ -271,4 +272,48 @@ export function cleanTrash(ageDays, withManifest = true) {
   }
 
   return { deleted, failed, manifestPath };
+}
+
+// ── Public helper ──
+// Move a single file (or directory) to its volume's recycle bin:
+//   /volN/UID/.@#local/trash/<original-relative-path>
+// Returns true on success, false if the path can't be moved (e.g. not under
+// /volN/UID/, or /vol02 netdisk fuse mount denies .@#local mkdir).
+//
+// On cross-device move (EXDEV) we copy + unlink so the file lands in trash
+// even when the trash dir is on a different filesystem than the source.
+//
+// Used by app.js (handleAppDelete), bigfiles.js (handleBigFilesDelete), and
+// empty_dir.js (handleEmptyDirDelete). Keeping a single implementation
+// ensures all callers share the same /vol02 fallback semantics.
+export function moveToTrash(p) {
+  // /volN/UID/... or /vol02/<mount-id>/... — UID/mount-id may contain digits,
+  // letters, dashes (e.g. /vol02/1000-1-c96f264a).
+  const m = p.match(/^(\/(?:mnt\/)?vol\d+\/[\w-]+)\/(.+)/);
+  if (!m) return false;
+  // /vol02 is fnOS netdisk mount — no .@#local trash support (fuse rejects mkdir)
+  if (m[1].startsWith('/vol02/')) return false;
+  const trashDir = `${m[1]}/.@#local/trash`;
+  const dest = join(trashDir, m[2]);
+  try {
+    mkdirSync(dirname(dest), { recursive: true });
+    let finalDest = dest;
+    let counter = 1;
+    while (existsSync(finalDest)) {
+      const ext = extname(dest);
+      const stem = basename(dest).slice(0, ext.length ? -ext.length : basename(dest).length);
+      finalDest = join(dirname(dest), `${stem}_${counter}${ext}`);
+      counter++;
+    }
+    try {
+      renameSync(p, finalDest);
+      return true;
+    } catch (e) {
+      if (e.code !== 'EXDEV') throw e;
+      // Cross-device: copy then remove original
+      cpSync(p, finalDest, { recursive: true });
+      try { unlinkSync(p); } catch {}
+      return true;
+    }
+  } catch { return false; }
 }

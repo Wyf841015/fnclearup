@@ -931,9 +931,11 @@ function renderBigFilesList(files) {
   if (!list) return;
   if (!files.length) {
     list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现符合条件的大文件</h3><p>试试调小「最小值」或切换搜索范围</p></div>';
+    if ($('bigfilesDeleteBtn')) $('bigfilesDeleteBtn').disabled = true;
     return;
   }
   let html = '<div class="list-scroll"><table class="data-table" id="bigfiles-table"><thead><tr>' +
+    '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="bigfilesSelectAll(this)"></th>' +
     '<th style="width:50px">#</th>' +
     '<th>文件名</th>' +
     '<th style="width:14%">大小</th>' +
@@ -945,6 +947,7 @@ function renderBigFilesList(files) {
     const mtime = f.mtime ? new Date(f.mtime).toISOString().slice(0, 10) : '-';
     const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
     html += `<tr>
+      <td><input type="checkbox" class="bigfiles-cb" value="${escHtml(f.path)}" data-size="${f.size || 0}" onchange="bigfilesUpdateSelectInfo()"></td>
       <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary)">${i + 1}</td>
       <td><span title="${escHtml(f.path)}">${escHtml(f.name)}</span></td>
       <td style="font-family:monospace;font-weight:600;color:var(--color-primary)">${escHtml(f.size_str)}</td>
@@ -955,6 +958,107 @@ function renderBigFilesList(files) {
   });
   html += '</tbody></table></div>';
   list.innerHTML = html;
+  bigfilesUpdateSelectInfo();
+}
+
+function bigfilesSelectAll(cb) {
+  document.querySelectorAll('.bigfiles-cb').forEach(el => { el.checked = cb.checked; });
+  bigfilesUpdateSelectInfo();
+}
+
+function bigfilesUpdateSelectInfo() {
+  const checked = document.querySelectorAll('.bigfiles-cb:checked');
+  const n = checked.length;
+  let totalBytes = 0;
+  checked.forEach(el => { totalBytes += parseInt(el.dataset.size || '0', 10); });
+  const btn = $('bigfilesDeleteBtn');
+  if (btn) {
+    btn.disabled = n === 0;
+    const span = btn.querySelector('span:last-child');
+    if (span) span.textContent = n ? `删除选中 (${n})` : '删除选中';
+  }
+  // Stash total for confirm modal
+  _bigFilesSelectedBytes = totalBytes;
+}
+
+// ── Big Files: delete flow (3-layer confirmation) ──
+let _bigFilesSelectedBytes = 0;
+
+function confirmBigFilesDelete() {
+  const checked = document.querySelectorAll('.bigfiles-cb:checked');
+  if (!checked.length) return;
+  const paths = Array.from(checked).map(el => el.value);
+  let totalBytes = 0;
+  checked.forEach(el => { totalBytes += parseInt(el.dataset.size || '0', 10); });
+  $('bigfilesDeleteCount').textContent = String(paths.length);
+  $('bigfilesDeleteSize').textContent = formatBytes(totalBytes);
+  // Show up to 20 paths + overflow indicator
+  const preview = $('bigfilesDeletePaths');
+  let html = paths.slice(0, 20).map(p => `<div>${escHtml(p)}</div>`).join('');
+  if (paths.length > 20) {
+    html += `<div style="color:var(--color-text-secondary);margin-top:4px">…还有 ${paths.length - 20} 个未显示</div>`;
+  }
+  preview.innerHTML = html;
+  // Reset to safe defaults each time
+  const trashRadio = document.querySelector('input[name="bigfilesDeleteMode"][value="trash"]');
+  if (trashRadio) trashRadio.checked = true;
+  $('bigfilesDeletePermanentAck').checked = false;
+  $('bigfilesDeletePermanentAck').disabled = true;
+  $('bigfilesDeleteAck').checked = false;
+  $('bigfilesDeleteConfirmBtn').disabled = true;
+  bigfilesRefreshConfirmBtn();
+  // Wire mode-change → enable/disable permanent ack
+  document.querySelectorAll('input[name="bigfilesDeleteMode"]').forEach(r => {
+    r.onchange = () => {
+      const isPerm = document.querySelector('input[name="bigfilesDeleteMode"]:checked')?.value === 'permanent';
+      $('bigfilesDeletePermanentAck').disabled = !isPerm;
+      if (!isPerm) $('bigfilesDeletePermanentAck').checked = false;
+      bigfilesRefreshConfirmBtn();
+    };
+  });
+  // Wire ack change → refresh confirm button
+  $('bigfilesDeleteAck').onchange = bigfilesRefreshConfirmBtn;
+  $('bigfilesDeletePermanentAck').onchange = bigfilesRefreshConfirmBtn;
+  $('bigfilesDeleteModal').classList.add('visible');
+}
+
+function bigfilesRefreshConfirmBtn() {
+  const ack = $('bigfilesDeleteAck')?.checked;
+  const isPerm = document.querySelector('input[name="bigfilesDeleteMode"]:checked')?.value === 'permanent';
+  const permAck = isPerm ? $('bigfilesDeletePermanentAck')?.checked : true;
+  $('bigfilesDeleteConfirmBtn').disabled = !(ack && permAck);
+}
+
+function closeBigFilesDeleteModal() {
+  $('bigfilesDeleteModal').classList.remove('visible');
+}
+
+async function doBigFilesDelete() {
+  const checked = document.querySelectorAll('.bigfiles-cb:checked');
+  if (!checked.length) return;
+  const paths = Array.from(checked).map(el => el.value);
+  const mode = document.querySelector('input[name="bigfilesDeleteMode"]:checked')?.value || 'trash';
+  closeBigFilesDeleteModal();
+  $('bigfiles-status').textContent = mode === 'trash' ? '🗑 移到回收站…' : '🔥 永久删除…';
+  try {
+    const data = await API.post('api/bigfiles/delete', { paths, mode, confirmed: true });
+    const deleted = data.total || 0;
+    const skipped = data.skipped || 0;
+    const failures = data.failures || 0;
+    const fmtSize = formatBytes(_bigFilesSelectedBytes);
+    const modeLabel = mode === 'trash' ? '移到回收站' : '永久删除';
+    let msg = `✅ ${modeLabel}完成：${deleted}/${paths.length} 个 (${fmtSize})`;
+    if (skipped) msg += ` · 跳过 ${skipped}`;
+    if (failures) msg += ` · 失败 ${failures}`;
+    $('bigfiles-status').textContent = msg;
+    showToast(msg, failures ? 'error' : 'success');
+    // Re-scan to refresh the list (deleted files are gone)
+    if (deleted > 0) await doBigFilesScan();
+  } catch (e) {
+    $('bigfiles-status').className = 'error';
+    $('bigfiles-status').textContent = '❌ ' + e.message;
+    showToast('删除失败: ' + e.message, 'error');
+  }
 }
 
 // ═══════════════════════════════
@@ -2317,6 +2421,8 @@ function init() {
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
     viewScheduleFilesFromAttr, viewScheduleReportFromAttr,
     doBigFilesScan, stopBigFiles,
+    confirmBigFilesDelete, closeBigFilesDeleteModal, doBigFilesDelete,
+    bigfilesSelectAll, bigfilesUpdateSelectInfo, bigfilesRefreshConfirmBtn,
     dcCheckAvailable, dcScan, renderDcStoppedList, dcSelectAll, dcUpdateSelectInfo, dcRemoveSelected, dcPruneCache,
   };
   Object.assign(window, exports);
