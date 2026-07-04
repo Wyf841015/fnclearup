@@ -35,12 +35,22 @@ export function sendJSON(res, code, data) {
 
 export function execCmd(cmd, args, timeout = 30000) {
   return new Promise((resolve2) => {
-    const proc = spawn(cmd, args, { timeout, stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
+    let killed = false;
     proc.stdout.on('data', c => stdout += c);
     proc.stderr.on('data', c => stderr += c);
-    proc.on('close', code => resolve2({ code, stdout: stdout.trim(), stderr: stderr.trim() }));
-    proc.on('error', e => resolve2({ code: -1, stdout: '', stderr: e.message }));
+    const killTimer = setTimeout(() => {
+      try { proc.kill('SIGTERM'); } catch {}
+      // 5s grace period, then SIGKILL if still alive
+      setTimeout(() => {
+        if (!killed) { try { proc.kill('SIGKILL'); } catch {} }
+      }, 5000);
+    }, timeout);
+    proc.on('close', code => { clearTimeout(killTimer); killed = true;
+      resolve2({ code, stdout: stdout.trim(), stderr: stderr.trim() }); });
+    proc.on('error', e => { clearTimeout(killTimer); killed = true;
+      resolve2({ code: -1, stdout: '', stderr: e.message }); });
   });
 }
 

@@ -1,40 +1,8 @@
-import { existsSync, readdirSync, renameSync, cpSync, mkdirSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, renameSync, cpSync, mkdirSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { sendJSON, execCmd, isSafePath, parseBody } from '../lib/util.js';
 import { VOL_GLOBS } from '../lib/config.js';
-
-// Move a path to its volume's recycle bin: /volN/UID/.@#local/trash/...
-// For /vol02 netdisk mounts, the cloud filesystem doesn't support .@#local trash
-// (fuse mount, mkdir is denied) — return false so caller falls back to rm -rf.
-function moveToTrash(p) {
-  // /volN/UID/... or /vol02/<mount-id>/... — UID/mount-id may contain digits, letters, dashes
-  const m = p.match(/^(\/(?:mnt\/)?vol\d+\/[\w-]+)\/(.+)/);
-  if (!m) return false;
-  // /vol02 is fnOS netdisk mount — no .@#local trash support
-  if (m[1].startsWith('/vol02/')) return false;
-  const trashDir = `${m[1]}/.@#local/trash`;
-  const dest = join(trashDir, m[2]);
-  try {
-    mkdirSync(dirname(dest), { recursive: true });
-    let finalDest = dest;
-    let counter = 1;
-    while (existsSync(finalDest)) {
-      const ext = extname(dest);
-      finalDest = join(dirname(dest), `${basename(dest).slice(0, ext.length || basename(dest).length)}_${counter}${ext}`);
-      counter++;
-    }
-    try {
-      renameSync(p, finalDest);
-      return true;
-    } catch (e) {
-      if (e.code !== 'EXDEV') throw e;
-      // Cross-device: copy then remove original
-      cpSync(p, finalDest, { recursive: true });
-      try { execCmd('rm', ['-rf', p], 60000); } catch {}
-      return true;
-    }
-  } catch { return false; }
-}
+import { moveToTrash } from './trash.js';
 
 // POST /api/scan
 export async function handleScan(req, res) {

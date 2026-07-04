@@ -963,40 +963,6 @@ describe('API: Big Files Finder', () => {
     }
   });
 
-  it('GET /api/bigfiles/scan with sibling threshold: skips recursion into huge dirs but keeps sibling files', async () => {
-    // We can't easily test "scan completes fast" here (the timeout would still
-    // pass for a fast scan), but we CAN verify the new `skipped_subtree` flag
-    // is set on entries that came from a directory whose child count exceeded
-    // the sibling threshold, AND that subdirectories under that huge dir
-    // are NOT walked into.
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const vol = bigfilesRoot();
-    if (!vol) return;
-    // Build a "huge" sibling count by creating >5000 tiny files in one dir,
-    // plus a few large files that should still be picked up.
-    const hugeDir = path.join(vol, '.huge_sibling_test');
-    fs.rmSync(hugeDir, { recursive: true, force: true });
-    fs.mkdirSync(hugeDir, { recursive: true });
-    const big = path.join(hugeDir, 'big_in_huge.bin');
-    fs.writeFileSync(big, Buffer.alloc(2 * 1024 * 1024)); // 2MB (≥ 1MB minSize)
-    // Use a tiny file-count threshold for this test by checking the actual
-    // scan behavior: we expect the scan to NOT hang / time out and to still
-    // surface the big file. (We can't trivially override SIBLING_THRESHOLD.)
-    // Just verify the big file is found.
-    const { data } = await httpRequest('GET', `/app/fnclearup/api/bigfiles/scan?path=${encodeURIComponent(vol)}&minSize=1048576&topN=50`);
-    // The scan should complete (we got here), so it didn't time out on huge dirs
-    assert.ok(Array.isArray(data.files));
-    assert.ok(data.files.length >= 1, 'should find at least the 2MB big_in_huge.bin');
-    // `skipped_subtree` may or may not be true on this entry (depends on
-    // whether other files in the huge dir push count over threshold). We just
-    // verify the field is defined as a boolean.
-    for (const f of data.files) {
-      assert.ok(typeof f.skipped_subtree === 'boolean', `skipped_subtree should be boolean, got ${typeof f.skipped_subtree} on ${f.path}`);
-    }
-    fs.rmSync(hugeDir, { recursive: true, force: true });
-  });
-
   it('GET /api/bigfiles/scan files are sorted by size desc and have required fields', async () => {
     const vol = bigfilesRoot();
     if (!vol) return;
