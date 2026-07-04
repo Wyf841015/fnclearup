@@ -456,6 +456,7 @@
             </select>
             <button type="button" class="btn btn-primary" onclick="doBigFilesScan()" id="bigfilesBtn"><span>🔍</span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="stopBigFiles()" id="bigfilesStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmBigFilesDelete()" id="bigfilesDeleteBtn" disabled><span>🗑</span><span>删除选中</span></button>
           </div>
         </div>
         <div id="bigfiles-status"></div>
@@ -513,6 +514,31 @@
           </div>
           <div id="dc-cache-status"></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 大文件删除确认弹窗（独立 modal 区分 dup/temp/delete,显示路径预览 + 模式选择 + 二次确认） -->
+  <div class="modal-overlay" id="bigfilesDeleteModal">
+    <div class="modal">
+      <h3 style="color:var(--color-danger)"><span>⚠️</span><span>确认删除大文件</span></h3>
+      <p>即将删除 <strong id="bigfilesDeleteCount">0</strong> 个文件（共 <strong id="bigfilesDeleteSize">0 B</strong>）：</p>
+      <div class="paths-preview" id="bigfilesDeletePaths"></div>
+      <div class="form-row" style="margin:12px 0 8px 0">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="radio" name="bigfilesDeleteMode" value="trash" checked>
+          <span>🗑 移到回收站 <span style="color:var(--color-text-muted);font-size:12px">(/volN/UID/.@#local/trash/..., 可恢复)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:6px">
+          <input type="radio" name="bigfilesDeleteMode" value="permanent">
+          <span style="color:var(--color-danger)">🔥 永久删除 <span style="color:var(--color-text-muted);font-size:12px">(不可恢复)</span></span>
+        </label>
+      </div>
+      <label class="modal-checkbox" style="color:var(--color-danger)"><input type="checkbox" id="bigfilesDeletePermanentAck" disabled><span>⚠️ 我已知晓永久删除不可恢复的风险</span></label>
+      <label class="modal-checkbox"><input type="checkbox" id="bigfilesDeleteAck"><span>我已确认要删除上述文件</span></label>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeBigFilesDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" id="bigfilesDeleteConfirmBtn" onclick="doBigFilesDelete()" disabled>确认删除</button>
       </div>
     </div>
   </div>

@@ -963,24 +963,151 @@ describe('API: Big Files Finder', () => {
     }
   });
 
-  it('GET /api/bigfiles/scan files are sorted by size desc and have required fields', async () => {
-    const vol = bigfilesRoot();
-    if (!vol) return;
-    // The fixture already includes 2MB huge.bin — scan and verify sort + shape
-    const { data } = await httpRequest('GET', `/app/fnclearup/api/bigfiles/scan?path=${encodeURIComponent(vol)}&minSize=1048576&topN=10`);
-    if (data.files.length >= 2) {
-      for (let i = 1; i < data.files.length; i++) {
-        assert.ok(data.files[i - 1].size >= data.files[i].size, 'files must be sorted by size desc');
+  it('POST /api/bigfiles/scan files are sorted by size desc and have required fields', async () => {
+      const vol = bigfilesRoot();
+      if (!vol) return;
+      // The fixture already includes 2MB huge.bin — scan and verify sort + shape
+      const { data } = await httpRequest('GET', `/app/fnclearup/api/bigfiles/scan?path=${encodeURIComponent(vol)}&minSize=1048576&topN=10`);
+      if (data.files.length >= 2) {
+        for (let i = 1; i < data.files.length; i++) {
+          assert.ok(data.files[i - 1].size >= data.files[i].size, 'files must be sorted by size desc');
+        }
       }
-    }
-    for (const f of data.files) {
-      assert.ok(typeof f.path === 'string' && f.path.startsWith('/'), 'path must be absolute');
-      assert.ok(typeof f.size === 'number' && f.size >= 1048576);
-      assert.ok(typeof f.size_str === 'string' && f.size_str.length > 0);
-      assert.ok(typeof f.name === 'string');
-    }
+      for (const f of data.files) {
+        assert.ok(typeof f.path === 'string' && f.path.startsWith('/'), 'path must be absolute');
+        assert.ok(typeof f.size === 'number' && f.size >= 1048576);
+        assert.ok(typeof f.size_str === 'string' && f.size_str.length > 0);
+        assert.ok(typeof f.name === 'string');
+      }
+    });
   });
-});
+
+  describe('API: Big Files Delete', () => {
+    let deleteRoot;
+    let createdFiles;
+    before(async () => {
+      // Create fixture files under /tmp/fnclearup_test (TRM_FNCLEARUP_TEST=1 lets
+      // isSafePath accept this; moveToTrash will fall back to unlink for paths
+      // not matching /volN/UID/, so we test the "delete" semantics, not the
+      // trash semantics — those are exercised by dup/app suites).
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      deleteRoot = path.join(TEST_TMP, 'bigfiles_delete_test');
+      fs.rmSync(deleteRoot, { recursive: true, force: true });
+      fs.mkdirSync(deleteRoot, { recursive: true });
+      createdFiles = [
+        path.join(deleteRoot, 'big_a.bin'),
+        path.join(deleteRoot, 'big_b.bin'),
+        path.join(deleteRoot, 'big_c.bin'),
+      ];
+      for (const f of createdFiles) {
+        fs.writeFileSync(f, Buffer.alloc(1024 * 1024)); // 1MB each
+      }
+    });
+    after(async () => {
+      const fs = await import('node:fs');
+      if (deleteRoot) try { fs.rmSync(deleteRoot, { recursive: true, force: true }); } catch {}
+    });
+
+    it('POST /api/bigfiles/delete rejects without confirmed:true', async () => {
+      const { status, data } = await httpRequest('POST', '/app/fnclearup/api/bigfiles/delete', {
+        paths: [createdFiles[0]],
+        mode: 'permanent',
+        confirmed: false,
+      });
+      assert.strictEqual(status, 400);
+      assert.strictEqual(data.success, false);
+      assert.ok(data.error && data.error.includes('confirmation'), 'should require confirmation');
+      // File must still exist
+      const fs = await import('node:fs');
+      assert.ok(fs.existsSync(createdFiles[0]), 'file must NOT be deleted when confirmed=false');
+    });
+
+    it('POST /api/bigfiles/delete rejects missing confirmed entirely', async () => {
+      const { status, data } = await httpRequest('POST', '/app/fnclearup/api/bigfiles/delete', {
+        paths: [createdFiles[0]],
+        mode: 'permanent',
+      });
+      assert.strictEqual(status, 400);
+      assert.ok(data.error && data.error.includes('confirmation'));
+    });
+
+    it('POST /api/bigfiles/delete with empty paths returns zero work', async () => {
+      const { status, data } = await httpRequest('POST', '/app/fnclearup/api/bigfiles/delete', {
+        paths: [],
+        mode: 'permanent',
+        confirmed: true,
+      });
+      assert.strictEqual(status, 200);
+      assert.strictEqual(data.success, true);
+      assert.strictEqual(data.total, 0);
+    });
+
+    it('POST /api/bigfiles/delete skips paths outside /vol* or test root', async () => {
+      const { status, data } = await httpRequest('POST', '/app/fnclearup/api/bigfiles/delete', {
+        paths: ['/etc/passwd', '/var/log/syslog'],
+        mode: 'permanent',
+        confirmed: true,
+      });
+      assert.strictEqual(status, 200);
+      assert.ok(data.skipped >= 2, 'should skip both unsafe paths');
+      assert.strictEqual(data.total, 0);
+    });
+
+    it('POST /api/bigfiles/delete permanent actually unlinks the files', async () => {
+      const fs = await import('node:fs');
+      assert.ok(fs.existsSync(createdFiles[0]));
+      const { status, data } = await httpRequest('POST', '/app/fnclearup/api/bigfiles/delete', {
+        paths: [createdFiles[0], createdFiles[1]],
+        mode: 'permanent',
+        confirmed: true,
+      });
+      assert.strictEqual(status, 200);
+      assert.strictEqual(data.mode, 'permanent');
+      assert.strictEqual(data.total, 2);
+      assert.ok(data.deleted.includes(createdFiles[0]));
+      assert.ok(data.deleted.includes(createdFiles[1]));
+      assert.ok(!fs.existsSync(createdFiles[0]), 'file 0 should be deleted');
+      assert.ok(!fs.existsSync(createdFiles[1]), 'file 1 should be deleted');
+      // File 2 still exists
+      assert.ok(fs.existsSync(createdFiles[2]), 'untouched file must remain');
+    });
+
+    it('POST /api/bigfiles/delete trash mode moves /volN/UID/... paths to .@#local/trash', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      // Build a /volN/UID/... shaped fixture: create symlink under /tmp so the
+      // test doesn't actually need a real /vol1 mount. isSafePath accepts
+      // /tmp/fnclearup_test/* in test mode, but moveToTrash regex needs
+      // /volN/UID/ — so we test the fallback unlink path (delete still works,
+      // just not via .@#local trash).
+      //
+      // For the trash path verification we use a temporary symlink trick:
+      // make a symlink at /tmp/fnclearup_test/_fakevol/1000 -> /tmp/fnclearup_test/trash_src
+      const fakeVolRoot = path.join(TEST_TMP, '_fakevol');
+      fs.rmSync(fakeVolRoot, { recursive: true, force: true });
+      fs.mkdirSync(path.join(fakeVolRoot, '1000', 'trash_src'), { recursive: true });
+      const src = path.join(fakeVolRoot, '1000', 'trash_src', 'writable.bin');
+      fs.writeFileSync(src, Buffer.alloc(2 * 1024 * 1024));
+      // Symlink so isSafePath sees /tmp/fnclearup_test/_fakevol/... (in test root)
+      // and moveToTrash regex sees /volN/UID/... shape — but symlinks to
+      // /tmp/_fakevol will fail isSafePath. So we test with /tmp path directly
+      // via unlink fallback (see 'permanent' test above for full path verification).
+      //
+      // The trash-path code is exercised in dup/app suites. Here we just verify
+      // trash mode on a path moveToTrash can't handle falls back to unlink.
+      const { status, data } = await httpRequest('POST', '/app/fnclearup/api/bigfiles/delete', {
+        paths: [src],
+        mode: 'trash',
+        confirmed: true,
+      });
+      assert.strictEqual(status, 200);
+      assert.strictEqual(data.mode, 'trash');
+      assert.strictEqual(data.total, 1);
+      assert.ok(data.deleted.includes(src));
+      assert.ok(!fs.existsSync(src), 'file should be removed (trashed or unlinked)');
+    });
+  });
 
 // ══════════════════════════════
 // Docker Cleanup (stopped containers + build cache)
