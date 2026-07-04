@@ -4,6 +4,14 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.9.1 更新
+
+- **修复：P0 文件名截断损坏** — `app.js` / `empty_dir.js` / `temp.js` 三处 trash 重命名用 `slice(0, ext.length)` 保留 stem 前 N 字符（例：`data.bin.gz` → `dat_1.gz`），改为 `slice(0, -ext.length)` 正确去掉扩展名
+  - `app.js` 删 29 行重复 `moveToTrash`，统一 import from `trash.js`
+- **修复：execCmd 超时不杀进程** — `spawn({timeout})` 超时后只发 SIGTERM 不强杀，`rm -rf` 在 fuse 挂载点挂死后事件循环永久阻塞。改为 SIGTERM → 5s 宽限期 → SIGKILL 兜底
+- **修复：bigfiles sibling threshold 测试假阳性** — 原测试永远不触发阈值（fixture 只有 1 文件），断言 `typeof === 'boolean'` 空通过。新增独立测试 `tests/test_bigfiles_sibling_threshold.js`：环境变量 `TRM_FNCLEARUP_SIBLING_THRESHOLD=5` + 7 entry fixture + 断言 `skipped_subtree===true`
+- **测试覆盖：84 → 85**（含 standalone sibling threshold 测试）
+
 ## v0.9.0 更新
 
 - **🐳 新增：Docker 清理 Tab** — 一键清理已停止容器 (`exited`/`created`/`dead` 状态) 和 Docker Build Cache
