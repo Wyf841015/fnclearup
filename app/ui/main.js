@@ -868,6 +868,94 @@ function updateDupSelectedCount() {
 
 function formatBytes(b){if(b===0)return'0 B';const u=['B','KB','MB','GB','TB'];const i=Math.floor(Math.log(b)/Math.log(1024));return(b/Math.pow(1024,i)).toFixed(1)+' '+u[i];}
 
+// ═══════════════════════════════
+// Big Files Finder
+// ═══════════════════════════════
+let _bigFilesScanning = false;
+
+async function doBigFilesScan() {
+  if (_bigFilesScanning) return;
+  _bigFilesScanning = true;
+  const status = $('bigfiles-status');
+  const list = $('bigfiles-list');
+  const scanBtn = $('bigfilesBtn');
+  const stopBtn = $('bigfilesStopBtn');
+  if (scanBtn) scanBtn.disabled = true;
+  if (stopBtn) stopBtn.style.display = '';
+  // Reset KPIs
+  ['bigfiles-candidates', 'bigfiles-results', 'bigfiles-total-size', 'bigfiles-elapsed'].forEach(id => {
+    const el = $(id); if (el) el.textContent = '…';
+  });
+  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描中，可点击「停止」提前结束'; }
+  if (list) list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🐘</div><h3>扫描中…</h3><p>正在遍历所选卷目录寻找大文件，请稍候</p></div>';
+
+  const path = $('bigfiles-path')?.value || '/vol*';
+  const minSize = parseInt($('bigfiles-minsize')?.value || '0', 10) || 0;
+  const topN = parseInt($('bigfiles-topn')?.value || '100', 10) || 100;
+  const params = new URLSearchParams({ path, topN: String(topN), depth: '6' });
+  if (minSize > 0) params.set('minSize', String(minSize));
+
+  try {
+    const data = await API.get('api/bigfiles/scan?' + params.toString());
+    if ($('bigfiles-candidates')) $('bigfiles-candidates').textContent = data.total_candidates ?? 0;
+    if ($('bigfiles-results')) $('bigfiles-results').textContent = (data.files || []).length;
+    const totalSize = (data.files || []).reduce((s, f) => s + (f.size || 0), 0);
+    if ($('bigfiles-total-size')) $('bigfiles-total-size').textContent = formatBytes(totalSize);
+    if ($('bigfiles-elapsed')) $('bigfiles-elapsed').textContent = `${(data.elapsed_ms / 1000).toFixed(1)}s`;
+
+    if (status) {
+      status.className = data.truncated ? 'success' : 'success';
+      const rootLabel = data.root === '/vol*' ? '所有卷' : data.root;
+      const partialLabel = data.truncated ? `（仅显示前 ${data.top_n} 个）` : '';
+      const stoppedNote = data.files && data.files.length === 0 && data.scanned_paths > 0 ? ' [已停止]' : '';
+      status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${stoppedNote}，扫描了 ${data.scanned_paths.toLocaleString()} 个路径`;
+    }
+    renderBigFilesList(data.files || []);
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+    if (list) list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">⚠️</div><h3>扫描失败</h3><p>' + escHtml(e.message) + '</p></div>';
+  } finally {
+    _bigFilesScanning = false;
+    if (scanBtn) scanBtn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+async function stopBigFiles() {
+  try { await API.post('api/bigfiles/stop', {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
+}
+
+function renderBigFilesList(files) {
+  const list = $('bigfiles-list');
+  if (!list) return;
+  if (!files.length) {
+    list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现符合条件的大文件</h3><p>试试调小「最小值」或切换搜索范围</p></div>';
+    return;
+  }
+  let html = '<div class="list-scroll"><table class="data-table" id="bigfiles-table"><thead><tr>' +
+    '<th style="width:50px">#</th>' +
+    '<th>文件名</th>' +
+    '<th style="width:14%">大小</th>' +
+    '<th style="width:18%">位置</th>' +
+    '<th style="width:90px">修改时间</th>' +
+    '<th style="width:60px">深度</th>' +
+    '</tr></thead><tbody>';
+  files.forEach((f, i) => {
+    const mtime = f.mtime ? new Date(f.mtime).toISOString().slice(0, 10) : '-';
+    const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
+    html += `<tr>
+      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary)">${i + 1}</td>
+      <td><span title="${escHtml(f.path)}">${escHtml(f.name)}</span></td>
+      <td style="font-family:monospace;font-weight:600;color:var(--color-primary)">${escHtml(f.size_str)}</td>
+      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dir)}">${escHtml(dir)}</td>
+      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary)">${escHtml(mtime)}</td>
+      <td style="text-align:center;font-family:monospace;font-size:12px;color:var(--color-text-secondary)">${f.depth || 0}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+}
+
 // ── Version Check ──
 function checkVersion() {
   const badge = document.getElementById('versionBadge');
@@ -2070,6 +2158,7 @@ function init() {
     trashBrowseList, hideTrashBrowseModal,
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
     viewScheduleFilesFromAttr, viewScheduleReportFromAttr,
+    doBigFilesScan, stopBigFiles,
   };
   Object.assign(window, exports);
 

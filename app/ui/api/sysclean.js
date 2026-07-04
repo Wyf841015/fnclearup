@@ -2,49 +2,105 @@ import { existsSync, readdirSync, lstatSync, statSync, unlinkSync, rmSync, mkdir
 import { join, basename, dirname, extname } from 'node:path';
 import { sendJSON, execCmd, parseBody, formatBytes, getManifestDir } from '../lib/util.js';
 
-// Cache items under the current user's HOME (or root's if running as root).
-const HOME = process.env.HOME || '/root';
+// Cache items under ALL users' HOME (root + every /vol<N>/<UID>).
+// fnclearup runs as root on fnOS, so without this each non-root user's
+// npm/pip/uv cache is invisible to "✅ 推荐清理" one-click button.
+// Per-user HOMEs are discovered by scanning /vol1..10 for numeric UIDs.
+//
+// Also includes $HOME if it's not /root and not already in the list — covers
+// dev/test environments (e.g. `/home/admin`) and any non-standard HOME layout.
+function getUserHomes() {
+  const homes = [{ username: 'root', home: '/root', uid: 0 }];
+  for (let v = 1; v <= 10; v++) {
+    const base = `/vol${v}`;
+    if (!existsSync(base)) continue;
+    try {
+      for (const name of readdirSync(base)) {
+        if (!/^\d+$/.test(name)) continue; // skip non-UID dirs
+        const home = join(base, name);
+        try {
+          const st = lstatSync(home);
+          if (st.isDirectory() && st.uid !== undefined) {
+            homes.push({ username: name, home, uid: parseInt(name, 10) });
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+  // Also include $HOME if it's a real dir and not already represented.
+  // This covers dev/test (process.env.HOME=/home/admin on the build box) as
+  // well as any custom HOME layout (e.g. /home/myuser).
+  const envHome = process.env.HOME;
+  if (envHome && envHome !== '/root' && existsSync(envHome)) {
+    homes.push({ username: process.env.USER || basename(envHome), home: envHome, uid: -1 });
+  }
+  // Dedup by home path
+  const seen = new Set();
+  const out = [];
+  for (const u of homes) {
+    if (seen.has(u.home)) continue;
+    seen.add(u.home);
+    out.push(u);
+  }
+  return out;
+}
 
 // "No-regression" recommended set: 100% safe to clear, system rebuilds on demand.
 // Anything here auto-recreates next time the tool runs (apt/npm/pip/uv/etc).
 // Frontend uses this for the "✅ 推荐清理" one-click button.
-export const RECOMMENDED_IDS = [
-  'apt-archives', 'apt-lists',
-  'syslog-gz', 'syslog-old', 'journal',
-  'npm', 'pip', 'uv', 'node-gyp', 'typescript',
+// Note: RECOMMENDED_IDS now match id WITH a user suffix appended during scan,
+// e.g. 'npm:root' for root's npm, 'npm:1000' for UID 1000's npm.
+function isRecommended(id) {
+  const base = id.split(':')[0];
+  return [
+    'apt-archives', 'apt-lists',
+    'syslog-gz', 'syslog-old', 'journal',
+    'npm', 'pip', 'uv', 'node-gyp', 'typescript',
+  ].includes(base);
+}
+
+// Per-user cache items are emitted once per discovered HOME (root + each UID).
+// Returns array of {id, path, ...} with id formatted as `<baseId>:<username>`.
+const USER_CACHE_TEMPLATES = [
+  { id: 'npm', label: 'NPM 缓存', subPath: '.npm', recurse: true, risk: 'low' },
+  { id: 'pip', label: 'PIP 缓存', subPath: '.cache/pip', recurse: true, risk: 'low' },
+  { id: 'uv', label: 'uv 缓存', subPath: '.cache/uv', recurse: true, risk: 'low' },
+  { id: 'node-gyp', label: 'node-gyp 缓存', subPath: '.cache/node-gyp', recurse: true, risk: 'low' },
+  { id: 'typescript', label: 'TypeScript 增量编译缓存', subPath: '.cache/typescript', recurse: true, risk: 'medium' },
+  { id: 'playwright', label: 'Playwright 浏览器 (重下耗时)', subPath: '.cache/ms-playwright', recurse: true, risk: 'high' },
+  { id: 'chrome-cache', label: 'Chrome 浏览器缓存 (会丢登录)', subPath: '.cache/google-chrome', recurse: true, risk: 'high' },
+  { id: 'firefox-cache', label: 'Firefox 浏览器缓存', subPath: '.cache/mozilla', recurse: true, risk: 'high' },
+  { id: 'brave-cache', label: 'Brave 浏览器缓存', subPath: '.cache/BraveSoftware', recurse: true, risk: 'high' },
+  // cache-other is the "auto-discover anything else under ~/.cache" item.
+  // We exclude the single-level children that are already covered by the
+  // templates above so users don't see double-counted items (e.g. both
+  // 'PIP 缓存' and '其它 ~/.cache: pip' for the same 1.4 GB directory).
+  { id: 'cache-other', label: '其它 ~/.cache 子目录', subPath: '.cache', recurse: true, risk: 'low',
+    dynamicChildren: true,
+    excludeSingleChildNames: new Set([
+      'pip', 'uv', 'node-gyp', 'typescript', 'ms-playwright',
+      'google-chrome', 'mozilla', 'BraveSoftware',
+    ]) },
 ];
 
 // Scan items: { id, path, label, size, size_str, risk, recommended }
 // Sizes are computed by statSync; recurse=true to sum children.
+// Multi-home user caches are generated per-user at scan time via USER_CACHE_TEMPLATES.
 const SCAN_TARGETS = [
   // Package manager caches
-  { id: 'apt-archives', label: 'APT 下载缓存 (deb)', path: '/var/cache/apt/archives', recurse: true, risk: 'low', recommended: true,
+  { id: 'apt-archives', label: 'APT 下载缓存 (deb)', path: '/var/cache/apt/archives', recurse: true, risk: 'low',
     filter: (n) => n.endsWith('.deb') },
-  { id: 'apt-lists', label: 'APT 列表缓存', path: '/var/lib/apt/lists', recurse: true, risk: 'low', recommended: true,
+  { id: 'apt-lists', label: 'APT 列表缓存', path: '/var/lib/apt/lists', recurse: true, risk: 'low',
     filter: (n) => !n.startsWith('partial') && !n.endsWith('.gpg') },
   // System logs (admin: rotate .gz + 旧 .1)
-  { id: 'syslog-gz', label: '系统日志轮转文件 (.gz)', path: '/var/log', recurse: false, risk: 'low', recommended: true,
+  { id: 'syslog-gz', label: '系统日志轮转文件 (.gz)', path: '/var/log', recurse: false, risk: 'low',
     filter: (n) => n.endsWith('.gz') },
-  { id: 'syslog-old', label: '系统日志历史档 (.1)', path: '/var/log', recurse: false, risk: 'low', recommended: true,
+  { id: 'syslog-old', label: '系统日志历史档 (.1)', path: '/var/log', recurse: false, risk: 'low',
     filter: (n) => /\.1$/.test(n) && (n.startsWith('syslog') || n.startsWith('auth.log') || n.startsWith('mail.log') || n.startsWith('kern.log') || n.startsWith('daemon.log') || n.startsWith('user.log') || n.startsWith('messages')) },
-  { id: 'journal', label: 'systemd journal 日志', path: '/var/log/journal', recurse: true, risk: 'low', recommended: true,
+  { id: 'journal', label: 'systemd journal 日志', path: '/var/log/journal', recurse: true, risk: 'low',
     filter: (n) => n.endsWith('.journal') },
-  // User-level caches under HOME/.cache and HOME/.npm
-  { id: 'npm', label: 'NPM 缓存', path: `${HOME}/.npm`, recurse: true, risk: 'low', recommended: true },
-  { id: 'pip', label: 'PIP 缓存', path: `${HOME}/.cache/pip`, recurse: true, risk: 'low', recommended: true },
-  { id: 'uv', label: 'uv 缓存', path: `${HOME}/.cache/uv`, recurse: true, risk: 'low', recommended: true },
-  { id: 'node-gyp', label: 'node-gyp 缓存', path: `${HOME}/.cache/node-gyp`, recurse: true, risk: 'low', recommended: true },
-  { id: 'typescript', label: 'TypeScript 增量编译缓存', path: `${HOME}/.cache/typescript`, recurse: true, risk: 'medium', recommended: true },
-  { id: 'playwright', label: 'Playwright 浏览器 (重下耗时)', path: `${HOME}/.cache/ms-playwright`, recurse: true, risk: 'high', recommended: false },
-  { id: 'chrome-cache', label: 'Chrome 浏览器缓存 (会丢登录)', path: `${HOME}/.cache/google-chrome`, recurse: true, risk: 'high', recommended: false },
-  { id: 'firefox-cache', label: 'Firefox 浏览器缓存', path: `${HOME}/.cache/mozilla`, recurse: true, risk: 'high', recommended: false },
-  { id: 'brave-cache', label: 'Brave 浏览器缓存', path: `${HOME}/.cache/BraveSoftware`, recurse: true, risk: 'high', recommended: false },
-  // Other ~/.cache subdirs (auto-discovered, not in the curated list above)
-  { id: 'cache-other', label: '其它 ~/.cache 子目录', path: `${HOME}/.cache`, recurse: true, risk: 'low', recommended: false,
-    filter: (n, full) => !SCAN_TARGETS.find(t => t.path === full),  // not in curated list
-    dynamicChildren: true },
   // App logs in /vol*/@appcenter/*/logs (only those >50MB)
-  { id: 'app-logs', label: '应用日志 (>50MB)', path: '/vol*/@appcenter', recurse: true, risk: 'medium', recommended: true,
+  { id: 'app-logs', label: '应用日志 (>50MB)', path: '/vol*/@appcenter', recurse: true, risk: 'medium',
     filter: (n, full, st) => {
       if (n === 'logs' && st && st.isDirectory()) {
         // Sum files in this logs dir
@@ -61,6 +117,34 @@ const SCAN_TARGETS = [
     },
     dynamicChildren: true },
 ];
+
+// Add per-user cache items to a flat list, one entry per (template × user).
+// Returns array like { id: 'npm:1000', path: '/vol2/1000/.npm', label: 'NPM 缓存 (UID 1000)', ... }
+function buildUserCacheItems() {
+  const out = [];
+  for (const u of getUserHomes()) {
+    for (const t of USER_CACHE_TEMPLATES) {
+      const base = join(u.home, t.subPath);
+      // Skip non-existent silently (will be reported size=0)
+      const displayHome = u.username === 'root' ? 'root' : `UID ${u.username}`;
+      out.push({
+        id: `${t.id}:${u.username}`,
+        target_id: t.id,
+        path: base,
+        label: `${t.label} (${displayHome})`,
+        recurse: t.recurse,
+        risk: t.risk,
+        recommended: isRecommended(`${t.id}:${u.username}`),
+        dynamicChildren: t.dynamicChildren || false,
+        excludeSingleChildNames: t.excludeSingleChildNames,
+        username: u.username,
+        userHome: u.home,
+        baseId: t.id,
+      });
+    }
+  }
+  return out;
+}
 
 // Walk directory and sum file sizes; for filter mode, return matching items.
 function dirSize(p, recurse = true) {
@@ -86,7 +170,9 @@ function dirSize(p, recurse = true) {
 // GET /api/sysclean/scan
 export function handleSysCleanScan(req, res) {
   const items = [];
-  for (const target of SCAN_TARGETS) {
+  // Combine system-level targets + per-user cache items
+  const allTargets = [...SCAN_TARGETS, ...buildUserCacheItems()];
+  for (const target of allTargets) {
     if (target.dynamicChildren) {
       // Auto-discover subdirectories matching the filter
       if (!existsSync(target.path)) continue;
@@ -94,22 +180,25 @@ export function handleSysCleanScan(req, res) {
         const entries = readdirSync(target.path);
         for (const e of entries) {
           const full = join(target.path, e);
-          try {
-            const st = lstatSync(full);
-            if (!st.isDirectory()) continue;
-            if (target.filter && !target.filter(e, full, st)) continue;
-            const size = dirSize(full, true);
-            if (size === 0) continue;
-            items.push({
-              id: `${target.id}:${e}`,
-              target_id: target.id,
-              path: full,
-              name: e,
-              label: `${target.label}: ${e}`,
-              size, size_str: formatBytes(size),
-              risk: target.risk, recommended: target.recommended,
-            });
-          } catch {}
+          const st = (() => { try { return lstatSync(full); } catch { return null; } })();
+          if (!st || !st.isDirectory()) continue;
+          // Skip excluded sub-paths (cache-other template's curated set,
+          // so we don't double-list npm/pip/uv/etc as both curated and "其它")
+          if (target.excludeSingleChildNames && target.excludeSingleChildNames.has(e)) continue;
+          if (target.filter && !target.filter(e, full, st)) continue;
+          const size = dirSize(full, true);
+          if (size === 0) continue;
+          const id = `${target.id}:${e}`;
+          items.push({
+            id,
+            target_id: target.id,
+            path: full,
+            name: e,
+            label: `${target.label}: ${e}`,
+            size, size_str: formatBytes(size),
+            risk: target.risk,
+            recommended: target.recommended === true || isRecommended(id),
+          });
         }
       } catch {}
       continue;
@@ -126,7 +215,8 @@ export function handleSysCleanScan(req, res) {
         name: basename(target.path),
         label: target.label,
         size, size_str: formatBytes(size),
-        risk: target.risk, recommended: target.recommended,
+        risk: target.risk,
+        recommended: target.recommended === true || isRecommended(target.id),
       });
     } else {
       // Filter children: list each matching child as its own item
@@ -134,21 +224,22 @@ export function handleSysCleanScan(req, res) {
         const entries = readdirSync(target.path);
         for (const e of entries) {
           const full = join(target.path, e);
-          try {
-            const st = lstatSync(full);
-            if (!target.filter(e, full, st)) continue;
-            const size = dirSize(full, target.recurse);
-            if (size === 0) continue;
-            items.push({
-              id: `${target.id}:${e}`,
-              target_id: target.id,
-              path: full,
-              name: e,
-              label: `${target.label}: ${e}`,
-              size, size_str: formatBytes(size),
-              risk: target.risk, recommended: target.recommended,
-            });
-          } catch {}
+          const st = (() => { try { return lstatSync(full); } catch { return null; } })();
+          if (!st) continue;
+          if (!target.filter(e, full, st)) continue;
+          const size = dirSize(full, target.recurse);
+          if (size === 0) continue;
+          const id = `${target.id}:${e}`;
+          items.push({
+            id,
+            target_id: target.id,
+            path: full,
+            name: e,
+            label: `${target.label}: ${e}`,
+            size, size_str: formatBytes(size),
+            risk: target.risk,
+            recommended: target.recommended === true || isRecommended(id),
+          });
         }
       } catch {}
     }
@@ -159,19 +250,22 @@ export function handleSysCleanScan(req, res) {
   sendJSON(res, 200, { items, total_size: totalSize, total_size_str: formatBytes(totalSize), count: items.length, success: true });
 }
 
-// Whitelist: only allow deletion of paths in SCAN_TARGETS
+// Whitelist: only allow deletion of paths in SCAN_TARGETS or any per-user cache item
 function isTargetPath(p) {
   if (typeof p !== 'string') return false;
   for (const t of SCAN_TARGETS) {
     if (p === t.path) return true;
     if (p.startsWith(t.path + '/')) return true;
   }
-  // Allow app-logs discovered children
+  for (const u of buildUserCacheItems()) {
+    if (p === u.path) return true;
+    if (p.startsWith(u.path + '/')) return true;
+  }
   return false;
 }
 
 // POST /api/sysclean/clean
-// Body: { ids: ['apt-archives', 'npm', 'cache-other:fontconfig', ...], mode: 'permanent' (default), backup: true|false }
+// Body: { ids: ['apt-archives', 'npm:root', 'cache-other:1000:fontconfig', ...], ... }
 // Note: sysclean items are caches that auto-rebuild — no recycle bin mode, always permanent.
 export async function handleSysCleanClean(req, res) {
   const data = await parseBody(req);
@@ -179,20 +273,73 @@ export async function handleSysCleanClean(req, res) {
   const doBackup = data.backup === true;
   const deleted = [], failed = [];
 
+  // Lookup table: id → item descriptor (combines system targets + per-user items)
+  const allTargets = [...SCAN_TARGETS, ...buildUserCacheItems()];
+  const idMap = new Map();
+  for (const t of allTargets) {
+    idMap.set(t.id, { path: t.path, label: t.label, target_id: t.id });
+  }
+
+  // For dynamicChildren per-user items (cache-other:USER or app-logs),
+  // remember the parent so the fallback can resolve `<baseId>:<user>:<childName>` ids.
+  // We compute parent.id as `cache-other:admin` etc; child id as `cache-other:admin:fakeapp_xxx`.
+  const userByName = new Map();
+  for (const u of getUserHomes()) userByName.set(u.username, u);
+
   // Build snapshot of items being deleted (for backup manifest + return data)
   const snapshot = [];
   for (const id of ids) {
-    let path = null, label = id, target_id = id, size = 0, mtime = 0;
-    for (const target of SCAN_TARGETS) {
-      if (target.id === id) { path = target.path; label = target.label; target_id = target.id; break; }
-      if (id.startsWith(target.id + ':')) {
-        const childName = id.slice(target.id.length + 1);
-        path = join(target.path, childName);
-        label = `${target.label}: ${childName}`;
-        target_id = target.id;
-        break;
+    const hit = idMap.get(id);
+    let path = null, label = id, target_id = id;
+    if (hit) {
+      path = hit.path;
+      label = hit.label;
+      target_id = hit.target_id;
+    } else {
+      // Fallback: parse '<target_id>:<childName>' for SCAN_TARGETS dynamicChildren
+      // (e.g. app-logs:fnclearup), or '<target_id>:<username>:<childName>' for
+      // per-user cache-other items.
+      let resolved = false;
+      // Try SCAN_TARGETS dynamicChildren first
+      for (const target of SCAN_TARGETS) {
+        if (id.startsWith(target.id + ':')) {
+          const rest = id.slice(target.id.length + 1);
+          path = join(target.path, rest);
+          label = `${target.label}: ${rest}`;
+          target_id = target.id;
+          resolved = true;
+          break;
+        }
+      }
+      if (!resolved) {
+        // Try per-user dynamicChildren patterns:
+        //   cache-other:<user>:<childName> (cache-other has excludeSubPaths in template)
+        //   app-logs here is system-only (in SCAN_TARGETS); the user version is app-logs (handled above)
+        for (const t of USER_CACHE_TEMPLATES) {
+          if (!t.dynamicChildren) continue;
+          const prefix = `${t.id}:`;
+          if (!id.startsWith(prefix)) continue;
+          const rest = id.slice(prefix.length); // e.g. "admin:fakeapp_test_xxx"
+          const colon = rest.indexOf(':');
+          if (colon === -1) continue; // not a user-scoped child
+          const username = rest.slice(0, colon);
+          const childName = rest.slice(colon + 1);
+          const u = userByName.get(username);
+          if (!u) continue;
+          // Skip curated sub-paths (they're emitted as their own top-level user items)
+          if (t.excludeSingleChildNames && t.excludeSingleChildNames.has(childName)) continue;
+          // For cache-other, child name is the immediate subdir of <home>/.cache
+          if (t.id === 'cache-other') {
+            path = join(u.home, t.subPath, childName);
+            label = `${t.label} (${username}): ${childName}`;
+            target_id = t.id;
+            resolved = true;
+            break;
+          }
+        }
       }
     }
+    let size = 0, mtime = 0;
     if (path && existsSync(path)) {
       try { size = dirSize(path, true); } catch {}
       try { mtime = lstatSync(path).mtimeMs; } catch {}
