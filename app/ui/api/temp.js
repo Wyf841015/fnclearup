@@ -22,7 +22,8 @@ function moveToTrash(p) {
   let counter = 1;
   while (existsSync(finalDest)) {
     const ext2 = extname(dest);
-    finalDest = join(dirname(dest), `${basename(dest).slice(0, ext2.length || basename(dest).length)}_${counter}${ext2}`);
+    const stem = basename(dest).slice(0, ext2.length ? -ext2.length : basename(dest).length);
+    finalDest = join(dirname(dest), `${stem}_${counter}${ext2}`);
     counter++;
   }
   try { renameSync(p, finalDest); }

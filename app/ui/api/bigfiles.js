@@ -32,7 +32,7 @@ const YIELD_INTERVAL = 100; // setImmediate every N entries
 // are likely huge content stores (app icons, photo thumbnails, torrent
 // seeders) where recursing burns the entire budget for negligible gain.
 // We still pick up sibling files in this directory — we just don't descend.
-const SIBLING_THRESHOLD = 5000;
+const SIBLING_THRESHOLD = parseInt(process.env.TRM_FNCLEARUP_SIBLING_THRESHOLD || '5000', 10);
 
 let activeJob = null; // { stopped, found, scannedPaths }
 export function cancelBigFilesJob() { if (activeJob) activeJob.stopped = true; }
