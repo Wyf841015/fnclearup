@@ -76,6 +76,7 @@ async function switchTab(tabName) {
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
   else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
+  else if(tabName==='dockercleanup') { dcCheckAvailable(); }
 }
 
 // ════════════════════════════════
@@ -954,6 +955,163 @@ function renderBigFilesList(files) {
   });
   html += '</tbody></table></div>';
   list.innerHTML = html;
+}
+
+// ═══════════════════════════════
+// Docker Cleanup (stopped containers + build cache)
+// ═══════════════════════════════
+let _dcStoppedList = []; // last scan result (cached for selection)
+
+async function dcCheckAvailable() {
+  // Probe both endpoints in parallel — if either succeeds docker is up
+  const [stopped, cache] = await Promise.all([
+    API.get('api/docker/stopped').catch(() => ({ available: false })),
+    API.get('api/docker/build_cache').catch(() => ({ available: false })),
+  ]);
+  const available = !!(stopped.available && cache.available);
+  const daemon = !!(stopped.daemon && cache.daemon);
+  $('dockercleanup-unavailable').style.display = available ? 'none' : '';
+  $('dockercleanup-main').style.display = available ? '' : 'none';
+  if (!available) return;
+  // Auto-populate cache card even without explicit scan (cheap)
+  if (cache.build_cache) {
+    $('dc-cache-total').textContent = cache.build_cache.total_str || '0 B';
+    $('dc-cache-reclaim').textContent = cache.build_cache.reclaimable_str || '0 B';
+    $('dcPruneBtn').disabled = !cache.build_cache.reclaimable_bytes;
+    $('dc-cache-status').textContent = daemon ? '' : '⚠️ Docker daemon 未响应';
+  } else {
+    $('dc-cache-total').textContent = '-';
+    $('dc-cache-reclaim').textContent = '-';
+    $('dcPruneBtn').disabled = true;
+    $('dc-cache-status').textContent = '点击「扫描」按钮获取详情';
+  }
+}
+
+async function dcScan() {
+  const btn = $('dcScanBtn');
+  const status = $('dc-stopped-status');
+  const list = $('dc-stopped-list');
+  btn.disabled = true;
+  status.className = '';
+  status.textContent = '🔍 扫描中…';
+  try {
+    const data = await API.get('api/docker/stopped');
+    if (!data.available) {
+      dcCheckAvailable(); // refresh unavailable banner
+      status.className = 'error';
+      status.textContent = '❌ Docker 不可用';
+      return;
+    }
+    _dcStoppedList = data.containers || [];
+    $('dc-stopped-count').textContent = String(_dcStoppedList.length);
+    $('dc-stopped-size').textContent = data.total_size || '0 B';
+    renderDcStoppedList(_dcStoppedList);
+    status.textContent = _dcStoppedList.length
+      ? `🛑 找到 ${_dcStoppedList.length} 个已停止容器，共 ${data.total_size}`
+      : '🎉 没有已停止的容器';
+  } catch (e) {
+    status.className = 'error';
+    status.textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderDcStoppedList(items) {
+  const list = $('dc-stopped-list');
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>无已停止容器</h3></div>';
+    $('dcRemoveBtn').disabled = true;
+    return;
+  }
+  let html = '<div class="list-scroll"><table class="data-table" id="dc-stopped-table"><thead><tr>' +
+    '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="dcSelectAll(this)"></th>' +
+    '<th>ID</th><th>名称</th><th>镜像</th><th style="width:90px">大小</th><th>状态</th>' +
+    '</tr></thead><tbody>';
+  items.forEach((c) => {
+    html += `<tr>
+      <td><input type="checkbox" class="dc-cb" value="${escHtml(c.id)}" onchange="dcUpdateSelectInfo()"></td>
+      <td style="font-family:monospace;font-size:11px;color:var(--color-text-secondary)">${escHtml(c.id.slice(0, 12))}</td>
+      <td>${escHtml(c.names || '-')}</td>
+      <td style="font-family:monospace;font-size:12px">${escHtml(c.image || '-')}</td>
+      <td style="font-family:monospace;font-weight:600;color:var(--color-primary)">${escHtml(c.size_str || '0 B')}</td>
+      <td style="font-size:12px;color:var(--color-text-muted)">${escHtml(c.status || '-')}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+  $('dcRemoveBtn').disabled = false;
+}
+
+function dcSelectAll(cb) {
+  document.querySelectorAll('.dc-cb').forEach(el => { el.checked = cb.checked; });
+  dcUpdateSelectInfo();
+}
+
+function dcUpdateSelectInfo() {
+  const n = document.querySelectorAll('.dc-cb:checked').length;
+  const btn = $('dcRemoveBtn');
+  btn.disabled = n === 0;
+  btn.querySelector('span:last-child').textContent = n ? `删除选中 (${n})` : '删除选中';
+}
+
+async function dcRemoveSelected() {
+  const ids = Array.from(document.querySelectorAll('.dc-cb:checked')).map(el => el.value);
+  if (!ids.length) return;
+  const dryRun = $('dcDryRun').checked;
+  const totalBytes = _dcStoppedList
+    .filter(c => ids.includes(c.id))
+    .reduce((sum, c) => sum + (c.size_bytes || 0), 0);
+  const dryRunLabel = dryRun ? '【预览】' : '【真实删除】';
+  const msg = dryRun
+    ? `${dryRunLabel}\n\n将对 ${ids.length} 个容器执行预览（不会真实删除）：\n${formatBytes(totalBytes)}\n\n继续？`
+    : `${dryRunLabel}\n\n将真实删除 ${ids.length} 个容器（约 ${formatBytes(totalBytes)}）：\n\n${ids.slice(0, 5).join('\n')}${ids.length > 5 ? `\n…共 ${ids.length} 个` : ''}\n\n此操作不可恢复！`;
+  if (!confirm(msg)) return;
+  const btn = $('dcRemoveBtn');
+  btn.disabled = true;
+  $('dc-stopped-status').textContent = dryRun ? '🧪 预览中…' : '🗑 删除中…';
+  try {
+    const data = await API.post('api/docker/stopped/remove', { ids, dry_run: dryRun });
+    const deleted = data.total?.deleted ?? 0;
+    $('dc-stopped-status').textContent = dryRun
+      ? `🧪 预览完成：${ids.length} 个容器可删除（${formatBytes(totalBytes)}）`
+      : `✅ 已删除 ${deleted}/${ids.length} 个容器`;
+    if (!dryRun && deleted > 0) await dcScan(); // refresh
+  } catch (e) {
+    $('dc-stopped-status').className = 'error';
+    $('dc-stopped-status').textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function dcPruneCache() {
+  const dryRun = $('dcDryRun').checked;
+  const reclaim = $('dc-cache-reclaim').textContent || '0 B';
+  const msg = dryRun
+    ? `【预览】\n\n将清理所有未使用的 Docker build cache：\n预计可回收 ${reclaim}\n\n继续？`
+    : `【真实删除】\n\n将执行 docker builder prune -af：\n预计可回收 ${reclaim}\n\n此操作不可恢复，下次 docker build 会重新拉取镜像层！`;
+  if (!confirm(msg)) return;
+  const btn = $('dcPruneBtn');
+  btn.disabled = true;
+  $('dc-cache-status').textContent = dryRun ? '🧪 预览中…' : '🧹 Prune 中…';
+  try {
+    const data = await API.post('api/docker/build_cache/prune', { dry_run: dryRun });
+    if (dryRun) {
+      $('dc-cache-status').textContent = `🧪 预览：${data.reclaimed_str || '0 B'} 可回收`;
+    } else {
+      $('dc-cache-status').textContent = data.ok
+        ? `✅ 已回收 ${data.reclaimed_str || '0 B'}`
+        : `❌ 失败: ${data.error || '未知错误'}`;
+      if (data.ok) await dcCheckAvailable(); // refresh cache card
+    }
+  } catch (e) {
+    $('dc-cache-status').className = 'error';
+    $('dc-cache-status').textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── Version Check ──
@@ -2159,6 +2317,7 @@ function init() {
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
     viewScheduleFilesFromAttr, viewScheduleReportFromAttr,
     doBigFilesScan, stopBigFiles,
+    dcCheckAvailable, dcScan, renderDcStoppedList, dcSelectAll, dcUpdateSelectInfo, dcRemoveSelected, dcPruneCache,
   };
   Object.assign(window, exports);
 
