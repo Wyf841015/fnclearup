@@ -15,6 +15,7 @@ import { handleSysCleanScan, handleSysCleanClean, handleSysCleanListManifests, h
 import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js';
 import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
 import { handleBigFilesScan, handleBigFilesStop } from './api/bigfiles.js';
+import { handleDockerStopped, handleDockerStoppedRemove, handleDockerBuildCache, handleDockerBuildCachePrune } from './api/docker_cleanup.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -136,6 +137,11 @@ async function handle(req, res) {
       // Big files
       if (method === 'GET' && path === '/api/bigfiles/scan') { await handleBigFilesScan(req, res); return; }
       if (method === 'POST' && path === '/api/bigfiles/stop') { handleBigFilesStop(req, res); return; }
+      // Docker cleanup (stopped containers + build cache)
+      if (method === 'GET' && path === '/api/docker/stopped') { await handleDockerStopped(req, res); return; }
+      if (method === 'POST' && path === '/api/docker/stopped/remove') { await handleDockerStoppedRemove(req, res); return; }
+      if (method === 'GET' && path === '/api/docker/build_cache') { await handleDockerBuildCache(req, res); return; }
+      if (method === 'POST' && path === '/api/docker/build_cache/prune') { await handleDockerBuildCachePrune(req, res); return; }
       sendJSON(res, 404, { error: 'API endpoint not found' });
       return;
     }

@@ -35,6 +35,7 @@
       <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false">🗑 回收站</button>
       <button type="button" class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="false">⏰ 定时</button>
       <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false">🐘 大文件</button>
+      <button type="button" class="tab-btn" data-tab="dockercleanup" onclick="switchTab('dockercleanup')" role="tab" aria-selected="false">🐳 清理</button>
     </div>
 
     <!-- Tab 1: 应用残余 -->
@@ -459,6 +460,59 @@
         </div>
         <div id="bigfiles-status"></div>
         <div id="bigfiles-list"></div>
+      </div>
+    </div>
+
+    <!-- Tab 11: Docker 清理 (stopped containers + build cache) -->
+    <div class="tab-panel" data-panel="dockercleanup">
+      <div id="dockercleanup-unavailable" class="card" style="display:none">
+        <div style="text-align:center;padding:24px;color:var(--color-text-muted)">
+          <div style="font-size:48px;margin-bottom:12px">🐳</div>
+          <h3 style="margin:0 0 8px 0;color:var(--color-text-primary)">Docker 未检测到</h3>
+          <p style="margin:0">本机未安装 Docker 或 <code>/var/run/docker.sock</code> 不可访问。<br>本 Tab 用于清理已停止的容器和构建缓存 —— Docker 不可用时无需清理。</p>
+        </div>
+      </div>
+      <div id="dockercleanup-main">
+        <div class="kpi-row">
+          <div class="kpi-card"><div class="kpi-icon">🛑</div><div class="kpi-body"><div class="kpi-label">已停止容器</div><div class="kpi-value" id="dc-stopped-count">-</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">容器占用</div><div class="kpi-value" id="dc-stopped-size">-</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon">🧱</div><div class="kpi-body"><div class="kpi-label">Build Cache</div><div class="kpi-value" id="dc-cache-total">-</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon">♻️</div><div class="kpi-body"><div class="kpi-label">可回收</div><div class="kpi-value" id="dc-cache-reclaim">-</div></div></div>
+        </div>
+
+        <div class="card">
+          <div class="section-header">
+            <h2><span>🛑</span><span>已停止的容器</span></h2>
+            <div class="section-actions">
+              <button type="button" class="btn btn-primary" onclick="dcScan()" id="dcScanBtn"><span>🔍</span><span>扫描</span></button>
+              <button type="button" class="btn btn-danger" onclick="dcRemoveSelected()" id="dcRemoveBtn" disabled><span>🗑</span><span>删除选中</span></button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--color-text-muted);margin:4px 0 8px 0">
+            ⚠️ 默认 <strong>预览模式</strong>(dry_run=true)，勾选后需手动关闭预览开关才会真实执行 <code>docker rm</code>。
+          </div>
+          <div class="form-row" style="margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="dcDryRun" checked>
+              <span>预览模式 (仅报告，不会真实删除)</span>
+            </label>
+          </div>
+          <div id="dc-stopped-status"></div>
+          <div id="dc-stopped-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="section-header">
+            <h2><span>🧱</span><span>Docker Build Cache</span></h2>
+            <div class="section-actions">
+              <button type="button" class="btn btn-danger" onclick="dcPruneCache()" id="dcPruneBtn" disabled><span>🧹</span><span>Prune (-af)</span></button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--color-text-muted);margin:4px 0 8px 0">
+            ⚠️ <code>docker builder prune -af</code> 会<strong>删除所有未使用的 build cache</strong>，不可恢复。下次 <code>docker build</code> 会重新拉取。
+          </div>
+          <div id="dc-cache-status"></div>
+        </div>
       </div>
     </div>
   </div>
