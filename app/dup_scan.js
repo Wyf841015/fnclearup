@@ -60,14 +60,16 @@ async function reloadControl(stateDir, jobId, state) {
 
 async function main() {
   const args = process.argv.slice(2);
-  if (args.length < 4) { process.stderr.write('Usage: node dup_scan.js <scan_type> <scan_path> <job_id> <state_dir>\n'); process.exit(1); }
+  if (args.length < 4) { process.stderr.write('Usage: node dup_scan.js <scan_type> <scan_paths> <job_id> <state_dir>\\n'); process.exit(1); }
 
-  const [scanType, scanPath, jobId, stateDir] = args;
-  if (!['music', 'files'].includes(scanType)) { process.stderr.write(`Invalid scan_type: ${scanType}\n`); process.exit(1); }
+  const [scanType, scanPathsRaw, jobId, stateDir] = args;
+  const scanPaths = scanPathsRaw.split(',').map(p => p.trim()).filter(Boolean);
+  if (!['music', 'files'].includes(scanType)) { process.stderr.write(`Invalid scan_type: ${scanType}\\n`); process.exit(1); }
+  if (scanPaths.length === 0) { process.stderr.write('No paths provided\\n'); process.exit(1); }
   mkdirSync(stateDir, { recursive: true });
 
   let state = {
-    id: jobId, scanType, rootPath: scanPath,
+    id: jobId, scanType, rootPaths: scanPaths,
     status: 'counting',
     progress: { total: 0, processed: 0, currentFile: '' },
     files: [], duplicates: [],
@@ -76,11 +78,13 @@ async function main() {
     _aborted: false, _paused: false, _prev_status: 'counting',
   };
 
-  if (!existsSync(scanPath)) {
-    state.status = 'error';
-    state.error = `目录不存在: ${scanPath}`;
-    writeState(stateDir, jobId, state);
-    process.exit(1);
+  for (const sp of scanPaths) {
+    if (!existsSync(sp)) {
+      state.status = 'error';
+      state.error = `目录不存在: ${sp}`;
+      writeState(stateDir, jobId, state);
+      process.exit(1);
+    }
   }
 
   // Phase 1: count files (sequential walk, record sizes for pre-grouping)
@@ -105,7 +109,7 @@ async function main() {
         }
       }
     };
-    walk(scanPath);
+    for (const sp of scanPaths) walk(sp);
   } catch (e) { state.status = 'error'; state.error = e.message; writeState(stateDir, jobId, state); return; }
 
   if (!allFiles.length) {

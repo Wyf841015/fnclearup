@@ -300,26 +300,26 @@ describe('API: Duplicate File Scan', () => {
   });
 
   it('POST /api/dup/scan starts scan', async () => {
-    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', path: dupTestDir });
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', paths: [dupTestDir] });
     assert.strictEqual(status, 200);
     assert.ok(data.jobId);
     assert.strictEqual(data.status, 'started');
   });
 
   it('POST /api/dup/scan with invalid path returns error', async () => {
-    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', path: '/nonexistent' });
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', paths: ['/nonexistent'] });
     assert.strictEqual(status, 400);
     assert.ok(data.error);
   });
 
   it('POST /api/dup/scan with invalid type returns error', async () => {
-    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'invalid', path: dupTestDir });
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'invalid', paths: [dupTestDir] });
     assert.strictEqual(status, 400);
   });
 
   it('GET /api/dup/status returns progress or complete', async () => {
     // Start a scan first
-    const scanRes = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', path: dupTestDir });
+    const scanRes = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', paths: [dupTestDir] });
     const jobId = scanRes.data.jobId;
 
     // Poll for completion (up to 10s)
@@ -377,7 +377,7 @@ describe('API: Duplicate File Scan', () => {
   });
 
   it('POST /api/dup/export with valid jobId exports reports', async () => {
-    const scanRes = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', path: dupTestDir });
+    const scanRes = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', paths: [dupTestDir] });
     const jobId = scanRes.data.jobId;
     // Wait for completion
     let complete = false;
@@ -514,7 +514,7 @@ describe('API: Empty Dir Scan', () => {
 
 describe('API: Path Whitelist (Security)', () => {
   it('POST /api/dup/scan with /etc is rejected', async () => {
-    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', path: '/etc' });
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/scan', { type: 'files', paths: ['/etc'] });
     assert.strictEqual(status, 403);
     assert.ok(data.error);
   });

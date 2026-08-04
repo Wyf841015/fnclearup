@@ -21,24 +21,30 @@ export function setDupPaths(stateDir, scanScript) {
 export async function handleDupScan(req, res) {
   const data = await parseBody(req);
   const scanType = data.type || 'files';
-  const scanPath = (data.path || '').trim();
+  const scanPaths = Array.isArray(data.paths) ? data.paths.map(p => p.trim()).filter(Boolean) : [];
   if (!['music', 'files'].includes(scanType)) {
     sendJSON(res, 400, { error: '无效的扫描类型', success: false });
     return;
   }
-  if (!scanPath || !existsSync(scanPath)) {
-    sendJSON(res, 400, { error: scanPath ? `目录不存在: ${scanPath}` : '无效的扫描路径', success: false });
+  if (scanPaths.length === 0) {
+    sendJSON(res, 400, { error: '请至少选择一个扫描目录', success: false });
     return;
   }
-  if (!isSafePath(scanPath)) {
-    sendJSON(res, 403, { error: '路径越界：仅允许 /vol* 下的目录', success: false });
-    return;
+  for (const p of scanPaths) {
+    if (!existsSync(p)) {
+      sendJSON(res, 400, { error: `目录不存在: ${p}`, success: false });
+      return;
+    }
+    if (!isSafePath(p)) {
+      sendJSON(res, 403, { error: `路径越界：${p} 仅允许 /vol* 下的目录`, success: false });
+      return;
+    }
   }
   const jobId = `dup_${randomUUID().slice(0, 8)}`;
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
 
   const initialState = {
-    id: jobId, scanType, rootPath: scanPath,
+    id: jobId, scanType, rootPaths: scanPaths,
     status: 'counting',
     progress: { total: 0, processed: 0, currentFile: '' },
     files: [], duplicates: [], stats: { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 },
@@ -50,19 +56,19 @@ export async function handleDupScan(req, res) {
   renameSync(tmpInit, stateFile);
 
   if (existsSync(DUP_SCAN_SCRIPT)) {
-    const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPath, jobId, DUP_STATE_DIR], {
+    const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPaths.join(','), jobId, DUP_STATE_DIR], {
       stdio: 'ignore', detached: false,
     });
     proc.on('exit', () => { dupJobs.delete(jobId); });
-    dupJobs.set(jobId, { stateFile, scanType, scanPath, proc });
+    dupJobs.set(jobId, { stateFile, scanType, scanPaths, proc });
   } else {
-    runDupScanInline(jobId, scanType, scanPath, stateFile).catch(() => {});
+    runDupScanInline(jobId, scanType, scanPaths, stateFile).catch(() => {});
   }
 
   sendJSON(res, 200, { jobId, status: 'started', success: true });
 }
 
-async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
+async function runDupScanInline(jobId, scanType, scanPaths, stateFile) {
   const extensions = scanType === 'music' ? MUSIC_EXTS : null;
   const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
   const update = () => {
@@ -73,14 +79,18 @@ async function runDupScanInline(jobId, scanType, scanPath, stateFile) {
   try {
     state.status = 'counting';
     const allFiles = [];         // {path, size}[]
-    for await (const fp of walkDir(scanPath, extensions)) {
+    for (const sp of scanPaths) {
       if (state._aborted) { state.status = 'aborted'; update(); return; }
       if (await checkPause(state, stateFile, update)) { state.status = 'aborted'; update(); return; }
-      let st;
-      try { st = statSync(fp); } catch { continue; }
-      allFiles.push({ path: fp, size: st.size });
-      state.progress.total = allFiles.length;
-      if (allFiles.length % 50 === 0) update();
+      for await (const fp of walkDir(sp, extensions)) {
+        if (state._aborted) { state.status = 'aborted'; update(); return; }
+        if (await checkPause(state, stateFile, update)) { state.status = 'aborted'; update(); return; }
+        let st;
+        try { st = statSync(fp); } catch { continue; }
+        allFiles.push({ path: fp, size: st.size });
+        state.progress.total = allFiles.length;
+        if (allFiles.length % 50 === 0) update();
+      }
     }
     if (!allFiles.length) { state.status = 'complete'; update(); return; }
 
@@ -242,7 +252,7 @@ export function handleDupStatus(req, res) {
     const page = allDups.slice(start, start + limit);
 
     const formatted = {
-      id: raw.id, scanType: raw.scanType, status: raw.status, progress: raw.progress, rootPath: raw.rootPath,
+      id: raw.id, scanType: raw.scanType, status: raw.status, progress: raw.progress, rootPaths: raw.rootPaths,
       duplicates: page.map(g => ({
         hash: g.hash, count: g.count, wasted: g.wasted, wastedHuman: formatBytes(g.wasted),
         files: g.files.map(f => ({ path: f.path, name: basename(f.path), size: f.size, sizeHuman: formatBytes(f.size), ext: f.ext, id3: f.id3 })),
@@ -263,7 +273,7 @@ export function handleDupJobs(req, res) {
     for (const f of files) {
       try {
         const raw = JSON.parse(readFileSync(join(DUP_STATE_DIR, f), 'utf-8'));
-        list.push({ id: raw.id, scanType: raw.scanType, status: raw.status, rootPath: raw.rootPath, progress: raw.progress, stats: raw.stats, startTime: raw.startTime });
+        list.push({ id: raw.id, scanType: raw.scanType, status: raw.status, rootPaths: raw.rootPaths, progress: raw.progress, stats: raw.stats, startTime: raw.startTime });
       } catch {}
     }
   } catch {}

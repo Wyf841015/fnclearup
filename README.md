@@ -4,6 +4,13 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.9.2 更新
+
+- **新增：去重多目录扫描** — 目录浏览支持选择多个目录同时查重，音乐/文件去重面板均可添加多个扫描路径
+- **修复：去重扫描后端** — `handleDupScan` 接受 `paths` 数组替代单 `path`，遍历所有路径收集文件
+- **修复：外部分支扫描脚本** — `dup_scan.js` 支持逗号分隔多路径参数
+- **测试覆盖：84**
+
 ## v0.9.1 更新
 
 - **修复：P0 文件名截断损坏** — `app.js` / `empty_dir.js` / `temp.js` 三处 trash 重命名用 `slice(0, ext.length)` 保留 stem 前 N 字符（例：`data.bin.gz` → `dat_1.gz`），改为 `slice(0, -ext.length)` 正确去掉扩展名
