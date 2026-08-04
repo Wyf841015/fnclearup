@@ -604,7 +604,7 @@ async function doDeleteTemp() {
 // ════════════════════════════════
 // Duplicate File Scanning
 // ════════════════════════════════
-const DupState = { music: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0 }, files: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0 } };
+const DupState = { music: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0, paths: ['/vol1/1000/music'] }, files: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0, paths: ['/vol1/1000'] } };
 
 function getDupIds(tab) {
   return { pathInput: tab+'Path', scanBtn: tab+'ScanBtn', stopBtn: tab+'StopBtn', deleteBtn: tab+'DeleteBtn', exportBtn: tab+'ExportBtn', progress: tab+'Progress', progressBar: tab+'ProgressBar', progressText: tab+'ProgressText', progressCount: tab+'ProgressCount', currentFile: tab+'CurrentFile', status: tab+'Status', results: tab+'Results', stats: tab+'Stats', dupList: tab+'DupList', actions: tab+'Actions', selectedCount: tab+'SelectedCount', selectedSize: tab+'SelectedSize', empty: tab+'Empty' };
@@ -619,8 +619,8 @@ function switchDupInnerTab(tabName) {
 async function startDupScan(tab) {
   const ids = getDupIds(tab);
   if (DupState[tab].checking) { showToast('已有扫描任务进行中', 'error'); return; }
-  const scanPath = ($(ids.pathInput)?.value||'').trim();
-  if (!scanPath) { showToast('请输入扫描目录路径', 'error'); return; }
+  const scanPaths = DupState[tab].paths.slice();
+  if (scanPaths.length === 0) { showToast('请添加至少一个扫描目录', 'error'); return; }
 
   $(ids.results)&&($(ids.results).style.display='none');
   $(ids.empty)&&($(ids.empty).style.display='none');
@@ -638,7 +638,7 @@ async function startDupScan(tab) {
   if(statusEl) statusEl.innerHTML='<span class="dup-spinner"></span> 正在验证路径...';
 
   try {
-    const result = await API.post('api/dup/scan', { type: tab==='music'?'music':'files', path: scanPath });
+    const result = await API.post('api/dup/scan', { type: tab==='music'?'music':'files', paths: scanPaths });
     if (result.error || !result.jobId) {
       showToast(result.error||'启动扫描失败','error');
       if(statusEl) statusEl.innerHTML='❌ '+(result.error||'启动扫描失败');
@@ -1300,12 +1300,23 @@ async function exportDup(tab){
 
 // ── Directory Browser ──
 let _browseTargetId = '';
+let _browseDupTab = '';
 function showBrowseModal(inputId) {
   _browseTargetId = inputId;
+  _browseDupTab = '';
   const input = document.getElementById(inputId);
   const path = input ? input.value || '/' : '/';
   document.getElementById('browseModal').classList.add('visible');
   loadBrowseDir(path);
+}
+function showDupBrowseModal(tab) {
+  _browseDupTab = tab;
+  _browseTargetId = '';
+  document.getElementById('browseModal').classList.add('visible');
+  // Start from the last path in the list, or root
+  const paths = DupState[tab]?.paths;
+  const startPath = paths && paths.length > 0 ? paths[paths.length - 1] : '/';
+  loadBrowseDir(startPath);
 }
 function hideBrowseModal() {
   document.getElementById('browseModal')?.classList.remove('visible');
@@ -1340,10 +1351,44 @@ function browseGoUp() {
 }
 function browseSelect() {
   const p = document.getElementById('browsePath');
-  if (!p || !_browseTargetId) return;
+  if (!p) return;
+  const path = p.textContent;
+  if (_browseDupTab) {
+    const tab = _browseDupTab;
+    _browseDupTab = '';
+    if (DupState[tab] && !DupState[tab].paths.includes(path)) {
+      DupState[tab].paths.push(path);
+      renderDupPaths(tab);
+    }
+    hideBrowseModal();
+    return;
+  }
+  if (!_browseTargetId) return;
   const input = document.getElementById(_browseTargetId);
-  if (input) input.value = p.textContent;
+  if (input) input.value = path;
   hideBrowseModal();
+}
+
+function renderDupPaths(tab) {
+  const container = document.getElementById(tab + 'PathList');
+  if (!container) return;
+  const paths = DupState[tab]?.paths || [];
+  if (paths.length === 0) {
+    container.innerHTML = '<span class="dup-path-empty">尚未添加目录，请点击"添加目录"选择</span>';
+    return;
+  }
+  let html = '';
+  for (let i = 0; i < paths.length; i++) {
+    html += '<span class="dup-path-tag"><span class="dup-path-tag-text" title="' + escHtml(paths[i]) + '">' + escHtml(paths[i]) + '</span><button type="button" class="dup-path-tag-remove" onclick="removeDupPath(\'' + tab + '\',' + i + ')" title="移除">×</button></span>';
+  }
+  container.innerHTML = html;
+}
+
+function removeDupPath(tab, index) {
+  if (DupState[tab]) {
+    DupState[tab].paths.splice(index, 1);
+    renderDupPaths(tab);
+  }
 }
 
 // ════════════════════════════════
@@ -2382,6 +2427,10 @@ function init() {
   // Load schedule config
   loadSchedule();
 
+  // Render initial dup path lists
+  renderDupPaths('music');
+  renderDupPaths('files');
+
   // Export all functions to window for inline onclick and event delegation
   const exports = {
     toggleTheme, showSponsorModal, showSponsorImgFull,
@@ -2408,7 +2457,8 @@ function init() {
     showDupDeleteModal, hideDupDeleteModal,
     confirmDupDelete,
     updateDupSelectedCount, loadMoreDupResults,
-    showBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
+    showBrowseModal, showDupBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
+    renderDupPaths, removeDupPath,
     startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
     showEmptyDeleteModal, hideEmptyDeleteModal, confirmEmptyDelete, confirmEmptyDeleteOne,
     doSysCleanScan, renderSysCleanList, selectAllSysClean, selectAllSysCleanRecommended,

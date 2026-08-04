@@ -236,6 +236,12 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .dup-scan-section{margin-bottom:18px}
 .dup-scan-section h2{font-size:18px;font-weight:600;margin-bottom:6px}
 .dup-desc{font-size:13px;color:var(--color-text-secondary);margin-bottom:12px;line-height:1.5}
+.dup-path-list{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1;min-height:38px;padding:6px 10px;border:1px solid var(--color-border);border-radius:var(--radius-sm);background:var(--color-input-bg)}
+.dup-path-empty{font-size:12px;color:var(--color-text-tertiary)}
+.dup-path-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--color-primary);color:#fff;border-radius:var(--radius-sm);font-size:12px;max-width:100%;line-height:1.4}
+.dup-path-tag-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+.dup-path-tag-remove{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border:none;background:rgba(255,255,255,.25);color:#fff;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;padding:0;flex-shrink:0;transition:background .15s}
+.dup-path-tag-remove:hover{background:rgba(255,255,255,.45)}
 .dup-scan-input-row{display:flex;gap:10px;margin-bottom:0}
 .dup-scan-btns{display:flex;gap:6px;flex-shrink:0;align-items:flex-start}
 .dup-scan-btns .btn{white-space:nowrap}
