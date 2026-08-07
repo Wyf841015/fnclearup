@@ -51,6 +51,40 @@ function showToast(msg, type='info') {
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},3000);
 }
 
+// ── Cleanup summary ──
+async function refreshCleanupSummary() {
+  const body = $('summaryBody');
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--color-text-secondary)">⏳ 扫描中...</div>';
+  try {
+    const r = await API.get('api/cleanup/quick-summary', 20000);
+    if (!r.ok && !r.results) { body.innerHTML = '<div style="color:var(--color-danger)">❌ ' + escHtml(r.error || '扫描失败') + '</div>'; return; }
+    const res = r.results || {};
+    const rows = [];
+    function addRow(icon, label, count, size, tab) {
+      rows.push(`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--color-border);cursor:pointer" onclick="switchTab('${tab}');document.getElementById('cleanupSummaryModal').classList.remove('visible')">
+        <span>${icon} ${label}</span>
+        <span style="color:var(--color-text-secondary)">${count} 项${size ? ' · ' + formatBytes(size) : ''}</span>
+      </div>`);
+    }
+    if (res.app) addRow('📦', '应用残留', res.app.count, res.app.size, 'app');
+    if (res.temp) addRow('🕐', '过期临时文件', res.temp.count, res.temp.size, 'temp');
+    if (res.docker_images) addRow('🖼️', 'Docker 镜像', res.docker_images.count, 0, 'docker');
+    if (res.docker_volumes) addRow('💾', 'Docker 卷', res.docker_volumes.count, 0, 'docker');
+    if (res.docker_networks) addRow('🌐', 'Docker 网络', res.docker_networks.count, 0, 'docker');
+    if (rows.length === 0) rows.push('<div style="text-align:center;padding:20px;color:var(--color-success)">🎉 未发现明显可清理项</div>');
+    body.innerHTML = rows.join('');
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--color-danger)">❌ ' + escHtml(e.message) + '</div>';
+  }
+}
+function showCleanupSummary() {
+  const m = $('cleanupSummaryModal');
+  if (!m) return;
+  m.classList.add('visible');
+  refreshCleanupSummary();
+}
+
 // Sponsor
 function showSponsorModal() { $('#sponsorModal')?.classList.add('show'); }
 function showSponsorImgFull(img) { const o=document.getElementById('sponsorImgOverlay'); if(o){o.classList.add('show');document.getElementById('sponsorImgFull').src=img.src;} }
@@ -2440,6 +2474,7 @@ function init() {
   // Export all functions to window for inline onclick and event delegation
   const exports = {
     toggleTheme, showSponsorModal, showSponsorImgFull,
+    showCleanupSummary, refreshCleanupSummary,
     switchTab,
     doScan, selectAllApp, updateSelectInfo,
     confirmDelete, doDelete, closeModal,
