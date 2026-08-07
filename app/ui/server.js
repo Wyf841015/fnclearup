@@ -1,6 +1,7 @@
-import { existsSync, statSync, readdirSync, readFileSync, unlinkSync, mkdirSync, writeFileSync, rmSync, renameSync, cpSync, lstatSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, readFileSync, unlinkSync, mkdirSync, writeFileSync, rmSync, renameSync, cpSync, lstatSync, createReadStream } from 'node:fs';
 import { join, extname, dirname, basename } from 'node:path';
 import { createServer } from 'node:http';
+import { gzipSync, brotliCompressSync } from 'node:zlib';
 import { URL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { MIME, VERSION } from './lib/config.js';
@@ -160,21 +161,43 @@ async function handle(req, res) {
 
     // Try exact file match first
     if (existsSync(requestedPath) && statSync(requestedPath).isFile()) {
-      const ext = extname(requestedPath).toLowerCase();
-      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-      res.end(readFileSync(requestedPath));
+      serveStatic(res, extname(requestedPath).toLowerCase(), requestedPath);
       return;
     }
-    // SPA fallback
+    // SPA fallback (never cache index.html)
     const indexPath = join(UI_DIR, 'index.html');
     if (existsSync(indexPath)) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(readFileSync(indexPath));
+      const buf = readFileSync(indexPath);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(buf);
       return;
     }
     res.writeHead(404); res.end('Not Found');
   } catch (e) {
     sendJSON(res, 500, { error: e.message });
+  }
+}
+
+// ── Static file serving with cache and gzip ──
+const CACHE_TTL = 7 * 24 * 3600;
+const GZIP_EXT = {'.js':1,'.css':1,'.html':1,'.json':1,'.svg':1};
+function serveStatic(res, ext, requestedPath) {
+  const buf = readFileSync(requestedPath);
+  const accept = (res.req?.headers?.['accept-encoding']) || '';
+  const headers = {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': 'public, max-age=' + CACHE_TTL + ', immutable',
+  };
+  if (ext in GZIP_EXT && accept.includes('gzip')) {
+    const compressed = gzipSync(buf);
+    headers['Content-Encoding'] = 'gzip';
+    headers['Content-Length'] = compressed.length;
+    res.writeHead(200, headers);
+    res.end(compressed);
+  } else {
+    headers['Content-Length'] = buf.length;
+    res.writeHead(200, headers);
+    res.end(buf);
   }
 }
 
