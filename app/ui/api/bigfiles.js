@@ -17,7 +17,7 @@
 // yield every N entries so /api/bigfiles/stop can interrupt within ~1s, same
 // pattern as empty_dir_scan.
 
-import { existsSync, statSync, readdirSync, unlinkSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { sendJSON, formatBytes, isSafePath, parseBody } from '../lib/util.js';
 import { moveToTrash } from './trash.js';
@@ -232,7 +232,6 @@ export async function handleBigFilesDelete(req, res) {
             const st = statSync(fp);
             if (st.isDirectory()) {
               // For directories we can't trash, try permanent remove
-              const { rmSync } = await import('node:fs');
               rmSync(fp, { recursive: true, force: true });
               ok = true;
             } else {
@@ -248,7 +247,6 @@ export async function handleBigFilesDelete(req, res) {
         try {
           const st = statSync(fp);
           if (st.isDirectory()) {
-            const { rmSync } = await import('node:fs');
             rmSync(fp, { recursive: true, force: true });
           } else {
             unlinkSync(fp);

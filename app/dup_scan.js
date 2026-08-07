@@ -48,7 +48,7 @@ async function reloadControl(stateDir, jobId, state) {
         } catch {
           // If state file is corrupted, retry a few times then bail
           breakCounter = (breakCounter || 0) + 1;
-          if (breakCounter > 60) { state._paused = false; writeState(stateDir, jobId, state); return true; }
+          if (breakCounter > 20) { state._paused = false; writeState(stateDir, jobId, state); return true; }
         }
       }
     }

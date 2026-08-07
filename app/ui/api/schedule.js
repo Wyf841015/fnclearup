@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import http from 'node:http';
-import { sendJSON } from '../lib/util.js';
+import { sendJSON, parseBody } from '../lib/util.js';
 
 // ── Default config ──
 const DEFAULT_CONFIG = {
@@ -356,10 +356,8 @@ export async function handleSchedule(req, res) {
   }
 
   if (req.method === 'POST') {
-    let body = '';
     try {
-      for await (const chunk of req) body += chunk.toString();
-      const data = JSON.parse(body);
+      const data = await parseBody(req);
       if (typeof data.enabled === 'boolean') config.enabled = data.enabled;
       if (typeof data.hour === 'number' && data.hour >= 0 && data.hour <= 23) config.hour = data.hour;
       if (typeof data.minute === 'number' && data.minute >= 0 && data.minute <= 59) config.minute = data.minute;

@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { sendJSON, execCmd, parseBody, formatBytes, isSafePath } from '../lib/util.js';
+import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, parseQuery } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
 import { getHashPool } from '../../dup_hash_pool.js';
 
@@ -57,9 +57,11 @@ export async function handleDupScan(req, res) {
 
   if (existsSync(DUP_SCAN_SCRIPT)) {
     const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPaths.join(','), jobId, DUP_STATE_DIR], {
-      stdio: 'ignore', detached: false,
+      stdio: 'ignore', detached: false, timeout: 3600000,
     });
-    proc.on('exit', () => { dupJobs.delete(jobId); });
+    const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 3660000);
+    proc.on('exit', () => { clearTimeout(killTimer); dupJobs.delete(jobId); });
+    proc.on('error', () => { clearTimeout(killTimer); dupJobs.delete(jobId); });
     dupJobs.set(jobId, { stateFile, scanType, scanPaths, proc });
   } else {
     runDupScanInline(jobId, scanType, scanPaths, stateFile).catch(() => {});
@@ -225,16 +227,8 @@ async function checkPause(state, stateFile, update) {
 
 // GET /api/dup/status?jobId=xxx&start=0&limit=50
 export function handleDupStatus(req, res) {
-  const rawUrl = typeof req.url === 'string' ? req.url : String(req.url);
-  const qIndex = rawUrl.indexOf('?');
-  const params = {};
-  if (qIndex >= 0) {
-    const qs = rawUrl.slice(qIndex + 1).split('&');
-    for (const p of qs) {
-      const [k, v] = p.split('=');
-      params[decodeURIComponent(k)] = decodeURIComponent(v || '');
-    }
-  }
+  const url = new URL(req.url, 'http://localhost');
+  const params = parseQuery(url);
   const jobId = params.jobId || '';
   if (!jobId) { sendJSON(res, 400, { error: '缺少 jobId 参数', success: false }); return; }
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
@@ -363,7 +357,10 @@ export async function handleDupExport(req, res) {
         csvEscape(id3.artist||''), csvEscape(id3.title||''), csvEscape(id3.album||'')
       ].join(','));
     }
-    writeFileSync(join(expPath, 'report.csv'), '\uFEFF' + csvLines.join('\n'));
+    const csvPath = join(expPath, 'report.csv');
+    const csvTmp = csvPath + '.tmp';
+    writeFileSync(csvTmp, '\uFEFF' + csvLines.join('\n'));
+    renameSync(csvTmp, csvPath);
     const readme = [
       `# 重复文件报告 - ${hShort}`,
       `**哈希**: ${g.hash}`,
@@ -377,7 +374,10 @@ export async function handleDupExport(req, res) {
         return `${i + 1}. ${f.path} (${formatBytes(f.size)})${tags}`;
       }),
     ].join('\n');
-    writeFileSync(join(expPath, 'README.md'), readme);
+    const readmePath = join(expPath, 'README.md');
+    const readmeTmp = readmePath + '.tmp';
+    writeFileSync(readmeTmp, readme);
+    renameSync(readmeTmp, readmePath);
     exported++;
   }
   sendJSON(res, 200, { exported, outputDir: outDir, success: true });
