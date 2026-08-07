@@ -29,8 +29,18 @@ const $ = id => document.getElementById(id.replace(/^#/, ''));
 function escHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 
 // Theme
+const THEME_KEY = 'fnclearup-dark';
 function applyTheme(dark) { document.documentElement.classList.toggle('dark', dark); }
-function toggleTheme() { applyTheme(!document.documentElement.classList.contains('dark')); }
+function toggleTheme() {
+  const dark = !document.documentElement.classList.contains('dark');
+  applyTheme(dark);
+  try { localStorage.setItem(THEME_KEY, dark ? '1' : '0'); } catch(e) {}
+}
+function initTheme() {
+  let dark = false;
+  try { dark = localStorage.getItem(THEME_KEY) === '1'; } catch(e) {}
+  applyTheme(dark);
+}
 
 // Toast
 function showToast(msg, type='info') {
@@ -2414,6 +2424,7 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 else init();
 
 function init() {
+  initTheme();
   doScan();
 
   // Check version from FnDepot
