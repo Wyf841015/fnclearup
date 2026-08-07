@@ -246,7 +246,7 @@ export async function handleDockerBuildCachePrune(req, res) {
             wouldReclaim = parseSizeToBytes(obj.Reclaimable || '0 B');
             break;
           }
-        } catch {}
+        } catch { console.error('[docker_cleanup.js]'); }
       }
     }
     sendJSON(res, 200, {

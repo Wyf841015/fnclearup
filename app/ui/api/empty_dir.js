@@ -56,7 +56,7 @@ function runScan(jobId, scanPath) {
       const tmp = stateFile + '.tmp';
       writeFileSync(tmp, JSON.stringify(raw));
       renameSync(tmp, stateFile);
-    } catch {}
+    } catch { console.error('[empty_dir.js]'); }
   }
 
   // Phase 1: visit all dirs, count files in each dir, record parent hasFile state.
@@ -135,9 +135,9 @@ function runScan(jobId, scanPath) {
                 childHasFile = true;
                 break;
               }
-            } catch {}
+            } catch { console.error('[empty_dir.js]'); }
           }
-        } catch {}
+        } catch { console.error('[empty_dir.js]'); }
         hasFile.set(p, own || childHasFile);
       }
 
@@ -159,9 +159,9 @@ function runScan(jobId, scanPath) {
             try {
               const st = lstatSync(fp);
               if (st.isDirectory() && !st.isSymbolicLink()) await collect(fp);
-            } catch {}
+            } catch { console.error('[empty_dir.js]'); }
           }
-        } catch {}
+        } catch { console.error('[empty_dir.js]'); }
       }
       await collect(scanPath);
 
@@ -190,7 +190,7 @@ export async function handleEmptyDirScan(req, res) {
   const bufs = [];
   for await (const c of req) bufs.push(c);
   let data = {};
-  try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch {}
+  try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch { console.error('[empty_dir.js]'); }
   const scanPath = (data.path || '').trim();
   if (!scanPath || !existsSync(scanPath)) {
     sendJSON(res, 400, { error: scanPath ? `目录不存在: ${scanPath}` : '无效的扫描路径', success: false });
@@ -245,7 +245,7 @@ export async function handleEmptyDirStop(req, res) {
   const bufs = [];
   for await (const c of req) bufs.push(c);
   let data = {};
-  try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch {}
+  try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch { console.error('[empty_dir.js]'); }
   const jobId = data.jobId || '';
   if (!jobId) { sendJSON(res, 400, { error: '缺少 jobId', success: false }); return; }
   const job = emptyDirJobs.get(jobId);
@@ -280,7 +280,7 @@ export async function handleEmptyDirDelete(req, res) {
   const bufs = [];
   for await (const c of req) bufs.push(c);
   let data = {};
-  try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch {}
+  try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch { console.error('[empty_dir.js]'); }
   const rawPaths = Array.isArray(data.paths) ? data.paths : [];
   const paths = rawPaths.filter(p => isSafePath(p));
   const skipped = rawPaths.length - paths.length;

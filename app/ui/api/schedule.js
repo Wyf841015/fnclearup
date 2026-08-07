@@ -319,7 +319,7 @@ function logRunHistory(report) {
   let history = [];
   try {
     if (existsSync(historyPath)) history = JSON.parse(readFileSync(historyPath, 'utf8'));
-  } catch {}
+  } catch { console.error('[schedule.js]'); }
   // Lightweight summary for history
   const summary = {
     startedAt: report.startedAt,

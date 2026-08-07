@@ -211,8 +211,8 @@ export class HashPool {
   async terminate() {
     for (const w of this.workers) {
       if (w) {
-        try { w.postMessage({ type: 'exit' }); } catch {}
-        try { w.terminate(); } catch {}
+        try { w.postMessage({ type: 'exit' }); } catch { console.error('[dup_hash_pool.js]'); }
+        try { w.terminate(); } catch { console.error('[dup_hash_pool.js]'); }
       }
     }
     this.workers = [];

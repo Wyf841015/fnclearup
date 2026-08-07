@@ -23,9 +23,9 @@ function getUserHomes() {
           if (st.isDirectory() && st.uid !== undefined) {
             homes.push({ username: name, home, uid: parseInt(name, 10) });
           }
-        } catch {}
+        } catch { console.error('[sysclean.js]'); }
       }
-    } catch {}
+    } catch { console.error('[sysclean.js]'); }
   }
   // Also include $HOME if it's a real dir and not already represented.
   // This covers dev/test (process.env.HOME=/home/admin on the build box) as
@@ -108,9 +108,9 @@ const SCAN_TARGETS = [
         try {
           for (const f of readdirSync(full)) {
             const fp = join(full, f);
-            try { total += lstatSync(fp).size; } catch {}
+            try { total += lstatSync(fp).size; } catch { console.error('[sysclean.js]'); }
           }
-        } catch {}
+        } catch { console.error('[sysclean.js]'); }
         return total > 50 * 1024 * 1024;
       }
       return false;
@@ -161,9 +161,9 @@ function dirSize(p, recurse = true) {
         const s = lstatSync(fp);
         if (s.isFile()) total += s.size;
         else if (s.isDirectory() && recurse) total += dirSize(fp, true);
-      } catch {}
+      } catch { console.error('[sysclean.js]'); }
     }
-  } catch {}
+  } catch { console.error('[sysclean.js]'); }
   return total;
 }
 
@@ -200,7 +200,7 @@ export function handleSysCleanScan(req, res) {
             recommended: target.recommended === true || isRecommended(id),
           });
         }
-      } catch {}
+      } catch { console.error('[sysclean.js]'); }
       continue;
     }
     // Non-dynamic: filter children if filter is set; otherwise treat the path as one item
@@ -241,7 +241,7 @@ export function handleSysCleanScan(req, res) {
             recommended: target.recommended === true || isRecommended(id),
           });
         }
-      } catch {}
+      } catch { console.error('[sysclean.js]'); }
     }
   }
   // Sort by size desc
@@ -341,8 +341,8 @@ export async function handleSysCleanClean(req, res) {
     }
     let size = 0, mtime = 0;
     if (path && existsSync(path)) {
-      try { size = dirSize(path, true); } catch {}
-      try { mtime = lstatSync(path).mtimeMs; } catch {}
+      try { size = dirSize(path, true); } catch { console.error('[sysclean.js]'); }
+      try { mtime = lstatSync(path).mtimeMs; } catch { console.error('[sysclean.js]'); }
     }
     snapshot.push({ id, target_id, label, path, size, mtime });
   }
@@ -415,10 +415,10 @@ export function handleSysCleanListManifests(req, res) {
         try {
           const st = lstatSync(full);
           manifests.push({ name: f, path: full, size: st.size, size_str: formatBytes(st.size), mtime: st.mtimeMs });
-        } catch {}
+        } catch { console.error('[sysclean.js]'); }
       }
     }
-  } catch {}
+  } catch { console.error('[sysclean.js]'); }
   manifests.sort((a, b) => b.mtime - a.mtime);
   sendJSON(res, 200, { manifests, base_dir: base, count: manifests.length, success: true });
 }

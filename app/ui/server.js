@@ -228,13 +228,13 @@ try {
     try { unlinkSync(SOCK_PATH); console.log('[sock] removed stale socket'); }
     catch(e) { console.warn('[sock] could not remove stale socket:', e.message); }
   }
-} catch(e) {}
+} catch (e) { console.error('[server.js]', e); }
 
 const sockServer = createServer(handle);
 sockServer.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     console.warn('[sock] address in use, cleaning up...');
-    try { unlinkSync(SOCK_PATH); } catch(e) {}
+    try { unlinkSync(SOCK_PATH); } catch (e) { console.error('[server.js]', e); }
     sockServer.listen(SOCK_PATH);
   } else {
     console.error('[FATAL] UNIX socket server error:', e.message);
@@ -273,7 +273,7 @@ function handleTrashBrowse(req, res) {
 
 async function handleTrashClean(req, res) {
   let body = {};
-  try { body = await parseBody(req); } catch {}
+  try { body = await parseBody(req); } catch { console.error('[server.js]'); }
   const ageDays = Number(body.ageDays);
   if (!Number.isFinite(ageDays) || ageDays < 0) {
     sendJSON(res, 400, { error: 'ageDays must be a non-negative number (0 = clean all)' });
@@ -319,7 +319,7 @@ async function handleQuickSummary(req, res) {
                 const sdStat = statSync(join(appDir, d.name, sd)).catch(() => null);
                 if (sdStat) orphanSize += sdStat.size;
               }
-            } catch {}
+            } catch { console.error('[server.js]'); }
           }
         }
       }
@@ -340,9 +340,9 @@ async function handleQuickSummary(req, res) {
             if ((Date.now() - st.mtimeMs) / 3600000 < 24) continue;
             tempCount++;
             tempSize += st.isDirectory() ? 0 : st.size;
-          } catch {}
+          } catch { console.error('[server.js]'); }
         }
-      } catch {}
+      } catch { console.error('[server.js]'); }
     }
     results.temp = { count: tempCount, size: tempSize };
 
@@ -365,17 +365,17 @@ async function handleQuickSummary(req, res) {
 // ── Shutdown ──
 function shutdown() {
   for (const [jobId, job] of dupJobs) {
-    if (job.proc) { try { job.proc.kill(); } catch(e) {} }
+    if (job.proc) { try { job.proc.kill(); } catch (e) { console.error('[server.js]', e); } }
     try {
       const raw = JSON.parse(readFileSync(job.stateFile, 'utf-8'));
       raw._aborted = true; raw.status = 'aborted';
       const tmpS = job.stateFile + '.tmp';
       writeFileSync(tmpS, JSON.stringify(raw));
       renameSync(tmpS, job.stateFile);
-    } catch(e) {}
+    } catch (e) { console.error('[server.js]', e); }
   }
-  try { httpServer.close(); } catch(e) {}
-  try { sockServer.close(); } catch(e) {}
+  try { httpServer.close(); } catch (e) { console.error('[server.js]', e); }
+  try { sockServer.close(); } catch (e) { console.error('[server.js]', e); }
   setTimeout(() => process.exit(0), 2000);
 }
 process.on('SIGTERM', shutdown);
