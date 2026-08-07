@@ -144,6 +144,8 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/docker/stopped/remove') { await handleDockerStoppedRemove(req, res); return; }
       if (method === 'GET' && path === '/api/docker/build_cache') { await handleDockerBuildCache(req, res); return; }
       if (method === 'POST' && path === '/api/docker/build_cache/prune') { await handleDockerBuildCachePrune(req, res); return; }
+      // Quick cleanup summary
+      if (method === 'GET' && path === '/api/cleanup/quick-summary') { await handleQuickSummary(req, res); return; }
       sendJSON(res, 404, { error: 'API endpoint not found' });
       return;
     }
@@ -283,6 +285,80 @@ async function handleTrashClean(req, res) {
     sendJSON(res, 200, { ok: true, ...result });
   } catch (err) {
     sendJSON(res, 500, { error: err.message || String(err) });
+  }
+}
+
+// ── Quick cleanup summary ──
+async function handleQuickSummary(req, res) {
+  let results = { app: null, temp: null, docker_images: null, docker_volumes: null, docker_networks: null, error: null };
+  try {
+    // App scan (sync via appcenter-cli)
+    const appResult = await execCmd('appcenter-cli', ['list'], 15000);
+    const installedNames = new Set(appResult.stdout.split('\n').filter(l => l.trim()).map(l => {
+      const parts = l.split('│').map(p => p.trim()).filter(Boolean);
+      return parts.length >= 3 ? parts[0].toLowerCase() : null;
+    }).filter(Boolean));
+    let orphanCount = 0, orphanSize = 0;
+    for (const vp of VOL_GLOBS) {
+      if (!existsSync(vp)) continue;
+      const entries = readdirSync(vp, { withFileTypes: true }).filter(e => e.name.startsWith('@app') && e.isDirectory());
+      for (const e of entries) {
+        const appDir = join(vp, e.name);
+        if (!existsSync(appDir)) continue;
+        const instDirs = readdirSync(appDir, { withFileTypes: true }).filter(d => d.isDirectory());
+        for (const d of instDirs) {
+          const name = d.name.toLowerCase();
+          let found = installedNames.has(name);
+          if (!found && name.endsWith('-docker')) found = installedNames.has(name.slice(0, -7));
+          if (!found && name.startsWith('docker-')) found = installedNames.has(name.slice(7));
+          if (!found) {
+            orphanCount++;
+            try {
+              const subdirs = readdirSync(join(appDir, d.name));
+              for (const sd of subdirs) {
+                const sdStat = statSync(join(appDir, d.name, sd)).catch(() => null);
+                if (sdStat) orphanSize += sdStat.size;
+              }
+            } catch {}
+          }
+        }
+      }
+    }
+    results.app = { count: orphanCount, size: orphanSize };
+
+    // Temp scan (sync)
+    const TEMP_DIRS = ['/tmp', '/var/tmp'];
+    let tempCount = 0, tempSize = 0;
+    for (const dir of TEMP_DIRS) {
+      if (!existsSync(dir)) continue;
+      try {
+        const entries = readdirSync(dir);
+        for (const entry of entries) {
+          const full = join(dir, entry);
+          try {
+            const st = lstatSync(full);
+            if ((Date.now() - st.mtimeMs) / 3600000 < 24) continue;
+            tempCount++;
+            tempSize += st.isDirectory() ? 0 : st.size;
+          } catch {}
+        }
+      } catch {}
+    }
+    results.temp = { count: tempCount, size: tempSize };
+
+    // Docker quick checks
+    const dc = await execCmd('docker', ['images', '--format', '{{.Repository}}:{{.Tag}}'], 10000);
+    results.docker_images = { count: dc.stdout.split('\n').filter(Boolean).length };
+
+    const dv = await execCmd('docker', ['volume', 'ls', '-q'], 10000);
+    results.docker_volumes = { count: dv.stdout.split('\n').filter(Boolean).length };
+
+    const dn = await execCmd('docker', ['network', 'ls', '--format', '{{.ID}}'], 10000);
+    results.docker_networks = { count: dn.stdout.split('\n').filter(Boolean).length };
+
+    sendJSON(res, 200, { ok: true, results });
+  } catch (e) {
+    sendJSON(res, 500, { error: e.message, results });
   }
 }
 
