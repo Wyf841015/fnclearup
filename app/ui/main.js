@@ -867,8 +867,6 @@ function updateDupSelectedCount() {
   });
 }
 
-function formatBytes(b){if(b===0)return'0 B';const u=['B','KB','MB','GB','TB'];const i=Math.floor(Math.log(b)/Math.log(1024));return(b/Math.pow(1024,i)).toFixed(1)+' '+u[i];}
-
 // ═══════════════════════════════
 // Big Files Finder
 // ═══════════════════════════════
@@ -1914,7 +1912,7 @@ let _startupCountdownLeft = 3;
 let _trashLastScan = null;
 let _trashCleanAge = 30;
 
-function _formatBytes(n) {
+function formatBytes(n) {
   if (!Number.isFinite(n) || n < 0) return '0 B';
   const u = ['B','KB','MB','GB','TB'];
   let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
@@ -1935,10 +1933,10 @@ async function trashScan() {
     // KPI
     const b = r.buckets || {};
     const totalCleanable = (b.lt90?.size || 0) + (b.lt365?.size || 0) + (b.gte365?.size || 0);
-    $('trashKpi30').textContent = _formatBytes(b.lt90?.size || 0);
-    $('trashKpi90').textContent = _formatBytes(b.lt365?.size || 0);
-    $('trashKpi365').textContent = _formatBytes(b.gte365?.size || 0);
-    $('trashKpiTotal').textContent = _formatBytes(r.totals?.size || 0);
+    $('trashKpi30').textContent = formatBytes(b.lt90?.size || 0);
+    $('trashKpi90').textContent = formatBytes(b.lt365?.size || 0);
+    $('trashKpi365').textContent = formatBytes(b.gte365?.size || 0);
+    $('trashKpiTotal').textContent = formatBytes(r.totals?.size || 0);
     $('trashKpiTopDirs').textContent = (r.trashList || []).reduce((s, t) => s + (t.dirs || 0), 0);
 
     // List all trash dirs (root 包含所有用户)
@@ -1956,7 +1954,7 @@ async function trashScan() {
           <td><code>${escHtml(t.path)}</code></td>
           <td>${t.files}</td>
           <td>${t.dirs}</td>
-          <td><strong>${_formatBytes(t.size)}</strong></td>
+          <td><strong>${formatBytes(t.size)}</strong></td>
           <td><small>${escHtml(mtime)}</small></td>
         </tr>`;
       }
@@ -1968,7 +1966,7 @@ async function trashScan() {
         html += `<div class="trash-card">
           <div class="trash-card-head">
             <span style="font-weight:600">${escHtml(t.vol)} · UID ${escHtml(t.uid)}</span>
-            <span style="color:var(--color-danger);font-weight:600">${_formatBytes(t.size)}</span>
+            <span style="color:var(--color-danger);font-weight:600">${formatBytes(t.size)}</span>
           </div>
           <div class="trash-card-path">${escHtml(t.path)}</div>
           <div class="trash-card-stats">
@@ -1986,7 +1984,7 @@ async function trashScan() {
     const other = $('trash-other');
     if (other) other.innerHTML = '';
 
-    $('trash-status').innerHTML = '<div class="kpi-info">✅ 扫描完成：' + _formatBytes(r.totals?.size || 0) + '，其中 30+ 天可清 ' + _formatBytes(totalCleanable) + '</div>';
+    $('trash-status').innerHTML = '<div class="kpi-info">✅ 扫描完成：' + formatBytes(r.totals?.size || 0) + '，其中 30+ 天可清 ' + formatBytes(totalCleanable) + '</div>';
     $('trash-empty').style.display = 'none';
     // 启用清理按钮
     for (const id of ['trashClean30Btn', 'trashClean90Btn', 'trashClean365Btn', 'trashCleanAllBtn', 'trashBrowseBtn']) {
@@ -2030,7 +2028,7 @@ function trashClean(ageDays) {
     willDelete = b.gte365?.count || 0;
   }
   $('trashDeleteCount').textContent = willDelete;
-  $('trashDeleteSize').textContent = _formatBytes(willSize);
+  $('trashDeleteSize').textContent = formatBytes(willSize);
   // 路径预览：按 mtime 阈值过滤
   const pathsEl = $('trashDeletePaths');
   const now = Date.now();
@@ -2045,7 +2043,7 @@ function trashClean(ageDays) {
   } else {
     let ph = '<ul style="margin:0;padding-left:20px;list-style:none">';
     for (const t of previewList) {
-      ph += `<li style="margin-bottom:6px"><code style="word-break:break-all;font-size:12px">${escHtml(t.path)}</code><br><span style="color:var(--color-text-secondary);font-size:12px">${escHtml(t.vol)} · UID ${escHtml(t.uid)} · ${_formatBytes(t.size)}</span></li>`;
+      ph += `<li style="margin-bottom:6px"><code style="word-break:break-all;font-size:12px">${escHtml(t.path)}</code><br><span style="color:var(--color-text-secondary);font-size:12px">${escHtml(t.vol)} · UID ${escHtml(t.uid)} · ${formatBytes(t.size)}</span></li>`;
     }
     ph += '</ul>';
     pathsEl.innerHTML = ph;
@@ -2072,11 +2070,11 @@ async function doTrashClean() {
     const deletedCount = (r.deleted || []).length;
     const failedCount = (r.failed || []).length;
     const freedSize = (r.deleted || []).reduce((s, d) => s + (d.size || 0), 0);
-    let msg = '✅ 清理完成：删除 ' + deletedCount + ' 个目录，释放 ' + _formatBytes(freedSize);
+    let msg = '✅ 清理完成：删除 ' + deletedCount + ' 个目录，释放 ' + formatBytes(freedSize);
     if (failedCount > 0) msg += '，失败 ' + failedCount + ' 个';
     if (r.manifestPath) msg += '<br><small style="color:var(--color-text-secondary)">📦 manifest: ' + escHtml(r.manifestPath) + '</small>';
     $('trash-status').innerHTML = '<div class="kpi-info">' + msg + '</div>';
-    showToast(`清理 ${deletedCount} 项，释放 ${_formatBytes(freedSize)}`, 'success');
+    showToast(`清理 ${deletedCount} 项，释放 ${formatBytes(freedSize)}`, 'success');
     // 自动重新扫描
     await trashScan();
   } catch (e) {
@@ -2117,7 +2115,7 @@ function _renderTrashTree(node, depth) {
   let html = '';
   const indent = depth * 16;
   if (node.type === 'dir') {
-    const sizeStr = node.size > 0 ? ' (' + _formatBytes(node.size) + ')' : '';
+    const sizeStr = node.size > 0 ? ' (' + formatBytes(node.size) + ')' : '';
     html += '<div style="padding-left:' + indent + 'px">📁 <strong>' + escHtml(node.name) + '</strong>' + sizeStr + '</div>';
     if (node.children && depth < 4) {
       for (const c of node.children) html += _renderTrashTree(c, depth + 1);
@@ -2125,7 +2123,7 @@ function _renderTrashTree(node, depth) {
       html += '<div style="padding-left:' + (indent + 16) + 'px;color:var(--color-text-secondary)">…(' + node.children.length + ' 项，更深层省略)</div>';
     }
   } else {
-    html += '<div style="padding-left:' + indent + 'px;color:var(--color-text-secondary)">📄 ' + escHtml(node.name) + ' · ' + _formatBytes(node.size || 0) + '</div>';
+    html += '<div style="padding-left:' + indent + 'px;color:var(--color-text-secondary)">📄 ' + escHtml(node.name) + ' · ' + formatBytes(node.size || 0) + '</div>';
   }
   return html;
 }
