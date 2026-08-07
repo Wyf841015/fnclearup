@@ -1,7 +1,7 @@
 import { readdirSync, lstatSync, rmSync, existsSync, mkdirSync, renameSync, cpSync, unlinkSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { sendJSON, isSafePath } from '../lib/util.js';
+import { sendJSON, isSafePath, parseQuery } from '../lib/util.js';
 
 export const emptyDirJobs = new Map();
 let EMPTY_STATE_DIR = '';
@@ -257,15 +257,8 @@ export async function handleEmptyDirStop(req, res) {
 
 // ── GET /api/empty_dir/status?jobId=xxx ──
 export function handleEmptyDirStatus(req, res) {
-  const url = typeof req.url === 'string' ? req.url : String(req.url);
-  const qIndex = url.indexOf('?');
-  const params = {};
-  if (qIndex >= 0) {
-    for (const p of url.slice(qIndex + 1).split('&')) {
-      const [k, v] = p.split('=');
-      params[decodeURIComponent(k)] = decodeURIComponent(v || '');
-    }
-  }
+  const url = new URL(req.url, 'http://localhost');
+  const params = parseQuery(url);
   const jobId = params.jobId || '';
   if (!jobId) { sendJSON(res, 400, { error: '缺少 jobId', success: false }); return; }
   const stateFile = join(EMPTY_STATE_DIR, `empty_${jobId}.json`);

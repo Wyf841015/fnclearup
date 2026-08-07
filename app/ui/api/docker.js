@@ -35,7 +35,7 @@ export async function handleVolumes(req, res) {
       for (const m of mounts) {
         if (m.Name) (volContainers[m.Name] ||= []).push(cidToName[cid]);
       }
-    } catch {}
+    } catch (e) { console.error('[docker] handleVolumes fail', e); }
   }
   const inUse = [], orphan = [];
   for (const name of names) {

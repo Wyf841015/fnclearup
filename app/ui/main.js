@@ -26,7 +26,7 @@ const API = {
 
 const $ = id => document.getElementById(id.replace(/^#/, ''));
 
-function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 
 // Theme
 function applyTheme(dark) { document.documentElement.classList.toggle('dark', dark); }
@@ -1914,9 +1914,6 @@ let _startupCountdownLeft = 3;
 let _trashLastScan = null;
 let _trashCleanAge = 30;
 
-function _escHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
 function _formatBytes(n) {
   if (!Number.isFinite(n) || n < 0) return '0 B';
   const u = ['B','KB','MB','GB','TB'];
@@ -1931,7 +1928,7 @@ async function trashScan() {
   try {
     const r = await API.get('api/trash/scan');
     if (!r || !r.ok) {
-      $('trash-status').innerHTML = '<div class="kpi-error">❌ 扫描失败：' + _escHtml((r && r.error) || 'unknown') + '</div>';
+      $('trash-status').innerHTML = '<div class="kpi-error">❌ 扫描失败：' + escHtml((r && r.error) || 'unknown') + '</div>';
       return;
     }
     _trashLastScan = r;
@@ -1954,13 +1951,13 @@ async function trashScan() {
       for (const t of r.trashList) {
         const mtime = t.mtime ? new Date(t.mtime).toLocaleString('zh-CN') : '?';
         html += `<tr>
-          <td>${_escHtml(t.vol)}</td>
-          <td>${_escHtml(t.uid)}</td>
-          <td><code>${_escHtml(t.path)}</code></td>
+          <td>${escHtml(t.vol)}</td>
+          <td>${escHtml(t.uid)}</td>
+          <td><code>${escHtml(t.path)}</code></td>
           <td>${t.files}</td>
           <td>${t.dirs}</td>
           <td><strong>${_formatBytes(t.size)}</strong></td>
-          <td><small>${_escHtml(mtime)}</small></td>
+          <td><small>${escHtml(mtime)}</small></td>
         </tr>`;
       }
       html += '</tbody></table></div>';
@@ -1970,14 +1967,14 @@ async function trashScan() {
         const mtime = t.mtime ? new Date(t.mtime).toLocaleString('zh-CN') : '?';
         html += `<div class="trash-card">
           <div class="trash-card-head">
-            <span style="font-weight:600">${_escHtml(t.vol)} · UID ${_escHtml(t.uid)}</span>
+            <span style="font-weight:600">${escHtml(t.vol)} · UID ${escHtml(t.uid)}</span>
             <span style="color:var(--color-danger);font-weight:600">${_formatBytes(t.size)}</span>
           </div>
-          <div class="trash-card-path">${_escHtml(t.path)}</div>
+          <div class="trash-card-path">${escHtml(t.path)}</div>
           <div class="trash-card-stats">
             <span>📄 <strong>${t.files}</strong> 文件</span>
             <span>📁 <strong>${t.dirs}</strong> 目录</span>
-            <span>🕒 ${_escHtml(mtime)}</span>
+            <span>🕒 ${escHtml(mtime)}</span>
           </div>
         </div>`;
       }
@@ -1996,7 +1993,7 @@ async function trashScan() {
       const b = $(id); if (b) b.disabled = false;
     }
   } catch (e) {
-    $('trash-status').innerHTML = '<div class="kpi-error">❌ 扫描失败：' + _escHtml(e.message || String(e)) + '</div>';
+    $('trash-status').innerHTML = '<div class="kpi-error">❌ 扫描失败：' + escHtml(e.message || String(e)) + '</div>';
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔍</span><span>扫描回收站</span>'; }
   }
@@ -2048,7 +2045,7 @@ function trashClean(ageDays) {
   } else {
     let ph = '<ul style="margin:0;padding-left:20px;list-style:none">';
     for (const t of previewList) {
-      ph += `<li style="margin-bottom:6px"><code style="word-break:break-all;font-size:12px">${_escHtml(t.path)}</code><br><span style="color:var(--color-text-secondary);font-size:12px">${_escHtml(t.vol)} · UID ${_escHtml(t.uid)} · ${_formatBytes(t.size)}</span></li>`;
+      ph += `<li style="margin-bottom:6px"><code style="word-break:break-all;font-size:12px">${escHtml(t.path)}</code><br><span style="color:var(--color-text-secondary);font-size:12px">${escHtml(t.vol)} · UID ${escHtml(t.uid)} · ${_formatBytes(t.size)}</span></li>`;
     }
     ph += '</ul>';
     pathsEl.innerHTML = ph;
@@ -2069,7 +2066,7 @@ async function doTrashClean() {
   try {
     const r = await API.post('api/trash/clean', { ageDays: age, manifest: true });
     if (!r || !r.ok) {
-      $('trash-status').innerHTML = '<div class="kpi-error">❌ 清理失败：' + _escHtml((r && r.error) || 'unknown') + '</div>';
+      $('trash-status').innerHTML = '<div class="kpi-error">❌ 清理失败：' + escHtml((r && r.error) || 'unknown') + '</div>';
       return;
     }
     const deletedCount = (r.deleted || []).length;
@@ -2077,13 +2074,13 @@ async function doTrashClean() {
     const freedSize = (r.deleted || []).reduce((s, d) => s + (d.size || 0), 0);
     let msg = '✅ 清理完成：删除 ' + deletedCount + ' 个目录，释放 ' + _formatBytes(freedSize);
     if (failedCount > 0) msg += '，失败 ' + failedCount + ' 个';
-    if (r.manifestPath) msg += '<br><small style="color:var(--color-text-secondary)">📦 manifest: ' + _escHtml(r.manifestPath) + '</small>';
+    if (r.manifestPath) msg += '<br><small style="color:var(--color-text-secondary)">📦 manifest: ' + escHtml(r.manifestPath) + '</small>';
     $('trash-status').innerHTML = '<div class="kpi-info">' + msg + '</div>';
     showToast(`清理 ${deletedCount} 项，释放 ${_formatBytes(freedSize)}`, 'success');
     // 自动重新扫描
     await trashScan();
   } catch (e) {
-    $('trash-status').innerHTML = '<div class="kpi-error">❌ 清理失败：' + _escHtml(e.message || String(e)) + '</div>';
+    $('trash-status').innerHTML = '<div class="kpi-error">❌ 清理失败：' + escHtml(e.message || String(e)) + '</div>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '确认清理'; }
   }
@@ -2100,10 +2097,10 @@ async function trashBrowseList() {
   try {
     let html = '';
     for (const t of _trashLastScan.trashList) {
-      html += '<h4 style="margin:8px 0 4px"><code>' + _escHtml(t.path) + '</code></h4>';
+      html += '<h4 style="margin:8px 0 4px"><code>' + escHtml(t.path) + '</code></h4>';
       const r = await API.get('api/trash/browse?path=' + encodeURIComponent(t.path));
       if (!r || !r.ok) {
-        html += '<div class="kpi-error">❌ ' + _escHtml((r && r.error) || '加载失败') + '</div>';
+        html += '<div class="kpi-error">❌ ' + escHtml((r && r.error) || '加载失败') + '</div>';
         continue;
       }
       html += _renderTrashTree(r.tree, 0);
@@ -2111,7 +2108,7 @@ async function trashBrowseList() {
     $('trashBrowseTree').innerHTML = html || '<em>回收站为空</em>';
     $('trashBrowseDesc').textContent = '共 ' + (_trashLastScan.trashList || []).length + ' 个 trash 目录的完整文件树（只读）';
   } catch (e) {
-    $('trashBrowseTree').innerHTML = '<div class="kpi-error">❌ ' + _escHtml(e.message || String(e)) + '</div>';
+    $('trashBrowseTree').innerHTML = '<div class="kpi-error">❌ ' + escHtml(e.message || String(e)) + '</div>';
   }
 }
 
@@ -2121,14 +2118,14 @@ function _renderTrashTree(node, depth) {
   const indent = depth * 16;
   if (node.type === 'dir') {
     const sizeStr = node.size > 0 ? ' (' + _formatBytes(node.size) + ')' : '';
-    html += '<div style="padding-left:' + indent + 'px">📁 <strong>' + _escHtml(node.name) + '</strong>' + sizeStr + '</div>';
+    html += '<div style="padding-left:' + indent + 'px">📁 <strong>' + escHtml(node.name) + '</strong>' + sizeStr + '</div>';
     if (node.children && depth < 4) {
       for (const c of node.children) html += _renderTrashTree(c, depth + 1);
     } else if (node.children && node.children.length > 0) {
       html += '<div style="padding-left:' + (indent + 16) + 'px;color:var(--color-text-secondary)">…(' + node.children.length + ' 项，更深层省略)</div>';
     }
   } else {
-    html += '<div style="padding-left:' + indent + 'px;color:var(--color-text-secondary)">📄 ' + _escHtml(node.name) + ' · ' + _formatBytes(node.size || 0) + '</div>';
+    html += '<div style="padding-left:' + indent + 'px;color:var(--color-text-secondary)">📄 ' + escHtml(node.name) + ' · ' + _formatBytes(node.size || 0) + '</div>';
   }
   return html;
 }

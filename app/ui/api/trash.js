@@ -250,7 +250,7 @@ export function cleanTrash(ageDays, withManifest = true) {
       const ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/-(\d{3})Z$/, 'Z');
       const filename = `fnclearup_pre_clean_manifest_${ts}.json`;
       const base = getManifestDir();
-      try { mkdirSync(base, { recursive: true }); } catch {}
+      try { mkdirSync(base, { recursive: true }); } catch (e) { console.error('[trash] mkdir base fail', e); }
       manifestPath = join(base, filename);
       const manifest = {
         tool: 'fnclearup trash',
@@ -312,7 +312,7 @@ export function moveToTrash(p) {
       if (e.code !== 'EXDEV') throw e;
       // Cross-device: copy then remove original
       cpSync(p, finalDest, { recursive: true });
-      try { unlinkSync(p); } catch {}
+      try { unlinkSync(p); } catch (e) { console.error('[trash] unlink fail', p, e); }
       return true;
     }
   } catch { return false; }

@@ -366,7 +366,7 @@ export async function handleSysCleanClean(req, res) {
         items: snapshot,
         note: 'Manifest only — caches auto-rebuild. Use this as audit trail; no files were preserved.',
       };
-      try { mkdirSync(trashBase, { recursive: true }); } catch {}
+      try { mkdirSync(trashBase, { recursive: true }); } catch (e) { console.error('[sysclean] mkdir trashBase fail', e); }
       const tmp = backupPath + '.tmp';
       writeFileSync(tmp, JSON.stringify(manifest, null, 2), 'utf8');
       renameSync(tmp, backupPath);
