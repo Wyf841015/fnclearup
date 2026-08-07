@@ -16,7 +16,7 @@ export function handleMounts(req, res) {
       sendJSON(res, 200, { mounts, success: true });
       return;
     }
-  } catch {}
+  } catch { console.error('[disk.js]'); }
   sendJSON(res, 200, { mounts: [], success: false, message: 'mount_info.json not found' });
 }
 
@@ -36,6 +36,6 @@ export function handleVol02(req, res) {
         }
       }
     }
-  } catch {}
+  } catch { console.error('[disk.js]'); }
   sendJSON(res, 200, { vol02_dirs: dirs, mounted_points: mounts, success: true });
 }

@@ -50,7 +50,7 @@ export function handleTempScan(req, res) {
         const item = { path: full, name: entry, dir, age_hours: Math.round(ageHours * 10) / 10, size: st.size, size_str: formatBytes(st.size), is_dir: isDir, type: isDir ? 'dir' : 'file' };
         (isDir ? result.dirs : result.files).push(item);
         totalSize += st.size;
-      } catch {}
+      } catch { console.error('[temp.js]'); }
     }
   }
   result.dirs.sort((a, b) => b.age_hours - a.age_hours);

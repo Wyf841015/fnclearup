@@ -34,11 +34,11 @@ function applyTheme(dark) { document.documentElement.classList.toggle('dark', da
 function toggleTheme() {
   const dark = !document.documentElement.classList.contains('dark');
   applyTheme(dark);
-  try { localStorage.setItem(THEME_KEY, dark ? '1' : '0'); } catch(e) {}
+  try { localStorage.setItem(THEME_KEY, dark ? '1' : '0'); } catch (e) { console.error('[main.js]', e); }
 }
 function initTheme() {
   let dark = false;
-  try { dark = localStorage.getItem(THEME_KEY) === '1'; } catch(e) {}
+  try { dark = localStorage.getItem(THEME_KEY) === '1'; } catch (e) { console.error('[main.js]', e); }
   applyTheme(dark);
 }
 
@@ -1840,7 +1840,7 @@ function getSysCleanBackupEnabled() {
 function toggleSysCleanBackup() {
   const cb = $('syscleanBackupCb');
   if (!cb) return;
-  try { localStorage.setItem(SYSCLEAN_BACKUP_KEY, cb.checked ? '1' : '0'); } catch {}
+  try { localStorage.setItem(SYSCLEAN_BACKUP_KEY, cb.checked ? '1' : '0'); } catch { console.error('[main.js]'); }
   showToast(cb.checked ? '✅ 已开启清理前备份' : '⚠️ 已关闭清理前备份（不推荐）', cb.checked ? 'success' : 'warning');
 }
 
@@ -1900,7 +1900,7 @@ async function downloadSysCleanManifest(path, name) {
     const res = await fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
       let msg = `下载失败 (HTTP ${res.status})`;
-      try { const j = await res.json(); if (j.error) msg = `下载失败: ${j.error}`; } catch {}
+      try { const j = await res.json(); if (j.error) msg = `下载失败: ${j.error}`; } catch { console.error('[main.js]'); }
       showToast(msg, 'error', 5000);
       return;
     }
@@ -1943,7 +1943,7 @@ async function viewSysCleanManifest(path, name) {
     const res = await fetch(`api/sysclean/manifest?path=${encodeURIComponent(path)}`, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
       let msg = `加载失败 (HTTP ${res.status})`;
-      try { const j = await res.json(); if (j.error) msg = `加载失败: ${j.error}`; } catch {}
+      try { const j = await res.json(); if (j.error) msg = `加载失败: ${j.error}`; } catch { console.error('[main.js]'); }
       if (pre) pre.textContent = msg;
       return;
     }

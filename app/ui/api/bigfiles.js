@@ -130,7 +130,7 @@ export async function handleBigFilesScan(req, res) {
             queue.push([full, level + 1]);
           }
           // symlinks and special nodes are ignored silently (safe default)
-        } catch {}
+        } catch { console.error('[bigfiles.js]'); }
         if (scanned % YIELD_INTERVAL === 0) await new Promise(r => setImmediate(r));
       }
     }

@@ -59,7 +59,7 @@ export async function handleDupScan(req, res) {
     const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPaths.join(','), jobId, DUP_STATE_DIR], {
       stdio: 'ignore', detached: false, timeout: 3600000,
     });
-    const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 3660000);
+    const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch { console.error('[dup.js]'); } }, 3660000);
     proc.on('exit', () => { clearTimeout(killTimer); dupJobs.delete(jobId); });
     proc.on('error', () => { clearTimeout(killTimer); dupJobs.delete(jobId); });
     dupJobs.set(jobId, { stateFile, scanType, scanPaths, proc });
@@ -204,7 +204,7 @@ async function checkPause(state, stateFile, update) {
     const fresh = JSON.parse(readFileSync(stateFile, 'utf-8'));
     state._paused = fresh._paused;
     state._aborted = fresh._aborted;
-  } catch(e) {}
+  } catch (e) { console.error('[dup.js]', e); }
   if (!state._paused) return false;
   state._prev_status = state.status;
   state.status = 'paused';
@@ -215,7 +215,7 @@ async function checkPause(state, stateFile, update) {
       const fresh = JSON.parse(readFileSync(stateFile, 'utf-8'));
       state._paused = fresh._paused;
       state._aborted = fresh._aborted;
-    } catch(e) {}
+    } catch (e) { console.error('[dup.js]', e); }
   }
   const wasAborted = state._aborted;
   if (!wasAborted && state._prev_status) {
@@ -268,9 +268,9 @@ export function handleDupJobs(req, res) {
       try {
         const raw = JSON.parse(readFileSync(join(DUP_STATE_DIR, f), 'utf-8'));
         list.push({ id: raw.id, scanType: raw.scanType, status: raw.status, rootPaths: raw.rootPaths, progress: raw.progress, stats: raw.stats, startTime: raw.startTime });
-      } catch {}
+      } catch { console.error('[dup.js]'); }
     }
-  } catch {}
+  } catch { console.error('[dup.js]'); }
   sendJSON(res, 200, list);
 }
 

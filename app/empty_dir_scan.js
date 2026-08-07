@@ -23,12 +23,12 @@ function updateState(status, items, error = null, currentDir = null) {
     const tmp = stateFile + '.tmp';
     writeFileSync(tmp, JSON.stringify(raw));
     renameSync(tmp, stateFile);
-  } catch {}
+  } catch { console.error('[empty_dir_scan.js]'); }
 }
 
 // 捕获未预期的错误（如 import 失败等）
 process.on('uncaughtException', (err) => {
-  try { writeFileSync(stateFile, JSON.stringify({ id: jobId, rootPath: scanPath, status: 'error', error: '未捕获异常: ' + (err.message || String(err)) })); } catch {}
+  try { writeFileSync(stateFile, JSON.stringify({ id: jobId, rootPath: scanPath, status: 'error', error: '未捕获异常: ' + (err.message || String(err)) })); } catch { console.error('[empty_dir_scan.js]'); }
   process.exit(1);
 });
 

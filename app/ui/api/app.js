@@ -39,7 +39,7 @@ export async function handleScan(req, res) {
     if (!isInstalled && name.startsWith('docker-')) isInstalled = installedNames.has(name.slice(7));
     if (!isInstalled) {
       let subdirs = [];
-      try { subdirs = readdirSync(d); } catch {}
+      try { subdirs = readdirSync(d); } catch { console.error('[app.js]'); }
       orphanDirs.push({ app: basename(d), vol: dirname(dirname(d)), path: d, dirs: subdirs });
     }
   }
