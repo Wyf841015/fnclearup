@@ -56,6 +56,7 @@
           <div id="select-info" class="select-info" style="display:none"></div>
         </div>
         <div id="app-status"></div>
+        <div class="filter-bar"><input type="text" class="search-input" id="appSearch" placeholder="🔍 搜索应用名..." oninput="filterTable('appSearch','app-table',1)"></div>
         <div id="app-list" style="margin-top:12px"></div>
       </div>
     </div>
@@ -104,7 +105,9 @@
               </div>
               <div id="images-select-info" class="select-info" style="display:none"></div>
             </div>
-            <div id="images-status"></div><div id="images-list" style="margin-top:12px"></div>
+            <div id="images-status"></div>
+            <div class="filter-bar"><input type="text" class="search-input" id="imagesSearch" placeholder="🔍 搜索镜像..." oninput="filterTable('imagesSearch','images-table',0)"></div>
+            <div id="images-list" style="margin-top:12px"></div>
           </div>
         </div>
 
