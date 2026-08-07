@@ -52,6 +52,20 @@ function showToast(msg, type='info') {
 }
 
 // ── Cleanup summary ──
+// Generic table filter: hide rows whose given column doesn't match the query
+function filterTable(inputId, tableId, colIndex) {
+  const input = document.getElementById(inputId);
+  const table = document.getElementById(tableId);
+  if (!input || !table) return;
+  const q = input.value.trim().toLowerCase();
+  const rows = table.querySelectorAll('tbody tr');
+  for (const row of rows) {
+    const cell = row.children[colIndex];
+    const txt = cell ? cell.textContent.toLowerCase() : '';
+    row.style.display = (!q || txt.includes(q)) ? '' : 'none';
+  }
+}
+
 async function refreshCleanupSummary() {
   const body = $('summaryBody');
   if (!body) return;
@@ -2474,7 +2488,7 @@ function init() {
   // Export all functions to window for inline onclick and event delegation
   const exports = {
     toggleTheme, showSponsorModal, showSponsorImgFull,
-    showCleanupSummary, refreshCleanupSummary,
+    showCleanupSummary, refreshCleanupSummary, filterTable,
     switchTab,
     doScan, selectAllApp, updateSelectInfo,
     confirmDelete, doDelete, closeModal,

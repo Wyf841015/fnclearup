@@ -120,6 +120,9 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .section-header h2{font-size:15px;display:flex;align-items:center;gap:6px}
 .section-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .select-info{font-size:13px;color:var(--color-text-secondary);margin-top:6px}
+.filter-bar{margin:10px 0 4px}
+.search-input{width:100%;padding:8px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg);color:var(--color-text);font-size:13px;outline:none}
+.search-input:focus{border-color:var(--color-primary)}
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:1px solid transparent;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-weight:500;transition:var(--transition);white-space:nowrap}
