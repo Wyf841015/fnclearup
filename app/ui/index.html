@@ -51,6 +51,7 @@
           <h2><span>📋</span><span>应用列表</span></h2>
           <div class="section-actions">
             <button type="button" class="btn btn-primary" onclick="doScan()"><span>🔍</span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-outline" onclick="exportTableToCSV('app-table','应用列表.csv')"><span>📥</span><span>导出</span></button>
             <button type="button" class="btn btn-danger" onclick="confirmDelete()" disabled id="deleteBtn"><span>🗑️</span><span>删除选中</span></button>
           </div>
           <div id="select-info" class="select-info" style="display:none"></div>
@@ -101,6 +102,7 @@
             <div class="section-header"><h2><span>🖼️</span><span>Docker 镜像</span></h2>
               <div class="section-actions">
                 <button type="button" class="btn btn-primary" onclick="doImagesScan()"><span>🔍</span><span>扫描镜像</span></button>
+                <button type="button" class="btn btn-outline" onclick="exportTableToCSV('images-table','Docker镜像.csv')"><span>📥</span><span>导出</span></button>
                 <button type="button" class="btn btn-danger" onclick="confirmDeleteImages()" disabled id="deleteImagesBtn"><span>🗑️</span><span>删除选中</span></button>
               </div>
               <div id="images-select-info" class="select-info" style="display:none"></div>
