@@ -66,6 +66,37 @@ function filterTable(inputId, tableId, colIndex) {
   }
 }
 
+// Generic table CSV export: extracts table data, creates CSV, triggers download
+function exportTableToCSV(tableId, filename) {
+  const table = document.getElementById(tableId);
+  if (!table) return showToast('未找到数据表', 'error');
+  const rows = []; const cols = [];
+  const thead = table.querySelector('thead');
+  if (thead) {
+    const ths = thead.querySelectorAll('th');
+    ths.forEach((th,i) => { if (i > 0 || !th.querySelector('input[type=checkbox]')) cols.push(th.textContent.trim()); });
+  }
+  const tbody = table.querySelector('tbody');
+  if (!tbody || tbody.rows.length === 0) { showToast('无数据可导出', 'warning'); return; }
+  for (const tr of tbody.rows) {
+    if (tr.style.display === 'none') continue;
+    const row = []; const cells = tr.querySelectorAll('td');
+    for (let i = 0, ci = 0; i < cells.length; i++) {
+      if (ci < cols.length && cells[i].querySelector('input[type=checkbox]')) continue;
+      row.push('"' + (cells[i].textContent || '').trim().replace(/"/g, '""') + '"');
+      ci++;
+    }
+    rows.push(row.join(','));
+  }
+  const csv = '\uFEFF' + cols.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename || 'export.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('导出成功: ' + (filename || 'export.csv'), 'success');
+}
+
 async function refreshCleanupSummary() {
   const body = $('summaryBody');
   if (!body) return;
@@ -2488,7 +2519,7 @@ function init() {
   // Export all functions to window for inline onclick and event delegation
   const exports = {
     toggleTheme, showSponsorModal, showSponsorImgFull,
-    showCleanupSummary, refreshCleanupSummary, filterTable,
+    showCleanupSummary, refreshCleanupSummary, filterTable, exportTableToCSV,
     switchTab,
     doScan, selectAllApp, updateSelectInfo,
     confirmDelete, doDelete, closeModal,

@@ -132,6 +132,8 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .btn-danger:hover{opacity:.9}
 .btn-secondary{background:var(--color-card-bg);color:var(--color-text);border-color:var(--color-border)}
 .btn-secondary:hover{background:var(--color-hover-bg)}
+.btn-outline{background:transparent;color:var(--color-text-secondary);border-color:var(--color-border)}
+.btn-outline:hover{background:var(--color-hover-bg);color:var(--color-text)}
 .btn-warning{background:var(--color-warning);color:#fff;border-color:var(--color-warning)}
 .btn-warning:hover{opacity:.9}
 .btn-sm{padding:5px 12px;font-size:12px}
