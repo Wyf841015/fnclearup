@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles/style.css?v=2">
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
   <title>清理精灵-FnOS系统清理工具</title>
 </head>
 <body>
@@ -20,42 +21,42 @@
       <p class="subtitle">智能扫描系统，精准识别已卸载应用残留、Docker 未使用资源、临时文件和重复文件，一键安全清理</p>
     </div>
     <div class="header-controls">
-      <button type="button" class="sponsor-btn" title="一键清理汇总" onclick="showCleanupSummary()"><span>📊</span><span>总览</span></button>
-      <button type="button" class="sponsor-btn" title="赞助作者"><span>❤️</span><span>赞助</span></button>
-      <button type="button" class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题"><span>☀️</span><span>主题</span></button>
+      <button type="button" class="sponsor-btn" title="一键清理汇总" onclick="showCleanupSummary()"><span><i data-lucide="bar-chart-3"></i></span><span>总览</span></button>
+      <button type="button" class="sponsor-btn" title="赞助作者"><span><i data-lucide="heart"></i></span><span>赞助</span></button>
+      <button type="button" class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题"><span><i data-lucide="sun"></i></span><span>主题</span></button>
       <span class="version-badge" id="versionBadge" title="当前版本">v0.7.2</span>
     </div>
   </header>
 
   <div class="tabs">
     <div class="tab-list" role="tablist">
-      <button type="button" class="tab-btn active" data-tab="app" onclick="switchTab('app')" role="tab" aria-selected="true">📦 应用</button>
-      <button type="button" class="tab-btn" data-tab="disk" onclick="switchTab('disk')" role="tab" aria-selected="false">💿 网盘</button>
-      <button type="button" class="tab-btn" data-tab="docker" onclick="switchTab('docker')" role="tab" aria-selected="false">🐳 Docker</button>
-      <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false">🕐 tmp</button>
-      <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false">📋 去重</button>
-      <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false">📭 去空</button>
-      <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false">🧹 系统</button>
-      <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false">🗑 回收站</button>
-      <button type="button" class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="false">⏰ 定时</button>
-      <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false">🐘 大文件</button>
-      <button type="button" class="tab-btn" data-tab="dockercleanup" onclick="switchTab('dockercleanup')" role="tab" aria-selected="false">🐳 清理</button>
+      <button type="button" class="tab-btn active" data-tab="app" onclick="switchTab('app')" role="tab" aria-selected="true"><i data-lucide="package"></i> 应用</button>
+      <button type="button" class="tab-btn" data-tab="disk" onclick="switchTab('disk')" role="tab" aria-selected="false"><i data-lucide="disc-3"></i> 网盘</button>
+      <button type="button" class="tab-btn" data-tab="docker" onclick="switchTab('docker')" role="tab" aria-selected="false"><i data-lucide="container"></i> Docker</button>
+      <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false"><i data-lucide="clock"></i> tmp</button>
+      <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false"><i data-lucide="clipboard-list"></i> 去重</button>
+      <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false"><i data-lucide="inbox"></i> 去空</button>
+      <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
+      <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
+      <button type="button" class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="false"><i data-lucide="clock"></i> 定时</button>
+      <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false"><i data-lucide="hard-drive"></i> 大文件</button>
+      <button type="button" class="tab-btn" data-tab="dockercleanup" onclick="switchTab('dockercleanup')" role="tab" aria-selected="false"><i data-lucide="container"></i> 清理</button>
     </div>
 
     <!-- Tab 1: 应用残余 -->
     <div class="tab-panel active" data-panel="app">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon">📦</div><div class="kpi-body"><div class="kpi-label">安装应用</div><div class="kpi-value" id="installed-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">🗑️</div><div class="kpi-body"><div class="kpi-label">残余目录</div><div class="kpi-value" id="orphan-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">受影响卷</div><div class="kpi-value" id="vol-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="package"></i></div><div class="kpi-body"><div class="kpi-label">安装应用</div><div class="kpi-value" id="installed-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">残余目录</div><div class="kpi-value" id="orphan-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">受影响卷</div><div class="kpi-value" id="vol-count">-</div></div></div>
       </div>
       <div class="card">
         <div class="section-header">
-          <h2><span>📋</span><span>应用列表</span></h2>
+          <h2><span><i data-lucide="clipboard-list"></i></span><span>应用列表</span></h2>
           <div class="section-actions">
-            <button type="button" class="btn btn-primary" onclick="doScan()"><span>🔍</span><span>扫描目录</span></button>
-            <button type="button" class="btn btn-outline" onclick="exportTableToCSV('app-table','应用列表.csv')"><span>📥</span><span>导出</span></button>
-            <button type="button" class="btn btn-danger" onclick="confirmDelete()" disabled id="deleteBtn"><span>🗑️</span><span>删除选中</span></button>
+            <button type="button" class="btn btn-primary" onclick="doScan()"><span><i data-lucide="search"></i></span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-outline" onclick="exportTableToCSV('app-table','应用列表.csv')"><span><i data-lucide="download"></i></span><span>导出</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmDelete()" disabled id="deleteBtn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
           </div>
           <div id="select-info" class="select-info" style="display:none"></div>
         </div>
@@ -68,16 +69,16 @@
     <!-- Tab 2: 网盘残余 -->
     <div class="tab-panel" data-panel="disk">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon">📂</div><div class="kpi-body"><div class="kpi-label">目录总数</div><div class="kpi-value" id="vol02-total-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">🔗</div><div class="kpi-body"><div class="kpi-label">网盘挂载</div><div class="kpi-value" id="mounts-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">残余目录</div><div class="kpi-value" id="vol02-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder-open"></i></div><div class="kpi-body"><div class="kpi-label">目录总数</div><div class="kpi-value" id="vol02-total-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="link"></i></div><div class="kpi-body"><div class="kpi-label">网盘挂载</div><div class="kpi-value" id="mounts-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-triangle"></i></div><div class="kpi-body"><div class="kpi-label">残余目录</div><div class="kpi-value" id="vol02-count">-</div></div></div>
       </div>
       <div class="card">
         <div class="section-header">
-          <h2><span>💿</span><span>网盘挂载目录</span></h2>
+          <h2><span><i data-lucide="disc-3"></i></span><span>网盘挂载目录</span></h2>
           <div class="section-actions">
-            <button type="button" class="btn btn-primary" onclick="loadDiskMounts(true)"><span>🔍</span><span>扫描目录</span></button>
-            <button type="button" class="btn btn-danger" onclick="confirmDeleteVol02()" disabled id="deleteVol02Btn"><span>🗑️</span><span>删除选中</span></button>
+            <button type="button" class="btn btn-primary" onclick="loadDiskMounts(true)"><span><i data-lucide="search"></i></span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteVol02()" disabled id="deleteVol02Btn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
           </div>
           <div id="disk-select-info" class="select-info" style="display:none"></div>
         </div>
@@ -90,23 +91,23 @@
     <div class="tab-panel" data-panel="docker">
       <div class="inner-tabs">
         <div class="inner-tab-list">
-          <button type="button" class="inner-tab-btn active" data-inner-tab="images" onclick="switchInnerTab('images')"><span>🖼️</span><span>镜像</span></button>
-          <button type="button" class="inner-tab-btn" data-inner-tab="volumes" onclick="switchInnerTab('volumes')"><span>💾</span><span>卷</span></button>
-          <button type="button" class="inner-tab-btn" data-inner-tab="networks" onclick="switchInnerTab('networks')"><span>🌐</span><span>网络</span></button>
+          <button type="button" class="inner-tab-btn active" data-inner-tab="images" onclick="switchInnerTab('images')"><span><i data-lucide="image"></i></span><span>镜像</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="volumes" onclick="switchInnerTab('volumes')"><span><i data-lucide="save"></i></span><span>卷</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="networks" onclick="switchInnerTab('networks')"><span><i data-lucide="globe"></i></span><span>网络</span></button>
         </div>
 
         <div class="inner-panel active" data-inner-panel="images">
           <div class="kpi-row">
-            <div class="kpi-card"><div class="kpi-icon">🖼️</div><div class="kpi-body"><div class="kpi-label">总镜像</div><div class="kpi-value" id="images-total-count">-</div></div></div>
-            <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">使用中</div><div class="kpi-value" id="images-used-count">-</div></div></div>
-            <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">未使用</div><div class="kpi-value" id="images-unused-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="image"></i></div><div class="kpi-body"><div class="kpi-label">总镜像</div><div class="kpi-value" id="images-total-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="check"></i></div><div class="kpi-body"><div class="kpi-label">使用中</div><div class="kpi-value" id="images-used-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-triangle"></i></div><div class="kpi-body"><div class="kpi-label">未使用</div><div class="kpi-value" id="images-unused-count">-</div></div></div>
           </div>
           <div class="card">
-            <div class="section-header"><h2><span>🖼️</span><span>Docker 镜像</span></h2>
+            <div class="section-header"><h2><span><i data-lucide="image"></i></span><span>Docker 镜像</span></h2>
               <div class="section-actions">
-                <button type="button" class="btn btn-primary" onclick="doImagesScan()"><span>🔍</span><span>扫描镜像</span></button>
-                <button type="button" class="btn btn-outline" onclick="exportTableToCSV('images-table','Docker镜像.csv')"><span>📥</span><span>导出</span></button>
-                <button type="button" class="btn btn-danger" onclick="confirmDeleteImages()" disabled id="deleteImagesBtn"><span>🗑️</span><span>删除选中</span></button>
+                <button type="button" class="btn btn-primary" onclick="doImagesScan()"><span><i data-lucide="search"></i></span><span>扫描镜像</span></button>
+                <button type="button" class="btn btn-outline" onclick="exportTableToCSV('images-table','Docker镜像.csv')"><span><i data-lucide="download"></i></span><span>导出</span></button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteImages()" disabled id="deleteImagesBtn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
               </div>
               <div id="images-select-info" class="select-info" style="display:none"></div>
             </div>
@@ -118,15 +119,15 @@
 
         <div class="inner-panel" data-inner-panel="volumes">
           <div class="kpi-row">
-            <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">所有卷</div><div class="kpi-value" id="docker-total-count">-</div></div></div>
-            <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">在用卷</div><div class="kpi-value" id="docker-inuse-count">-</div></div></div>
-            <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">孤立卷</div><div class="kpi-value" id="docker-orphan-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">所有卷</div><div class="kpi-value" id="docker-total-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="check"></i></div><div class="kpi-body"><div class="kpi-label">在用卷</div><div class="kpi-value" id="docker-inuse-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-triangle"></i></div><div class="kpi-body"><div class="kpi-label">孤立卷</div><div class="kpi-value" id="docker-orphan-count">-</div></div></div>
           </div>
           <div class="card">
-            <div class="section-header"><h2><span>💾</span><span>Docker 卷</span></h2>
+            <div class="section-header"><h2><span><i data-lucide="save"></i></span><span>Docker 卷</span></h2>
               <div class="section-actions">
-                <button type="button" class="btn btn-primary" onclick="loadDockerVolumes()"><span>🔍</span><span>扫描目录</span></button>
-                <button type="button" class="btn btn-danger" onclick="confirmDeleteDocker()" disabled id="deleteDockerBtn"><span>🗑️</span><span>删除选中</span></button>
+                <button type="button" class="btn btn-primary" onclick="loadDockerVolumes()"><span><i data-lucide="search"></i></span><span>扫描目录</span></button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteDocker()" disabled id="deleteDockerBtn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
               </div>
               <div id="docker-select-info" class="select-info" style="display:none"></div>
             </div>
@@ -136,15 +137,15 @@
 
         <div class="inner-panel" data-inner-panel="networks">
           <div class="kpi-row">
-            <div class="kpi-card"><div class="kpi-icon">🌐</div><div class="kpi-body"><div class="kpi-label">总网络数</div><div class="kpi-value" id="networks-total-count">-</div></div></div>
-            <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">使用中</div><div class="kpi-value" id="networks-used-count">-</div></div></div>
-            <div class="kpi-card"><div class="kpi-icon">⚠️</div><div class="kpi-body"><div class="kpi-label">未使用</div><div class="kpi-value" id="networks-unused-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="globe"></i></div><div class="kpi-body"><div class="kpi-label">总网络数</div><div class="kpi-value" id="networks-total-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="check"></i></div><div class="kpi-body"><div class="kpi-label">使用中</div><div class="kpi-value" id="networks-used-count">-</div></div></div>
+            <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-triangle"></i></div><div class="kpi-body"><div class="kpi-label">未使用</div><div class="kpi-value" id="networks-unused-count">-</div></div></div>
           </div>
           <div class="card">
-            <div class="section-header"><h2><span>🌐</span><span>Docker 网络</span></h2>
+            <div class="section-header"><h2><span><i data-lucide="globe"></i></span><span>Docker 网络</span></h2>
               <div class="section-actions">
-                <button type="button" class="btn btn-primary" onclick="doNetworksScan()"><span>🔍</span><span>扫描网络</span></button>
-                <button type="button" class="btn btn-danger" onclick="confirmDeleteNetworks()" disabled id="deleteNetworksBtn"><span>🗑️</span><span>删除选中</span></button>
+                <button type="button" class="btn btn-primary" onclick="doNetworksScan()"><span><i data-lucide="search"></i></span><span>扫描网络</span></button>
+                <button type="button" class="btn btn-danger" onclick="confirmDeleteNetworks()" disabled id="deleteNetworksBtn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
               </div>
               <div id="networks-select-info" class="select-info" style="display:none"></div>
             </div>
@@ -157,15 +158,15 @@
     <!-- Tab 4: tmp -->
     <div class="tab-panel" data-panel="temp">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon">📁</div><div class="kpi-body"><div class="kpi-label">临时目录</div><div class="kpi-value" id="temp-dirs-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">📄</div><div class="kpi-body"><div class="kpi-label">过期文件</div><div class="kpi-value" id="temp-files-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">总大小</div><div class="kpi-value" id="temp-total-size">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder"></i></div><div class="kpi-body"><div class="kpi-label">临时目录</div><div class="kpi-value" id="temp-dirs-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-text"></i></div><div class="kpi-body"><div class="kpi-label">过期文件</div><div class="kpi-value" id="temp-files-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">总大小</div><div class="kpi-value" id="temp-total-size">-</div></div></div>
       </div>
       <div class="card">
-        <div class="section-header"><h2><span>🕐</span><span>临时文件</span></h2>
+        <div class="section-header"><h2><span><i data-lucide="clock"></i></span><span>临时文件</span></h2>
           <div class="section-actions">
-            <button type="button" class="btn btn-primary" onclick="doTempScan()"><span>🔍</span><span>扫描目录</span></button>
-            <button type="button" class="btn btn-danger" onclick="confirmDeleteTemp()" disabled id="deleteTempBtn"><span>🗑️</span><span>删除选中</span></button>
+            <button type="button" class="btn btn-primary" onclick="doTempScan()"><span><i data-lucide="search"></i></span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteTemp()" disabled id="deleteTempBtn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
           </div>
           <div id="temp-select-info" class="select-info" style="display:none"></div>
         </div>
@@ -246,19 +247,19 @@
     <!-- Tab 6: 空目录清理 -->
     <div class="tab-panel" data-panel="empty">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon">📁</div><div class="kpi-body"><div class="kpi-label">空目录数</div><div class="kpi-value" id="empty-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">🗑️</div><div class="kpi-body"><div class="kpi-label">待清理</div><div class="kpi-value" id="empty-pending">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder"></i></div><div class="kpi-body"><div class="kpi-label">空目录数</div><div class="kpi-value" id="empty-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">待清理</div><div class="kpi-value" id="empty-pending">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">扫描耗时</div><div class="kpi-value" id="empty-elapsed">-</div></div></div>
       </div>
       <div class="card">
         <div class="section-header">
-          <h2><span>📭</span><span>空目录清理</span></h2>
+          <h2><span><i data-lucide="inbox"></i></span><span>空目录清理</span></h2>
           <div class="section-actions">
             <input type="text" id="emptyPath" class="dup-path-input" placeholder="输入目录路径，如 /vol1/downloads" value="/vol1/1000">
             <button type="button" class="btn btn-outline" onclick="showBrowseModal('emptyPath')">📁 浏览</button>
-            <button type="button" class="btn btn-primary" id="emptyScanBtn" onclick="startEmptyScan()"><span>🔍</span><span>开始扫描</span></button>
+            <button type="button" class="btn btn-primary" id="emptyScanBtn" onclick="startEmptyScan()"><span><i data-lucide="search"></i></span><span>开始扫描</span></button>
             <button type="button" class="btn btn-danger" id="emptyStopBtn" onclick="stopEmptyScan()" style="display:none"><span>⏹</span><span>停止</span></button>
-            <button type="button" class="btn btn-danger" id="emptyDeleteHeaderBtn" onclick="showEmptyDeleteModal()" disabled><span>🗑</span><span>删除选中</span></button>
+            <button type="button" class="btn btn-danger" id="emptyDeleteHeaderBtn" onclick="showEmptyDeleteModal()" disabled><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
           </div>
           <div id="empty-select-info" class="select-info" style="display:none"></div>
         </div>
@@ -283,17 +284,17 @@
     <!-- Tab 7: 系统缓存清理 -->
     <div class="tab-panel" data-panel="sysclean">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon">🧹</div><div class="kpi-body"><div class="kpi-label">可清理项</div><div class="kpi-value" id="sysclean-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">总可释放</div><div class="kpi-value" id="sysclean-total">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">已选中</div><div class="kpi-value" id="sysclean-selected-count">0</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="broom"></i></div><div class="kpi-body"><div class="kpi-label">可清理项</div><div class="kpi-value" id="sysclean-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">总可释放</div><div class="kpi-value" id="sysclean-total">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="check"></i></div><div class="kpi-body"><div class="kpi-label">已选中</div><div class="kpi-value" id="sysclean-selected-count">0</div></div></div>
       </div>
       <div class="card">
         <div class="section-header">
-          <h2><span>🧹</span><span>系统缓存清理</span></h2>
+          <h2><span><i data-lucide="broom"></i></span><span>系统缓存清理</span></h2>
           <div class="section-actions">
-            <button type="button" class="btn btn-primary" id="syscleanScanBtn" onclick="doSysCleanScan()"><span>🔍</span><span>扫描缓存</span></button>
+            <button type="button" class="btn btn-primary" id="syscleanScanBtn" onclick="doSysCleanScan()"><span><i data-lucide="search"></i></span><span>扫描缓存</span></button>
             <button type="button" class="btn btn-outline" onclick="selectAllSysCleanRecommended()" title="勾选全部低风险、auto-rebuild 的安全项（apt/npm/pip/uv/.gz 等）">✅ 推荐清理</button>
-            <button type="button" class="btn btn-danger" id="syscleanDeleteBtn" onclick="showSysCleanDeleteModal()" disabled><span>🗑</span><span>清理选中</span></button>
+            <button type="button" class="btn btn-danger" id="syscleanDeleteBtn" onclick="showSysCleanDeleteModal()" disabled><span><i data-lucide="trash-2"></i></span><span>清理选中</span></button>
             <button type="button" class="btn btn-outline" onclick="showSysCleanManifests()" title="查看历史清理清单（manifest 审计）">📜 历史清单</button>
           </div>
           <div class="section-options" style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap">
@@ -319,19 +320,19 @@
     <!-- Tab 8: 回收站清理 -->
     <div class="tab-panel" id="trashPanel" data-panel="trash" hidden>
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon">🗑️</div><div class="kpi-body"><div class="kpi-label">30 天+</div><div class="kpi-value" id="trashKpi30">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">🗑</div><div class="kpi-body"><div class="kpi-label">90 天+</div><div class="kpi-value" id="trashKpi90">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">🪦</div><div class="kpi-body"><div class="kpi-label">1 年+</div><div class="kpi-value" id="trashKpi365">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">📦</div><div class="kpi-body"><div class="kpi-label">总占用</div><div class="kpi-value" id="trashKpiTotal">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">📂</div><div class="kpi-body"><div class="kpi-label">顶级目录</div><div class="kpi-value" id="trashKpiTopDirs">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">30 天+</div><div class="kpi-value" id="trashKpi30">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">90 天+</div><div class="kpi-value" id="trashKpi90">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="headstone"></i></div><div class="kpi-body"><div class="kpi-label">1 年+</div><div class="kpi-value" id="trashKpi365">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="package"></i></div><div class="kpi-body"><div class="kpi-label">总占用</div><div class="kpi-value" id="trashKpiTotal">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder-open"></i></div><div class="kpi-body"><div class="kpi-label">顶级目录</div><div class="kpi-value" id="trashKpiTopDirs">-</div></div></div>
       </div>
       <div class="section-header">
-        <button type="button" class="btn btn-primary" id="trashScanBtn" onclick="trashScan()"><span>🔍</span><span>扫描回收站</span></button>
-        <button type="button" class="btn btn-danger" id="trashClean30Btn" onclick="trashClean(30)" disabled><span>🗑</span><span>清理 30 天+</span></button>
-        <button type="button" class="btn btn-danger" id="trashClean90Btn" onclick="trashClean(90)" disabled><span>🗑</span><span>清理 90 天+</span></button>
-        <button type="button" class="btn btn-danger" id="trashClean365Btn" onclick="trashClean(365)" disabled><span>🗑</span><span>清理 1 年+</span></button>
-        <button type="button" class="btn btn-danger" id="trashCleanAllBtn" onclick="trashClean(0)" disabled><span>🔥</span><span>全部清空</span></button>
-        <button type="button" class="btn btn-secondary" id="trashBrowseBtn" onclick="trashBrowseList()" disabled><span>👁</span><span>浏览内容</span></button>
+        <button type="button" class="btn btn-primary" id="trashScanBtn" onclick="trashScan()"><span><i data-lucide="search"></i></span><span>扫描回收站</span></button>
+        <button type="button" class="btn btn-danger" id="trashClean30Btn" onclick="trashClean(30)" disabled><span><i data-lucide="trash-2"></i></span><span>清理 30 天+</span></button>
+        <button type="button" class="btn btn-danger" id="trashClean90Btn" onclick="trashClean(90)" disabled><span><i data-lucide="trash-2"></i></span><span>清理 90 天+</span></button>
+        <button type="button" class="btn btn-danger" id="trashClean365Btn" onclick="trashClean(365)" disabled><span><i data-lucide="trash-2"></i></span><span>清理 1 年+</span></button>
+        <button type="button" class="btn btn-danger" id="trashCleanAllBtn" onclick="trashClean(0)" disabled><span><i data-lucide="flame"></i></span><span>全部清空</span></button>
+        <button type="button" class="btn btn-secondary" id="trashBrowseBtn" onclick="trashBrowseList()" disabled><span><i data-lucide="eye"></i></span><span>浏览内容</span></button>
       </div>
       <div id="trash-status" style="margin-top:12px"></div>
       <div id="trash-list" style="margin-top:12px"></div>
@@ -343,15 +344,15 @@
     <div class="tab-panel" data-panel="schedule">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon">⏰</div><div class="kpi-body"><div class="kpi-label">状态</div><div class="kpi-value" id="scheduleStatus">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">📅</div><div class="kpi-body"><div class="kpi-label">下次执行</div><div class="kpi-value" id="scheduleNext">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">✅</div><div class="kpi-body"><div class="kpi-label">已执行</div><div class="kpi-value" id="scheduleRunCount">0</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">📋</div><div class="kpi-body"><div class="kpi-label">上次执行</div><div class="kpi-value" id="scheduleLastRun">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="calendar"></i></div><div class="kpi-body"><div class="kpi-label">下次执行</div><div class="kpi-value" id="scheduleNext">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="check"></i></div><div class="kpi-body"><div class="kpi-label">已执行</div><div class="kpi-value" id="scheduleRunCount">0</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="clipboard-list"></i></div><div class="kpi-body"><div class="kpi-label">上次执行</div><div class="kpi-value" id="scheduleLastRun">-</div></div></div>
       </div>
       <div class="card">
         <div class="section-header">
           <h2><span>⏰</span><span>定时清理设置</span></h2>
           <div class="section-actions">
-            <button type="button" class="btn btn-primary" id="scheduleSaveBtn" onclick="saveSchedule()"><span>💾</span><span>保存设置</span></button>
+            <button type="button" class="btn btn-primary" id="scheduleSaveBtn" onclick="saveSchedule()"><span><i data-lucide="save"></i></span><span>保存设置</span></button>
             <button type="button" class="btn btn-outline" id="scheduleTriggerBtn" onclick="triggerSchedule()"><span>▶</span><span>立即执行</span></button>
           </div>
         </div>
@@ -419,9 +420,9 @@
       </div>
       <div class="card">
         <div class="section-header">
-          <h2><span>📋</span><span>执行历史</span></h2>
+          <h2><span><i data-lucide="clipboard-list"></i></span><span>执行历史</span></h2>
           <div class="section-actions">
-            <button type="button" class="btn btn-ghost" onclick="loadScheduleHistory()"><span>🔄</span><span>刷新</span></button>
+            <button type="button" class="btn btn-ghost" onclick="loadScheduleHistory()"><span><i data-lucide="refresh-cw"></i></span><span>刷新</span></button>
           </div>
         </div>
         <div id="scheduleHistoryList" class="schedule-history-list">
@@ -436,14 +437,14 @@
     <!-- Tab 10: 大文件查找器 -->
     <div class="tab-panel" data-panel="bigfiles">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon">📊</div><div class="kpi-body"><div class="kpi-label">扫描候选</div><div class="kpi-value" id="bigfiles-candidates">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">📋</div><div class="kpi-body"><div class="kpi-label">返回结果</div><div class="kpi-value" id="bigfiles-results">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">候选总占用</div><div class="kpi-value" id="bigfiles-total-size">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="bar-chart-3"></i></div><div class="kpi-body"><div class="kpi-label">扫描候选</div><div class="kpi-value" id="bigfiles-candidates">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="clipboard-list"></i></div><div class="kpi-body"><div class="kpi-label">返回结果</div><div class="kpi-value" id="bigfiles-results">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">候选总占用</div><div class="kpi-value" id="bigfiles-total-size">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">耗时</div><div class="kpi-value" id="bigfiles-elapsed">-</div></div></div>
       </div>
       <div class="card">
         <div class="section-header">
-          <h2><span>🐘</span><span>大文件查找器</span></h2>
+          <h2><span><i data-lucide="hard-drive"></i></span><span>大文件查找器</span></h2>
           <div class="section-actions">
             <select id="bigfiles-path" class="form-select" style="width:auto;min-width:120px">
               <option value="/vol*" selected>所有 /vol 卷</option>
@@ -463,9 +464,9 @@
               <option value="100" selected>Top 100</option>
               <option value="200">Top 200</option>
             </select>
-            <button type="button" class="btn btn-primary" onclick="doBigFilesScan()" id="bigfilesBtn"><span>🔍</span><span>扫描</span></button>
+            <button type="button" class="btn btn-primary" onclick="doBigFilesScan()" id="bigfilesBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="stopBigFiles()" id="bigfilesStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
-            <button type="button" class="btn btn-danger" onclick="confirmBigFilesDelete()" id="bigfilesDeleteBtn" disabled><span>🗑</span><span>删除选中</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmBigFilesDelete()" id="bigfilesDeleteBtn" disabled><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
           </div>
         </div>
         <div id="bigfiles-status"></div>
@@ -484,18 +485,18 @@
       </div>
       <div id="dockercleanup-main">
         <div class="kpi-row">
-          <div class="kpi-card"><div class="kpi-icon">🛑</div><div class="kpi-body"><div class="kpi-label">已停止容器</div><div class="kpi-value" id="dc-stopped-count">-</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon">💾</div><div class="kpi-body"><div class="kpi-label">容器占用</div><div class="kpi-value" id="dc-stopped-size">-</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon">🧱</div><div class="kpi-body"><div class="kpi-label">Build Cache</div><div class="kpi-value" id="dc-cache-total">-</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon">♻️</div><div class="kpi-body"><div class="kpi-label">可回收</div><div class="kpi-value" id="dc-cache-reclaim">-</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon"><i data-lucide="octagon-x"></i></div><div class="kpi-body"><div class="kpi-label">已停止容器</div><div class="kpi-value" id="dc-stopped-count">-</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">容器占用</div><div class="kpi-value" id="dc-stopped-size">-</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon"><i data-lucide="box"></i></div><div class="kpi-body"><div class="kpi-label">Build Cache</div><div class="kpi-value" id="dc-cache-total">-</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon"><i data-lucide="refresh-ccw"></i></div><div class="kpi-body"><div class="kpi-label">可回收</div><div class="kpi-value" id="dc-cache-reclaim">-</div></div></div>
         </div>
 
         <div class="card">
           <div class="section-header">
-            <h2><span>🛑</span><span>已停止的容器</span></h2>
+            <h2><span><i data-lucide="octagon-x"></i></span><span>已停止的容器</span></h2>
             <div class="section-actions">
-              <button type="button" class="btn btn-primary" onclick="dcScan()" id="dcScanBtn"><span>🔍</span><span>扫描</span></button>
-              <button type="button" class="btn btn-danger" onclick="dcRemoveSelected()" id="dcRemoveBtn" disabled><span>🗑</span><span>删除选中</span></button>
+              <button type="button" class="btn btn-primary" onclick="dcScan()" id="dcScanBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
+              <button type="button" class="btn btn-danger" onclick="dcRemoveSelected()" id="dcRemoveBtn" disabled><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
             </div>
           </div>
           <div style="font-size:12px;color:var(--color-text-muted);margin:4px 0 8px 0">
@@ -513,9 +514,9 @@
 
         <div class="card">
           <div class="section-header">
-            <h2><span>🧱</span><span>Docker Build Cache</span></h2>
+            <h2><span><i data-lucide="box"></i></span><span>Docker Build Cache</span></h2>
             <div class="section-actions">
-              <button type="button" class="btn btn-danger" onclick="dcPruneCache()" id="dcPruneBtn" disabled><span>🧹</span><span>Prune (-af)</span></button>
+              <button type="button" class="btn btn-danger" onclick="dcPruneCache()" id="dcPruneBtn" disabled><span><i data-lucide="broom"></i></span><span>Prune (-af)</span></button>
             </div>
           </div>
           <div style="font-size:12px;color:var(--color-text-muted);margin:4px 0 8px 0">
@@ -530,7 +531,7 @@
   <!-- 大文件删除确认弹窗（独立 modal 区分 dup/temp/delete,显示路径预览 + 模式选择 + 二次确认） -->
   <div class="modal-overlay" id="bigfilesDeleteModal">
     <div class="modal">
-      <h3 style="color:var(--color-danger)"><span>⚠️</span><span>确认删除大文件</span></h3>
+      <h3 style="color:var(--color-danger)"><span><i data-lucide="alert-triangle"></i></span><span>确认删除大文件</span></h3>
       <p>即将删除 <strong id="bigfilesDeleteCount">0</strong> 个文件（共 <strong id="bigfilesDeleteSize">0 B</strong>）：</p>
       <div class="paths-preview" id="bigfilesDeletePaths"></div>
       <div class="form-row" style="margin:12px 0 8px 0">
@@ -555,7 +556,7 @@
   <!-- 启动警告弹窗（首次打开时显示，确认后不再弹） -->
   <div class="modal-overlay" id="startupWarningModal">
     <div class="modal modal-md" style="max-width:620px">
-      <h3 style="color:var(--color-danger)"><span>⚠️</span><span>清理有风险，确认需谨慎！！！</span></h3>
+      <h3 style="color:var(--color-danger)"><span><i data-lucide="alert-triangle"></i></span><span>清理有风险，确认需谨慎！！！</span></h3>
       <div style="background:rgba(220,38,38,0.08);border-left:4px solid var(--color-danger);padding:12px 16px;margin:12px 0;border-radius:4px;color:var(--color-text-primary);font-size:14px;line-height:1.6">
         <p style="margin:0 0 8px 0"><strong>本工具会真实删除文件，且删除通常不可恢复。</strong></p>
         <p style="margin:0 0 8px 0">使用前请务必确认：</p>
@@ -586,7 +587,7 @@
   <!-- 删除确认弹窗 -->
   <div class="modal-overlay" id="confirmModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认删除</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认删除</span></h3>
       <p>即将删除以下 <strong id="confirmCount">0</strong> 个目录：</p>
       <div class="paths-preview" id="confirmPaths"></div>
       <label class="modal-checkbox" style="color:var(--color-danger)"><input type="checkbox" id="deleteUsersCheckbox"><span>⚠️ 危险：同步删除关联系统用户及其家目录（不可恢复）</span></label>
@@ -601,7 +602,7 @@
   <!-- Docker 卷删除确认弹窗 -->
   <div class="modal-overlay" id="dockerVolDeleteModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认删除 Docker 卷</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认删除 Docker 卷</span></h3>
       <p>确定删除 <strong id="dockerVolDeleteCount">0</strong> 个孤立 Docker 卷？</p>
       <p style="color:var(--color-danger);font-size:12px;margin-top:-4px">⚠️ 如卷是 bind mount，宿主机目录不会被清理（需手动删除）</p>
       <div class="btn-row">
@@ -614,7 +615,7 @@
   <!-- Docker 网络删除确认弹窗 -->
   <div class="modal-overlay" id="dockerNetDeleteModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认删除 Docker 网络</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认删除 Docker 网络</span></h3>
       <p>确定删除 <strong id="dockerNetDeleteCount">0</strong> 个未使用 Docker 网络？</p>
       <p style="color:var(--color-danger);font-size:12px;margin-top:-4px">⚠️ 某些 compose stack 即使容器停止仍依赖其网络</p>
       <div class="btn-row">
@@ -627,7 +628,7 @@
   <!-- Docker 镜像删除确认弹窗 -->
   <div class="modal-overlay" id="dockerImgDeleteModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认删除 Docker 镜像</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认删除 Docker 镜像</span></h3>
       <p>确定删除 <strong id="dockerImgDeleteCount">0</strong> 个未使用 Docker 镜像？</p>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideDockerImgDeleteModal()">取消</button>
@@ -639,7 +640,7 @@
   <!-- Temp 文件删除确认弹窗 -->
   <div class="modal-overlay" id="tempDeleteModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认清理临时文件</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认清理临时文件</span></h3>
       <p>确定清理 <strong id="tempDeleteCount">0</strong> 个过期临时文件？</p>
       <div class="delete-mode-select">
         <label class="delete-radio"><input type="radio" name="tempDeleteMode" value="trash" checked><span>放到回收站<small>移至 /tmp/.@#local/trash，可恢复</small></span></label>
@@ -655,7 +656,7 @@
   <!-- Dup 删除确认弹窗 -->
   <div class="modal-overlay" id="dupDeleteModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认删除</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认删除</span></h3>
       <p id="dupDeleteModalDesc">确定删除 <strong id="dupDeleteCount">0</strong> 个重复文件</p>
       <div class="delete-mode-select">
         <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="trash" checked><span>放到回收站<small>文件移至卷回收站，可恢复</small></span></label>
@@ -671,7 +672,7 @@
   <!-- 空目录删除确认弹窗 -->
   <div class="modal-overlay" id="emptyDeleteModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认删除</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认删除</span></h3>
       <p>确定删除 <strong id="emptyDeleteCount">0</strong> 个空目录</p>
       <div class="delete-mode-select">
         <label class="delete-radio"><input type="radio" name="emptyDeleteMode" value="trash" checked><span>放到回收站<small>目录移至卷回收站，可恢复</small></span></label>
@@ -687,7 +688,7 @@
   <!-- 系统缓存清理确认弹窗 -->
   <div class="modal-overlay" id="syscleanDeleteModal">
     <div class="modal">
-      <h3><span>⚠️</span><span>确认清理系统缓存</span></h3>
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认清理系统缓存</span></h3>
       <p>即将清理 <strong id="syscleanDeleteCount">0</strong> 项，可释放 <strong id="syscleanDeleteSize">0 B</strong></p>
       <div class="paths-preview" id="syscleanDeletePaths" style="max-height:200px;overflow-y:auto"></div>
       <p id="syscleanBackupInfo" style="color:var(--color-text-secondary);font-size:12px;margin-top:8px;display:none">📦 <span id="syscleanBackupInfoText">清理前将写入 manifest 到本地审计目录</span></p>
@@ -702,7 +703,7 @@
   <!-- 历史 manifest 弹窗 -->
   <div class="modal-overlay" id="syscleanManifestsModal">
     <div class="modal modal-md" style="max-width:780px">
-      <h3><span>📜</span><span>历史清理清单（manifest 审计）</span></h3>
+      <h3><span><i data-lucide="scroll-text"></i></span><span>历史清理清单（manifest 审计）</span></h3>
       <p style="color:var(--color-text-secondary);font-size:13px">每次清理前的路径/size/mtime 记录。仅供审计，不保存文件内容（缓存本来就是要清掉的）。</p>
       <div class="paths-preview" id="syscleanManifestsList" style="max-height:340px;overflow-y:auto;margin-top:8px"></div>
       <div class="btn-row">
@@ -714,7 +715,7 @@
   <!-- 回收站清理确认弹窗 -->
   <div class="modal-overlay" id="trashDeleteModal">
     <div class="modal">
-      <h3><span>🗑️</span><span>确认清理回收站</span></h3>
+      <h3><span><i data-lucide="trash-2"></i></span><span>确认清理回收站</span></h3>
       <p>即将删除 <strong id="trashDeleteCount">0</strong> 个回收站顶级目录，可释放 <strong id="trashDeleteSize">0 B</strong></p>
       <p style="color:var(--color-text-secondary);font-size:13px" id="trashDeleteAgeDesc">范围：mtime 超过指定天数的所有内容</p>
       <div class="paths-preview" id="trashDeletePaths" style="max-height:200px;overflow-y:auto"></div>
@@ -729,7 +730,7 @@
   <!-- 回收站浏览弹窗 -->
   <div class="modal-overlay" id="trashBrowseModal" onclick="if(event.target===this)hideTrashBrowseModal()">
     <div class="modal modal-md" style="max-width:780px" onclick="event.stopPropagation()">
-      <h3><span>👁</span><span>回收站内容浏览</span></h3>
+      <h3><span><i data-lucide="eye"></i></span><span>回收站内容浏览</span></h3>
       <p style="color:var(--color-text-secondary);font-size:13px" id="trashBrowseDesc">选择 vol 查看对应 trash 目录的文件树（只读）</p>
       <div id="trashBrowseTree" style="max-height:400px;overflow-y:auto;background:var(--color-bg-secondary);padding:8px;border-radius:6px;margin-top:8px"></div>
       <div class="btn-row">
@@ -758,7 +759,7 @@
   <!-- 赞助弹窗 -->
   <div id="sponsorModal" class="sponsor-modal-overlay" onclick="if(event.target===this)this.classList.remove('show')">
     <div class="sponsor-modal-content" onclick="event.stopPropagation()">
-      <div class="sponsor-header"><h3><span>❤️</span><span>感谢您的支持</span></h3><button type="button" class="sponsor-modal-close" onclick="document.getElementById('sponsorModal').classList.remove('show')">✕</button></div>
+      <div class="sponsor-header"><h3><span><i data-lucide="heart"></i></span><span>感谢您的支持</span></h3><button type="button" class="sponsor-modal-close" onclick="document.getElementById('sponsorModal').classList.remove('show')">✕</button></div>
       <p>您的赞助是我持续开发的最大动力</p>
       <div class="sponsor-qr-row">
         <div class="sponsor-qr-item"><p>支付宝</p><img src="images/sponsor_alipay.png" alt="支付宝" data-sponsor-img></div>
@@ -771,7 +772,7 @@
   <!-- 清理汇总弹窗 -->
   <div id="cleanupSummaryModal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('visible')">
     <div class="modal modal-md" style="max-width:560px" onclick="event.stopPropagation()">
-      <h3><span>📊</span><span>清理汇总</span></h3>
+      <h3><span><i data-lucide="bar-chart-3"></i></span><span>清理汇总</span></h3>
       <p style="color:var(--color-text-secondary);font-size:13px;margin-bottom:12px">快速扫描可清理项，点击行跳转对应 tab</p>
       <div id="summaryBody" style="max-height:400px;overflow-y:auto">
         <div style="text-align:center;padding:20px;color:var(--color-text-secondary)">⏳ 扫描中...</div>
