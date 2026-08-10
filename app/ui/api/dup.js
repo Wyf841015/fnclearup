@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, parseQuery } from '../lib/util.js';
+import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, parseQuery, safeReadJSON } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
 import { getHashPool } from '../../dup_hash_pool.js';
 
@@ -72,7 +72,7 @@ export async function handleDupScan(req, res) {
 
 async function runDupScanInline(jobId, scanType, scanPaths, stateFile) {
   const extensions = scanType === 'music' ? MUSIC_EXTS : null;
-  const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+  const state = safeReadJSON(stateFile, 'utf-8');
   const update = () => {
     const tmp = stateFile + '.tmp';
     writeFileSync(tmp, JSON.stringify(state));
@@ -201,7 +201,7 @@ async function* walkDir(dirPath, extensions) {
 async function checkPause(state, stateFile, update) {
   // Re-read from file to detect external pause/abort signals
   try {
-    const fresh = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    const fresh = safeReadJSON(stateFile, 'utf-8');
     state._paused = fresh._paused;
     state._aborted = fresh._aborted;
   } catch (e) { console.error('[dup.js]', e); }
@@ -212,7 +212,7 @@ async function checkPause(state, stateFile, update) {
   while (state._paused && !state._aborted) {
     await new Promise(r => setTimeout(r, 1000));
     try {
-      const fresh = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      const fresh = safeReadJSON(stateFile, 'utf-8');
       state._paused = fresh._paused;
       state._aborted = fresh._aborted;
     } catch (e) { console.error('[dup.js]', e); }
@@ -234,7 +234,7 @@ export function handleDupStatus(req, res) {
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 404, { error: '任务不存在', success: false }); return; }
   try {
-    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    const raw = safeReadJSON(stateFile, 'utf-8');
     const stats = raw.stats || {};
     const allDups = raw.duplicates || [];
     const total = allDups.length;
@@ -266,7 +266,7 @@ export function handleDupJobs(req, res) {
     const files = readdirSync(DUP_STATE_DIR).filter(f => f.startsWith('dup_') && f.endsWith('.json'));
     for (const f of files) {
       try {
-        const raw = JSON.parse(readFileSync(join(DUP_STATE_DIR, f), 'utf-8'));
+        const raw = safeReadJSON(join(DUP_STATE_DIR, f), 'utf-8');
         list.push({ id: raw.id, scanType: raw.scanType, status: raw.status, rootPaths: raw.rootPaths, progress: raw.progress, stats: raw.stats, startTime: raw.startTime });
       } catch { console.error('[dup.js]'); }
     }
@@ -328,7 +328,7 @@ export async function handleDupExport(req, res) {
     // Backend reads from state file
     const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
     if (!existsSync(stateFile)) { sendJSON(res, 404, { error: '任务不存在', success: false }); return; }
-    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    const raw = safeReadJSON(stateFile, 'utf-8');
     duplicates = raw.duplicates || [];
   } else {
     sendJSON(res, 400, { error: '缺少 jobId 或 duplicates 数据', success: false }); return;
@@ -391,7 +391,7 @@ export async function handleDupStop(req, res) {
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 200, { success: false, stopped: false }); return; }
   try {
-    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    const raw = safeReadJSON(stateFile, 'utf-8');
     raw._aborted = true;
     const tmp = stateFile + '.tmp';
     writeFileSync(tmp, JSON.stringify(raw));
@@ -408,7 +408,7 @@ export async function handleDupPause(req, res) {
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 200, { success: false, paused: false }); return; }
   try {
-    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    const raw = safeReadJSON(stateFile, 'utf-8');
     raw._paused = true;
     raw._prev_status = raw.status;
     raw.status = 'paused';
@@ -427,7 +427,7 @@ export async function handleDupResume(req, res) {
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 200, { success: false, resumed: false }); return; }
   try {
-    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    const raw = safeReadJSON(stateFile, 'utf-8');
     raw._paused = false;
     if (raw._prev_status) raw.status = raw._prev_status;
     const tmpR = stateFile + '.tmp';
