@@ -2601,8 +2601,9 @@ function init() {
     }
   });
 
-  // Direct bind for sponsor button (addEventListener version, bypassing the above in case of issues)
-  const sponsorBtn = document.querySelector('.sponsor-btn');
+  // Direct bind for sponsor button (second .sponsor-btn)
+  const sponsorBtns = document.querySelectorAll('.sponsor-btn');
+  const sponsorBtn = sponsorBtns[1];
   if (sponsorBtn) sponsorBtn.addEventListener('click', function(e) {
     document.querySelector('#sponsorModal').classList.add('show');
   });
