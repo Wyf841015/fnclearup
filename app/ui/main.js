@@ -41,6 +41,19 @@ function initTheme() {
   try { dark = localStorage.getItem(THEME_KEY) === '1'; } catch (e) { console.error('[main.js]', e); }
   applyTheme(dark);
 }
+// Lucide icons init
+let _lucideTimer = null;
+function initLucide() {
+  if (typeof lucide === 'undefined') return;
+  lucide.createIcons();
+  if (!initLucide._obs && typeof MutationObserver !== 'undefined') {
+    initLucide._obs = true;
+    new MutationObserver(() => {
+      clearTimeout(_lucideTimer);
+      _lucideTimer = setTimeout(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }, 50);
+    }).observe(document.body, { subtree: true, childList: true });
+  }
+}
 
 // Toast
 function showToast(msg, type='info') {
@@ -2504,6 +2517,7 @@ else init();
 
 function init() {
   initTheme();
+  initLucide();
   doScan();
 
   // Check version from FnDepot
