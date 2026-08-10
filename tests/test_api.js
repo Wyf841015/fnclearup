@@ -1250,3 +1250,74 @@ describe('Frontend: Modal onclick functions exist in main.js', () => {
     }
   });
 });
+
+describe('API: Empty Dir Status & Jobs (coverage gap)', () => {
+  it('GET /api/empty_dir/jobs returns empty array when no jobs running', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/empty_dir/jobs');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data));
+  });
+
+  it('GET /api/empty_dir/status returns 400 for missing jobId', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/empty_dir/status');
+    assert.strictEqual(status, 400);
+    assert.ok(data.error);
+  });
+
+  it('GET /api/empty_dir/status returns 404 for invalid jobId', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/empty_dir/status?jobId=nonexistent');
+    assert.strictEqual(status, 404);
+    assert.ok(data.error);
+  });
+});
+
+describe('API: Trash (coverage gap)', () => {
+  it('GET /api/trash/scan returns array (possibly empty in test env)', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/trash/scan');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.trashList));
+  });
+
+  it('GET /api/trash/browse returns 400 for invalid path', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/trash/browse?path=/etc/passwd');
+    assert.strictEqual(status, 400);
+    assert.ok(data.error);
+  });
+
+  it('POST /api/trash/clean with ageDays=0 returns result (empty in test)', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/trash/clean', { ageDays: 0 });
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.deleted));
+  });
+});
+
+describe('API: Schedule (coverage gap)', () => {
+  it('GET /api/schedule/history returns array', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/schedule/history');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.history));
+  });
+
+  it('GET /api/schedule/report returns 400 for missing name', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/schedule/report');
+    assert.strictEqual(status, 400);
+    assert.ok(data.error);
+  });
+
+  it('POST /api/schedule/trigger returns response (schedule may not be enabled)', async () => {
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/schedule/trigger', { type: 'scan' });
+    assert.ok(status === 200 || status === 400);
+    if (data && data.error) assert.ok(data.error.length > 0);
+  });
+});
+
+describe('API: Quick Summary (coverage gap)', () => {
+  it('GET /api/cleanup/quick-summary returns summary object', async () => {
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/cleanup/quick-summary');
+    assert.strictEqual(status, 200);
+    assert.ok(data);
+    assert.ok(data.results);
+    assert.ok('app' in data.results);
+    assert.ok('temp' in data.results);
+  });
+});
