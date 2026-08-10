@@ -307,8 +307,9 @@ export async function handleEmptyDirDelete(req, res) {
           try { renameSync(fp, finalDest); }
           catch (e2) { if (e2.code === 'EXDEV') { cpSync(fp, finalDest); unlinkSync(fp); } else throw e2; }
         } else {
-          // Path doesn't match vol pattern — can't move to trash, fail instead of silent rmSync
-          throw new Error('路径格式不支持回收站: ' + fp + ' (需 /volN/UID/... 格式)');
+          // Path doesn't match vol pattern — can't move to trash, report as failure
+          failed.push({ path: fp, reason: '路径格式不支持回收站: ' + fp + ' (需 /volN/UID/... 格式)' });
+          continue;
         }
       }
       deleted++;

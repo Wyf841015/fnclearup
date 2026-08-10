@@ -78,9 +78,9 @@ export async function handleDelete(req, res) {
         if (mode === 'trash') {
           ok = moveToTrash(p);
           if (!ok) {
-            // Fall back to rm -rf if path isn't in /volN/UID/... (e.g. /volN itself)
-            const r = await execCmd('rm', ['-rf', p], 60000);
-            ok = (r.code === 0);
+            // Path not in /volN/UID/... format — can't trash, report as failure
+            failed.push(p);
+            continue;
           }
         } else {
           const r = await execCmd('rm', ['-rf', p], 60000);
