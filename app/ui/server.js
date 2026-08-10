@@ -231,8 +231,10 @@ try {
 } catch (e) { console.error('[server.js]', e); }
 
 const sockServer = createServer(handle);
+let _sockRetried = false;
 sockServer.on('error', (e) => {
-  if (e.code === 'EADDRINUSE') {
+  if (e.code === 'EADDRINUSE' && !_sockRetried) {
+    _sockRetried = true;
     console.warn('[sock] address in use, cleaning up...');
     try { unlinkSync(SOCK_PATH); } catch (e) { console.error('[server.js]', e); }
     sockServer.listen(SOCK_PATH);
