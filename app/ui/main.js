@@ -232,9 +232,9 @@ async function doScan() {
         html+=`<tr ${rowStyle}>
           <td><input type="checkbox" class="app-cb" id="${cbId}" data-app="${escHtml(row.appname)}" data-firstpath="${escHtml(firstPath)}" onchange="updateSelectInfo()" ${disabled?'disabled':''}></td>
           <td>${badge}</td>
-          <td style="font-family:monospace;font-size:13px;white-space:nowrap">${escHtml(row.appname)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;white-space:nowrap">${escHtml(row.appname)}</td>
           <td style="font-size:13px">${escHtml(row.displayName)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(volsUsed||'-')}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(volsUsed||'-')}</td>
           <td class="paths-cell" title="${escHtml(pathsStr)}">${escHtml(firstPath)}${row.paths.length>1?' …':''}</td>
         </tr>`;
       }
@@ -356,9 +356,9 @@ async function loadDiskMounts(force) {
         html+=`<tr ${rowStyle}>
           <td><input type="checkbox" class="disk-cb" value="${escHtml(dirName)}" data-fullpath="${escHtml(fullPath)}" onchange="updateDiskSelectInfo()" ${disabledAttr}></td>
           <td>${badge}</td>
-          <td style="font-family:monospace;font-size:13px;white-space:nowrap" title="${escHtml(fullPath)}">${escHtml(dirName)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${mountDisplay}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${cstStr}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;white-space:nowrap" title="${escHtml(fullPath)}">${escHtml(dirName)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${mountDisplay}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${cstStr}</td>
         </tr>`;
       }
       html+='</tbody></table></div>';
@@ -437,9 +437,9 @@ async function loadDockerVolumes() {
         html+=`<tr ${rowStyle}>
           <td><input type="checkbox" class="docker-cb" value="${escHtml(vol.name)}" data-volname="${escHtml(vol.name)}" onchange="updateDockerSelectInfo()" ${disabledAttr}></td>
           <td>${badge}</td>
-          <td style="font-family:monospace;font-size:13px;white-space:nowrap">${escHtml(vol.name)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(vol.driver||'-')}</td>
-          <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(vol.mountpoint||'-')}">${escHtml(vol.mountpoint||'-')}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;white-space:nowrap">${escHtml(vol.name)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(vol.driver||'-')}</td>
+          <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(vol.mountpoint||'-')}">${escHtml(vol.mountpoint||'-')}</td>
           <td style="font-size:13px">${containers}</td>
         </tr>`;
       }
@@ -505,9 +505,9 @@ async function doNetworksScan() {
         html+=`<tr ${rowStyle}>
           <td><input type="checkbox" class="network-cb" value="${escHtml(net.name)}" data-netname="${escHtml(net.name)}" onchange="updateNetworkSelectInfo()" ${disabledAttr}></td>
           <td>${badge}</td>
-          <td style="font-family:monospace;font-size:13px;white-space:nowrap">${escHtml(net.name)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(net.driver)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(net.scope)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;white-space:nowrap">${escHtml(net.name)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(net.driver)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(net.scope)}</td>
         </tr>`;
       }
       html+='</tbody></table></div>';
@@ -573,11 +573,11 @@ async function doImagesScan() {
         html+=`<tr ${rowStyle}>
           <td><input type="checkbox" class="image-cb" value="${escHtml(img.id)}" data-imgid="${escHtml(img.id)}" onchange="updateImagesSelectInfo()" ${disabledAttr}></td>
           <td>${badge}</td>
-          <td style="font-family:monospace;font-size:13px;white-space:nowrap" title="${escHtml(img.repository)}">${escHtml(img.repository)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.tag)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.id)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.size)}</td>
-          <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(img.created)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;white-space:nowrap" title="${escHtml(img.repository)}">${escHtml(img.repository)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(img.tag)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(img.id)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(img.size)}</td>
+          <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(img.created)}</td>
         </tr>`;
       }
       html+='</tbody></table></div>';
@@ -644,10 +644,10 @@ async function doTempScan() {
           html+=`<tr>
             <td><input type="checkbox" class="temp-cb" value="${escHtml(item.path)}" onchange="updateTempSelectInfo()"></td>
             <td><span title="${escHtml(item.path)}">${escHtml(item.name)}</span></td>
-            <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(item.dir)}</td>
+            <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(item.dir)}</td>
             <td>${typeLabel}</td>
-            <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${escHtml(item.size_str||'-')}</td>
-            <td style="font-family:monospace;font-size:13px;color:var(--color-text-secondary)">${item.age_hours}h</td>
+            <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(item.size_str||'-')}</td>
+            <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${item.age_hours}h</td>
           </tr>`;
         }
         html+='</tbody></table></div>';
@@ -1035,12 +1035,12 @@ function renderBigFilesList(files) {
     const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
     html += `<tr>
       <td><input type="checkbox" class="bigfiles-cb" value="${escHtml(f.path)}" data-size="${f.size || 0}" onchange="bigfilesUpdateSelectInfo()"></td>
-      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary)">${i + 1}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i + 1}</td>
       <td><span title="${escHtml(f.path)}">${escHtml(f.name)}</span></td>
-      <td style="font-family:monospace;font-weight:600;color:var(--color-primary)">${escHtml(f.size_str)}</td>
-      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dir)}">${escHtml(dir)}</td>
-      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary)">${escHtml(mtime)}</td>
-      <td style="text-align:center;font-family:monospace;font-size:12px;color:var(--color-text-secondary)">${f.depth || 0}</td>
+      <td style="font-family:var(--font-mono);font-weight:600;color:var(--color-primary)">${escHtml(f.size_str)}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dir)}">${escHtml(dir)}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${escHtml(mtime)}</td>
+      <td style="text-align:center;font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${f.depth || 0}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
@@ -1223,10 +1223,10 @@ function renderDcStoppedList(items) {
   items.forEach((c) => {
     html += `<tr>
       <td><input type="checkbox" class="dc-cb" value="${escHtml(c.id)}" onchange="dcUpdateSelectInfo()"></td>
-      <td style="font-family:monospace;font-size:11px;color:var(--color-text-secondary)">${escHtml(c.id.slice(0, 12))}</td>
+      <td style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary)">${escHtml(c.id.slice(0, 12))}</td>
       <td>${escHtml(c.names || '-')}</td>
-      <td style="font-family:monospace;font-size:12px">${escHtml(c.image || '-')}</td>
-      <td style="font-family:monospace;font-weight:600;color:var(--color-primary)">${escHtml(c.size_str || '0 B')}</td>
+      <td style="font-family:var(--font-mono);font-size:12px">${escHtml(c.image || '-')}</td>
+      <td style="font-family:var(--font-mono);font-weight:600;color:var(--color-primary)">${escHtml(c.size_str || '0 B')}</td>
       <td style="font-size:12px;color:var(--color-text-muted)">${escHtml(c.status || '-')}</td>
     </tr>`;
   });
@@ -1757,8 +1757,8 @@ function renderSysCleanList() {
       <td><input type="checkbox" class="sysclean-cb" value="${escHtml(it.id)}" data-size="${it.size}" data-label="${escHtml(it.label)}" onchange="updateSysCleanSelectInfo()" ${checked} ${disabled}></td>
       <td>${riskBadge}</td>
       <td style="white-space:nowrap" title="${escHtml(it.label)}">${escHtml(it.name || it.label)}</td>
-      <td style="font-family:monospace;font-size:12px;color:var(--color-text-secondary);max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(it.path)}">${escHtml(it.path)}</td>
-      <td style="text-align:right;font-family:monospace;font-size:13px">${escHtml(it.size_str)}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(it.path)}">${escHtml(it.path)}</td>
+      <td style="text-align:right;font-family:var(--font-mono);font-size:13px">${escHtml(it.size_str)}</td>
     </tr>`;
   }
   html += '</tbody></table></div>';
