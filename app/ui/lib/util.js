@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { resolve, join } from 'node:path';
-import { existsSync, statSync, readdirSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, readFileSync } from 'node:fs';
 import { SAFE_PREFIXES } from './config.js';
 
 export function formatBytes(b) {
@@ -101,4 +101,17 @@ export function parseQuery(url) {
   const o = {};
   for (const [k, v] of q) o[k] = v;
   return o;
+}
+
+// Safe JSON.parse of a file that may be missing or corrupt (e.g. a scan state
+// file written mid-crash). Returns {} on any failure instead of throwing, so a
+// truncated/corrupt state file can't take down an API handler.
+export function safeReadJSON(filePath) {
+  try {
+    const raw = readFileSync(filePath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error(`[util] failed to read/parse ${filePath}:`, e.message);
+    return {};
+  }
 }

@@ -210,7 +210,7 @@ httpServer.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     console.warn(`[http] port ${httpPort} in use, trying ${httpPort + 1}...`);
     httpPort++;
-    httpServer.listen(httpPort, '0.0.0.0');
+    httpServer.listen(httpPort, '127.0.0.1');
   } else {
     console.error('[FATAL] HTTP server error:', e.message);
   }
