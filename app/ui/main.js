@@ -1413,10 +1413,8 @@ function showDupBrowseModal(tab) {
   _browseDupTab = tab;
   _browseTargetId = '';
   document.getElementById('browseModal').classList.add('visible');
-  // Start from the last path in the list, or root
-  const paths = DupState[tab]?.paths;
-  const startPath = paths && paths.length > 0 ? paths[paths.length - 1] : '/';
-  loadBrowseDir(startPath);
+  // Always start from root to avoid ENOENT on stale default paths
+  loadBrowseDir('/');
 }
 function hideBrowseModal() {
   document.getElementById('browseModal')?.classList.remove('visible');
