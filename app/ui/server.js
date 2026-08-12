@@ -43,7 +43,7 @@ function handleBrowse(req, res) {
     // Show only safe volumes at root instead of exposing system directories
     const entries = VOL_GLOBS.filter(v => existsSync(v)).map(v => {
       const st = statSync(v);
-      return { name: v.slice(1), path: v, type: 'dir', size: st.size, mtime: st.mtimeMs };
+      return { name: v.slice(1), path: v, type: 'dir', isDirectory: true, size: st.size, mtime: st.mtimeMs };
     });
     sendJSON(res, 200, { success: true, path: '/', entries, parent: null });
     return;

@@ -546,6 +546,17 @@ describe('API: Path Whitelist (Security)', () => {
     assert.strictEqual(status, 200);
     assert.ok(Array.isArray(data.entries), 'entries should be an array');
   });
+  it('GET /api/browse at root returns entries with isDirectory:true (so frontend renders them as clickable dirs)', async () => {
+    // Bug: root entries had type='dir' but missing isDirectory:true, causing
+    // frontend loadBrowseDir to render volumes as non-clickable 📄 files.
+    // User could only add /vol1 subdirs (from default path) but not /vol2/vol3.
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/');
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.entries), 'entries should be an array');
+    for (const e of data.entries) {
+      assert.strictEqual(e.isDirectory, true, `entry ${e.name} should have isDirectory:true`);
+    }
+  });
   it('GET /api/browse with /vol2/1000 is allowed (subdir)', async () => {
     const { status, data } = await httpRequest('GET', '/app/fnclearup/api/browse?path=/vol2/1000');
     assert.strictEqual(status, 200);
