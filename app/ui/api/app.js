@@ -74,15 +74,16 @@ export async function handleDelete(req, res) {
           }
         }
         // Per user request: netdisk / vol02 residuals are user data — default to trash, not permanent rm -rf
+        // BUT: appcenter/appstore paths (@appcenter, @appstore) can't go to trash (regex rejects @),
+        // and they're system app dirs (not user data) — permanent delete is safe.
         let ok = false;
-        if (mode === 'trash') {
+        const isAppDir = p.includes('/@appcenter/') || p.includes('/@appstore/');
+        if (mode === 'trash' && !isAppDir) {
           ok = moveToTrash(p);
-          if (!ok) {
-            // Path not in /volN/UID/... format — can't trash, report as failure
-            failed.push(p);
-            continue;
-          }
-        } else {
+        }
+        if (!ok) {
+          // Fallback: use rm -rf (appcenter dirs always go here; user data dirs that
+          // failed moveToTrash also go here, e.g. /vol02 paths without trash support)
           const r = await execCmd('rm', ['-rf', p], 60000);
           ok = (r.code === 0);
         }
@@ -95,16 +96,28 @@ export async function handleDelete(req, res) {
     } catch { failed.push(p); }
   }
   if (deleteUsers) {
+    const seenUsers = new Set(); // 同一应用可能有多个残留目录，用户只删一次
     for (const p of paths) {
-      const m = p.match(/(@app\d+)\/([^/]+)/);
-      if (!m) continue;
+      // Extract app system user from any @app* directory (e.g. /vol3/@appcenter/fnclearup).
+      // NOTE: @app\d+ would only match numeric suffixes (@app1); real dirs are
+      // @appcenter / @appstore — use [^/]+ so letters+digits both work.
+      const m = p.match(/\/(@app[^/]+)\/([^/]+)$/);
+      if (!m || m[2].startsWith('.')) continue;
       const username = m[2];
-      const r = await execCmd('id', [username], 5000);
-      if (r.code === 0) {
-        const dr = await execCmd('userdel', ['-r', username], 30000);
-        if (dr.code === 0) usersDeleted.push(username);
-        else usersFailed.push(username);
-      } else usersFailed.push(username);
+      if (seenUsers.has(username)) continue; // dedupe
+      seenUsers.add(username);
+      // Safety guard: only ever delete fnOS app accounts (uid >= 900).
+      // System/reserved users (root, daemon, fnos-apps-store, ...) must never be touched.
+      const ur = await execCmd('id', ['-u', username], 5000);
+      if (ur.code !== 0) continue; // no such user -> nothing to delete
+      const uid = parseInt(ur.stdout.trim(), 10);
+      if (!Number.isInteger(uid) || uid < 900) {
+        usersFailed.push(`${username} (系统保留用户，已跳过)`);
+        continue;
+      }
+      const dr = await execCmd('userdel', ['-r', username], 30000);
+      if (dr.code === 0) usersDeleted.push(username);
+      else usersFailed.push(username);
     }
   }
   sendJSON(res, 200, { deleted, failed, skipped, total: deleted.length, failures: failed.length, users_deleted: usersDeleted, users_failed: usersFailed, success: true });

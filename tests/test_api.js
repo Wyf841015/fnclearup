@@ -1332,3 +1332,25 @@ describe('API: Quick Summary (coverage gap)', () => {
     assert.ok('temp' in data.results);
   });
 });
+
+// Regression: app cleanup "delete_users" must extract the username from real
+// fnOS @app* paths (@appcenter/@appstore with letters), NOT only numeric @app\d.
+// Old regex /(@app\d+)\/([^/]+)/ never matched -> user never deleted (fake cleanup).
+describe('API: app delete_users regex (regression)', () => {
+  // Source-level guard: the deleteUsers path regex must match letter dirs like
+  // @appcenter/@appstore, NOT only numeric @app\d. Old bug: /(@app\\d+)\/([^/]+)/
+  // never matched real paths -> user never deleted (fake cleanup).
+  it('app.js deleteUsers regex matches @appcenter/@appstore letter dirs', () => {
+    const APP_JS = readFileSync(join(UI_DIR, 'api', 'app.js'), 'utf8');
+    // Must NOT have the old numeric-only pattern
+    assert.ok(!APP_JS.includes('p.match(/(@app\\d+)'), 'old @app\\d+ regex still present');
+    // Must match a literal @app dir (any name, not just digits)
+    assert.ok(/\/@app[^/]+\/[^/]+\$/m.test(APP_JS), '@app* regex missing in deleteUsers');
+    // Sanity: real fnOS paths are @appcenter/@appstore (letters)
+    for (const p of ['/vol3/@appcenter/fnclearup', '/vol1/@appstore/SomeApp', '/mnt/vol4/@appcenter/test']) {
+      const m = p.match(/\/(@app[^/]+)\/([^/]+)$/);
+      assert.ok(m, 'regex failed on ' + p);
+      assert.ok(m[2].length > 0);
+    }
+  });
+});
