@@ -4,7 +4,10 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
-## v0.9.5 更新
+## v0.9.6 更新
+
+- 修复：同步删除关联系统用户失效（`@app\d+` 正则无法匹配 `@appcenter`/`@appstore` 字母目录，用户永远不删）——改为匹配任意 `@app*` 目录，并增加 uid≥900 守护（不误删系统保留用户）
+- 修复：应用残余卸载失败（`@appcenter` 路径不匹配回收站 regex，改为永久删除）
 
 - **修复：去重浏览弹窗 ENOENT 报错** — `showDupBrowseModal` 默认从 `DupState.paths` 最后一个路径开始浏览，当路径不存在（如 `/vol1/1000/music`）时 API 返回 500 ENOENT，弹窗显示错误。改为从 `/` 根目录开始浏览
 - **修复：根路径卷条目不可点击** — 根路径 `/` 浏览返回的卷条目缺少 `isDirectory:true`，前端渲染为不可点击的 📄 文件图标，导致只能添加 vol1 下目录无法添加 vol2/vol3
@@ -240,6 +243,10 @@
 | `/api/trash/clean` | POST | 清理 trash（按 mtime 阈值 + manifest 备份） |
 
 ## 版本历史
+
+### v0.9.6 (2026-08-20)
+- 修复：同步删除关联系统用户失效（@app\d+ 正则无法匹配 @appcenter/@appstore，用户永远不删）——改为匹配任意 @app* 目录 + uid≥900 守护
+- 修复：应用残余卸载失败（@appcenter 路径不匹配回收站 regex，改为永久删除）
 
 ### v0.9.5 (2026-08-12)
 
