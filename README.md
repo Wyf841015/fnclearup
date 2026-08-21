@@ -4,6 +4,12 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.9.7 更新
+
+- **全面功能检测** — 97/97 测试通过；完整 API 冒烟验证（应用/网盘/Docker/temp/dup/empty_dir/bigfiles/trash/sysclean/schedule/quick-summary 全部 200 闭环）
+- **优化**：header 工具栏按钮垂直居中对齐（`align-items:center`）
+- 修复已包含：同步删除关联系统用户失效、应用残余卸载失败、去重浏览弹窗 ENOENT、根路径卷条目不可点击
+
 ## v0.9.6 更新
 
 - 修复：同步删除关联系统用户失效（`@app\d+` 正则无法匹配 `@appcenter`/`@appstore` 字母目录，用户永远不删）——改为匹配任意 `@app*` 目录，并增加 uid≥900 守护（不误删系统保留用户）

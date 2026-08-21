@@ -70,7 +70,7 @@ button i[data-lucide]{pointer-events:none}
 .header-left h1{font-size:22px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px;letter-spacing:-0.02em}
 .header-left h1::before{content:'';font-size:28px}
 .subtitle{font-size:13px;color:var(--color-text-secondary);line-height:1.5}
-.header-controls{display:flex;gap:8px}
+.header-controls{display:flex;gap:8px;align-items:center}
 .sponsor-btn{display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:var(--radius-full);cursor:pointer;font-size:14px;font-weight:600;font-family:var(--font);white-space:nowrap;transition:background-color .25s ease, box-shadow .25s ease, transform .25s ease;background:var(--color-card-bg);color:oklch(55% 0.20 30);border:1px solid oklch(80% 0.015 250)}
 .sponsor-btn:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);background:oklch(95% 0.005 250)}
 html.dark .sponsor-btn{color:oklch(75% 0.15 30);border-color:oklch(30% 0.008 250)}
