@@ -740,7 +740,11 @@ async function startDupScan(tab) {
   if(statusEl) statusEl.innerHTML='<span class="dup-spinner"></span> 正在验证路径...';
 
   try {
-    const result = await API.post('api/dup/scan', { type: tab==='music'?'music':'files', paths: scanPaths });
+    const keepMode = $(tab+'KeepMode')?.value || 'deepest';
+    let minSize = 0;
+    const minEl = $(tab+'MinSize');
+    if (minEl && minEl.value) { minSize = parseInt(minEl.value, 10); if (isNaN(minSize) || minSize<0) minSize = 0; }
+    const result = await API.post('api/dup/scan', { type: tab==='music'?'music':'files', paths: scanPaths, minSize, keepMode });
     if (result.error || !result.jobId) {
       showToast(result.error||'启动扫描失败','error');
       if(statusEl) statusEl.innerHTML='❌ '+(result.error||'启动扫描失败');
@@ -852,7 +856,7 @@ function renderDupList(tab, duplicates) {
       const isFirst = fi===0; const isChecked = !isFirst;
       if(isChecked){selCount++;selSize+=file.size;}
       const cb = document.createElement('input'); cb.type='checkbox'; cb.className='dup-file-cb';
-      cb.dataset.path=file.path; cb.dataset.size=file.size; cb.checked=isChecked;
+      cb.dataset.path=file.path; cb.dataset.size=file.size; cb.dataset.hash=group.hash; cb.checked=isChecked;
       if(isFirst)cb.disabled=true;
       cb.addEventListener('change', function(){updateDupSelectedCount();});
       const label = document.createElement('span'); label.className='dup-file-label';
@@ -925,7 +929,7 @@ function loadMoreDupResults(tab) {
         var item = document.createElement('div'); item.className='dup-file-item';
         var isFirst = fi===0; var isChecked = !isFirst;
         var cb = document.createElement('input'); cb.type='checkbox'; cb.className='dup-file-cb';
-        cb.dataset.path=file.path; cb.dataset.size=file.size; cb.checked=isChecked;
+        cb.dataset.path=file.path; cb.dataset.size=file.size; cb.dataset.hash=group.hash; cb.checked=isChecked;
         if(isFirst)cb.disabled=true;
         cb.addEventListener('change', function(){updateDupSelectedCount();});
         var label = document.createElement('span'); label.className='dup-file-label';
@@ -1366,14 +1370,45 @@ function hideDupDeleteModal(){$('#dupDeleteModal')?.classList.remove('visible');
 async function confirmDupDelete(){
   const tab=$('#dupDeleteModal').dataset.tab; if(!tab)return;
   const mode=document.querySelector('input[name="dupDeleteMode"]:checked')?.value||'trash';
-  const paths=[...document.querySelectorAll('.dup-file-cb:checked:not(.group-select-all)')].map(cb=>cb.dataset.path);
+  const cbs=[...document.querySelectorAll('.dup-file-cb:checked:not(.group-select-all)')];
+  const paths=cbs.map(cb=>cb.dataset.path);
   if(!paths.length){hideDupDeleteModal();return;}
   hideDupDeleteModal();
   try{
-    const r=await API.post('api/dup/delete',{files:paths,mode});
-    const msg=`已删除 ${r.deleted||0} 个文件`;
+    let r;
+    if (mode === 'hardlink') {
+      // For each selected file, find its group's KEEP file (files[0], decided by keepMode on backend).
+      // The hardlink keep must not be one of the selected files.
+      const byHash={};
+      for(const g of DupState[tab].duplicates){ byHash[g.hash]=g; }
+      const keepPathFor=new Map();
+      for(const cb of cbs){
+        const g=byHash[cb.dataset.hash];
+        if(!g||!g.files||!g.files.length) continue;
+        // files[0] is the keep candidate; only link-remove the OTHER files
+        const keep=g.files[0].path;
+        if(!paths.includes(keep) && cb.dataset.path!==keep){ keepPathFor.set(cb.dataset.path, keep); }
+      }
+      const linkTargets=[...keepPathFor.keys()].filter(p=>paths.includes(p));
+      if(!linkTargets.length){ showToast('所选文件都需保留，无法硬链接去重','warning'); return; }
+      // Batch by keep to minimize API calls
+      const byKeep=new Map();
+      for(const p of linkTargets){ const k=keepPathFor.get(p); if(!byKeep.has(k))byKeep.set(k,[]); byKeep.get(k).push(p); }
+      r={deleted:0, linked:0, failed:[], skipped:0, emptyDirs:[]};
+      for(const [keep,ps] of byKeep){
+        const sub=await API.post('api/dup/delete',{files:ps,mode:'hardlink',keep});
+        if(sub){ r.deleted+=sub.deleted||0; r.linked+=sub.linked?.length||0; if(sub.failed)r.failed.push(...sub.failed); r.emptyDirs.push(...(sub.emptyDirs||[])); }
+      }
+    } else {
+      r=await API.post('api/dup/delete',{files:paths,mode});
+    }
+    const msg=mode==='hardlink' ? `硬链接 ${r.linked||0} 个文件` : `已删除 ${r.deleted||0} 个文件`;
     if(r.failed&&r.failed.length) showToast(msg+'，失败 '+r.failed.length+' 个: '+r.failed.map(f=>f.reason).join('; '),'warning');
     else showToast(msg,'success');
+    if(r.emptyDirs&&r.emptyDirs.length){
+      const sample=r.emptyDirs.slice(0,5).join('<br>');
+      showToast('发现 '+r.emptyDirs.length+' 个空目录，可用「去空」清理:<br>'+sample,'info');
+    }
     // Re-fetch results to update UI
     const ids=getDupIds(tab);
     const data={status:'complete',duplicates:DupState[tab].duplicates,stats:{}};

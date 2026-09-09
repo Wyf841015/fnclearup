@@ -42,9 +42,25 @@ function readId3Tags(fp) {
   return null;
 }
 
-async function hashFile(fp, batchId) {
+async function hashFile(fp, batchId, mode) {
   try {
     const st = statSync(fp);
+
+    // Partial mode: hash only the first bytes (4096) — fast pre-filter to reject
+    // files that differ at the head before paying for a full read. Mirrors jdupes'
+    // partial-hash exclusion step. Returns header hash + size + mtime so the parent
+    // can group by size+partial before deciding which files need a full hash.
+    if (mode === 'partial') {
+      const PARTIAL_BYTES = 4096;
+      const hash = createHash('sha256');
+      const fd = openSync(fp, 'r');
+      const buf = Buffer.alloc(PARTIAL_BYTES);
+      const n = readSync(fd, buf, 0, PARTIAL_BYTES, 0);
+      closeSync(fd);
+      hash.update(buf.slice(0, n));
+      return { path: fp, size: st.size, mtimeMs: st.mtimeMs, partial: hash.digest('hex') };
+    }
+
     // Adaptive chunk size: 4MB for huge files, 1MB for large, 256KB for small
     let chunkSize = 256 * 1024;
     if (st.size > 500 * 1024 * 1024) chunkSize = 4 * 1024 * 1024;       // >500MB
@@ -79,10 +95,10 @@ async function hashFile(fp, batchId) {
     }
 
     const digest = hash.digest('hex');
-    return { path: fp, size: st.size, hash: digest, ext: extname(fp).toLowerCase(), id3 };
+    return { path: fp, size: st.size, mtimeMs: st.mtimeMs, hash: digest, ext: extname(fp).toLowerCase(), id3 };
   } catch (e) {
     // Return error info so parent can track failures
-    return { path: fp, error: e.message || String(e), size: 0, hash: null, ext: null, id3: null };
+    return { path: fp, error: e.message || String(e), size: 0, mtimeMs: 0, hash: null, partial: null, ext: null, id3: null };
   }
 }
 
@@ -91,9 +107,10 @@ parentPort.on('message', async (msg) => {
   try {
     if (msg.type === 'hash') {
       const results = [];
+      const mode = msg.mode || 'full';
       for (let idx = 0; idx < msg.files.length; idx++) {
         const fp = msg.files[idx];
-        const r = await hashFile(fp, msg.batchId);
+        const r = await hashFile(fp, msg.batchId, mode);
         results.push(r);
         // Report progress after each file
         parentPort.postMessage({ type: 'partial', batchId: msg.batchId, index: idx, total: msg.files.length, file: fp, result: r });

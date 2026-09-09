@@ -189,6 +189,18 @@
             <div class="dup-scan-input-row">
               <div class="dup-path-list" id="musicPathList"></div>
               <button type="button" class="btn btn-outline" onclick="showDupBrowseModal('music')">📁 添加目录</button>
+              <div class="dup-scan-opts">
+                <label class="dup-opt">保留
+                  <select id="musicKeepMode">
+                    <option value="first">路径最早</option>
+                    <option value="newest">最新修改</option>
+                    <option value="deepest" selected>最深路径</option>
+                  </select>
+                </label>
+                <label class="dup-opt">最小大小
+                  <input type="number" id="musicMinSize" min="0" step="1048576" placeholder="0 B" style="width:6em">
+                </label>
+              </div>
               <div class="dup-scan-btns" id="musicScanBtns">
                 <button type="button" class="btn btn-primary" id="musicScanBtn" onclick="startDupScan('music')">🔍 开始扫描</button>
                 <button type="button" class="btn btn-danger" id="musicStopBtn" onclick="stopDupScan('music')" style="display:none">⏹ 停止</button>
@@ -219,6 +231,18 @@
             <div class="dup-scan-input-row">
               <div class="dup-path-list" id="filesPathList"></div>
               <button type="button" class="btn btn-outline" onclick="showDupBrowseModal('files')">📁 添加目录</button>
+              <div class="dup-scan-opts">
+                <label class="dup-opt">保留
+                  <select id="filesKeepMode">
+                    <option value="first">路径最早</option>
+                    <option value="newest">最新修改</option>
+                    <option value="deepest" selected>最深路径</option>
+                  </select>
+                </label>
+                <label class="dup-opt">最小大小
+                  <input type="number" id="filesMinSize" min="0" step="1048576" placeholder="0 B" style="width:6em">
+                </label>
+              </div>
               <div class="dup-scan-btns" id="filesScanBtns">
                 <button type="button" class="btn btn-primary" id="filesScanBtn" onclick="startDupScan('files')">🔍 开始扫描</button>
                 <button type="button" class="btn btn-danger" id="filesStopBtn" onclick="stopDupScan('files')" style="display:none">⏹ 停止</button>
@@ -661,6 +685,7 @@
       <div class="delete-mode-select">
         <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="trash" checked><span>放到回收站<small>文件移至卷回收站，可恢复</small></span></label>
         <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="permanent"><span>永久删除<small>直接删除文件，不可恢复</small></span></label>
+        <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="hardlink"><span>硬链接去重<small>删除重复数据块，保留文件链接到原文件即刻恢复同卷空间</small></span></label>
       </div>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideDupDeleteModal()">取消</button>

@@ -49,13 +49,19 @@ export class HashPool {
         const batch = this.activeBatches.get(msg.batchId);
         if (batch) {
           clearTimeout(batch.timeout);
-          // Filter: only keep results with actual hashes
+          // Filter: keep results that actually produced a value (full hash OR partial
+          // header hash, depending on the batch mode). Partial results carry `.partial`,
+          // full results carry `.hash`.
           const good = [];
+          const wantPartial = batch.mode === 'partial';
           for (const r of msg.results) {
-            if (r && r.hash) {
-              good.push(r);
-            } else if (r && r.error) {
-              console.error('[HashPool] File hash error: ' + r.path + ': ' + r.error);
+            if (!r) continue;
+            if (wantPartial) {
+              if (r.partial) good.push(r);
+              else if (r.error) console.error('[HashPool] Partial hash error: ' + r.path + ': ' + r.error);
+            } else {
+              if (r.hash) good.push(r);
+              else if (r.error) console.error('[HashPool] File hash error: ' + r.path + ': ' + r.error);
             }
           }
           batch.resolve(good);
@@ -138,7 +144,7 @@ export class HashPool {
       const batch = this.pendingBatches.shift();
       const entry = this.activeBatches.get(batch.batchId);
       if (entry) entry.worker = worker;
-      worker.postMessage({ type: 'hash', files: batch.files, batchId: batch.batchId });
+      worker.postMessage({ type: 'hash', files: batch.files, batchId: batch.batchId, mode: batch.mode || 'full' });
     }
   }
 
@@ -146,12 +152,14 @@ export class HashPool {
    * Hash a batch of files. Returns Promise<HashResult[]>
    * Throws on timeout or worker crash.
    * @param {string[]} files - file paths to hash
-   * @param {function} [onProgress] - called after each file: (index, total, filePath, result)
-   * @param {function} [onFileHashProgress] - called during file hash: (filePath, bytesRead, totalSize)
+   * @param {object} [opts] - { mode: 'full'|'partial', onProgress, onFileHashProgress }
    */
-  async hashFiles(files, onProgress, onFileHashProgress) {
+  async hashFiles(files, opts) {
     await this._waitInit();
     const batchId = ++this.batchIdCounter;
+    const mode = (opts && opts.mode) || 'full';
+    const onProgress = opts && opts.onProgress;
+    const onFileHashProgress = opts && opts.onFileHashProgress;
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(function() {
@@ -160,8 +168,8 @@ export class HashPool {
         reject(new Error('Batch ' + batchId + ' timed out after ' + (this.batchTimeoutMs / 1000) + 's (' + files.length + ' files)'));
       }.bind(this), this.batchTimeoutMs);
 
-      this.activeBatches.set(batchId, { resolve: resolve, reject: reject, timeout: timeout, worker: null, onProgress: onProgress || null, onFileHashProgress: onFileHashProgress || null });
-      this.pendingBatches.push({ batchId: batchId, files: files });
+      this.activeBatches.set(batchId, { resolve: resolve, reject: reject, timeout: timeout, worker: null, mode: mode, onProgress: onProgress || null, onFileHashProgress: onFileHashProgress || null });
+      this.pendingBatches.push({ batchId: batchId, files: files, mode: mode });
       this._processQueue();
     });
   }
