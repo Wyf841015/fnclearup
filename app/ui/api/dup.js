@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, renameSync, cpSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, renameSync, cpSync, linkSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, extname, basename, dirname } from 'node:path';
@@ -22,6 +22,8 @@ export async function handleDupScan(req, res) {
   const data = await parseBody(req);
   const scanType = data.type || 'files';
   const scanPaths = Array.isArray(data.paths) ? data.paths.map(p => p.trim()).filter(Boolean) : [];
+  const minSize = (data.minSize === undefined || data.minSize === null) ? 0 : (Number(data.minSize) || 0);
+  const keepMode = data.keepMode || 'first';   // first | newest | deepest
   if (!['music', 'files'].includes(scanType)) {
     sendJSON(res, 400, { error: '无效的扫描类型', success: false });
     return;
@@ -44,7 +46,7 @@ export async function handleDupScan(req, res) {
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
 
   const initialState = {
-    id: jobId, scanType, rootPaths: scanPaths,
+    id: jobId, scanType, rootPaths: scanPaths, minSize, keepMode,
     status: 'counting',
     progress: { total: 0, processed: 0, currentFile: '' },
     files: [], duplicates: [], stats: { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 },
@@ -56,7 +58,7 @@ export async function handleDupScan(req, res) {
   renameSync(tmpInit, stateFile);
 
   if (existsSync(DUP_SCAN_SCRIPT)) {
-    const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPaths.join(','), jobId, DUP_STATE_DIR], {
+    const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPaths.join(','), jobId, DUP_STATE_DIR, String(minSize), keepMode], {
       stdio: 'ignore', detached: false, timeout: 3600000,
     });
     const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch { console.error('[dup.js]'); } }, 3660000);
@@ -73,6 +75,8 @@ export async function handleDupScan(req, res) {
 async function runDupScanInline(jobId, scanType, scanPaths, stateFile) {
   const extensions = scanType === 'music' ? MUSIC_EXTS : null;
   const state = safeReadJSON(stateFile, 'utf-8');
+  const minSize = state.minSize || 0;
+  const keepMode = state.keepMode || 'first';
   const update = () => {
     const tmp = stateFile + '.tmp';
     writeFileSync(tmp, JSON.stringify(state));
@@ -80,7 +84,7 @@ async function runDupScanInline(jobId, scanType, scanPaths, stateFile) {
   };
   try {
     state.status = 'counting';
-    const allFiles = [];         // {path, size}[]
+    const allFiles = [];         // {path, size, mtimeMs}[]
     for (const sp of scanPaths) {
       if (state._aborted) { state.status = 'aborted'; update(); return; }
       if (await checkPause(state, stateFile, update)) { state.status = 'aborted'; update(); return; }
@@ -89,7 +93,8 @@ async function runDupScanInline(jobId, scanType, scanPaths, stateFile) {
         if (await checkPause(state, stateFile, update)) { state.status = 'aborted'; update(); return; }
         let st;
         try { st = statSync(fp); } catch { continue; }
-        allFiles.push({ path: fp, size: st.size });
+        if (minSize > 0 && st.size < minSize) continue;   // min-size filter
+        allFiles.push({ path: fp, size: st.size, mtimeMs: st.mtimeMs });
         state.progress.total = allFiles.length;
         if (allFiles.length % 50 === 0) update();
       }
@@ -133,20 +138,23 @@ async function runDupScanInline(jobId, scanType, scanPaths, stateFile) {
       const paths = batch.map(f => f.path);
       let results;
       try {
-        results = await pool.hashFiles(paths, function(idx, total, filePath, result) {
-          state.progress.processed = Math.min(state.progress.processed + 1, state.progress.total);
-          state.progress.currentFile = filePath;
-          state.progress.hashProgress = '';
-          if (result && result.error) {
-            if (!state.failedFiles) state.failedFiles = [];
-            state.failedFiles.push({ path: filePath, error: result.error });
-          }
-          update();
-        }, function(filePath, bytesRead, totalSize) {
-          const pct = totalSize > 0 ? Math.round((bytesRead / totalSize) * 100) : 0;
-          state.progress.currentFile = filePath;
-          state.progress.hashProgress = pct + '%';
-          update();
+        results = await pool.hashFiles(paths, {
+          onProgress: function(idx, total, filePath, result) {
+            state.progress.processed = Math.min(state.progress.processed + 1, state.progress.total);
+            state.progress.currentFile = filePath;
+            state.progress.hashProgress = '';
+            if (result && result.error) {
+              if (!state.failedFiles) state.failedFiles = [];
+              state.failedFiles.push({ path: filePath, error: result.error });
+            }
+            update();
+          },
+          onFileHashProgress: function(filePath, bytesRead, totalSize) {
+            const pct = totalSize > 0 ? Math.round((bytesRead / totalSize) * 100) : 0;
+            state.progress.currentFile = filePath;
+            state.progress.hashProgress = pct + '%';
+            update();
+          },
         });
       } catch (e) {
         console.error('[DupScan] batch ' + i + '-' + (i + batchSize) + ' failed: ' + e.message + ', skipping');
@@ -171,10 +179,21 @@ async function runDupScanInline(jobId, scanType, scanPaths, stateFile) {
     let dupFiles = 0, wastedBytes = 0;
     for (const [hash, files] of groups) {
       if (files.length >= 2) {
-        files.sort((a, b) => a.path.localeCompare(b.path));
-        const wasted = files.slice(1).reduce((s, f) => s + f.size, 0);
-        duplicates.push({ hash, count: files.length, files, wasted });
-        dupFiles += files.length;
+        // Smart keep (mirrors dup_scan.js): files[0] is the file to KEEP
+        let kept;
+        if (keepMode === 'newest') {
+          kept = files.slice().sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0))[0];
+        } else if (keepMode === 'deepest') {
+          kept = files.slice().sort((a, b) => b.path.split('/').length - a.path.split('/').length)[0];
+        } else {
+          kept = files.slice().sort((a, b) => a.path.localeCompare(b.path))[0];
+        }
+        const rest = files.filter(f => f.path !== kept.path)
+          .sort((a, b) => a.path.localeCompare(b.path));
+        const ordered = [kept, ...rest];
+        const wasted = rest.reduce((s, f) => s + (f.size || 0), 0);
+        duplicates.push({ hash, count: ordered.length, files: ordered, wasted, keepMode });
+        dupFiles += ordered.length;
         wastedBytes += wasted;
       }
     }
@@ -279,14 +298,29 @@ export async function handleDupDelete(req, res) {
   const data = await parseBody(req);
   const files = (data.files || []).filter(p => isSafePath(p));
   const skipped = (data.files || []).length - files.length;
-  const mode = data.mode || 'trash';
+  const mode = data.mode || 'trash';   // trash | permanent | hardlink
+  const keep = data.keep || '';        // for hardlink mode: the file to KEEP (others become hard links to it)
   let deleted = 0;
+  const linked = [];
   const failed = [];
+  const emptyDirs = [];   // P2-6: dirs that became empty after deletion (link scan notification)
+
   for (const fp of files) {
     try {
       if (mode === 'permanent') {
         if (existsSync(fp)) unlinkSync(fp);
-      } else {
+        deleted++;
+      } else if (mode === 'hardlink') {
+        // P1-4: replace a duplicate with a hard link to the kept file — frees space for
+        // the dupe's data blocks WITHOUT deleting it (data remains reachable). Only valid
+        // when the original is on the same filesystem.
+        if (!keep || !existsSync(fp)) throw new Error('硬链接去重需要有效的原始文件');
+        if (!isSafePath(keep)) throw new Error('原始文件路径越界');
+        if (fp === keep) continue;
+        unlinkSync(fp);                    // remove the duplicate inode
+        linkSync(keep, fp);                // link fp → keep (shares data blocks)
+        linked.push(fp);
+      } else {  // trash
         const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/(\d+)\/(.+)/);
         if (m) {
           const trashDir = `/${m[1]}/${m[2]}/.@#local/trash`;
@@ -304,11 +338,23 @@ export async function handleDupDelete(req, res) {
         } else {
           failed.push({ path: fp, reason: '路径格式不支持回收站: ' + fp + ' (需 /volN/UID/... 格式)' });
         }
+        deleted++;
       }
-      deleted++;
+      // P2-6: after any deletion/link, check whether the file's parent dir is now empty
+      try {
+        const parent = dirname(fp);
+        if (existsSync(parent) && readdirSync(parent).length === 0) {
+          emptyDirs.push(parent);
+        }
+      } catch { /* ignore — parent may be inaccessible, not an error */ }
     } catch (e) { failed.push({ file: fp, reason: e.message }); }
   }
-  sendJSON(res, 200, { deleted, failed, skipped, total: deleted.length, failures: failed.length, success: true });
+  sendJSON(res, 200, {
+    deleted, linked, failed, skipped,
+    total: deleted + linked.length, failures: failed.length,
+    emptyDirs: [...new Set(emptyDirs)].slice(0, 100),   // dedupe, cap
+    success: true,
+  });
 }
 
 // POST /api/dup/export

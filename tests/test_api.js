@@ -7,9 +7,11 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import { request } from 'node:http';
-import { existsSync, mkdirSync, writeFileSync, unlinkSync, rmdirSync, readFileSync, rmSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, unlinkSync, rmdirSync, readFileSync, rmSync, chmodSync, stat } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const statPromise = (p) => new Promise((res, rej) => stat(p, (e, s) => e ? rej(e) : res(s)));
 
 const PORT = 47939; // Use different port to avoid conflict with running instance
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -396,6 +398,72 @@ describe('API: Duplicate File Scan', () => {
   it('POST /api/dup/export without jobId returns error', async () => {
     const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/export', {});
     assert.strictEqual(status, 400);
+  });
+
+  it('POST /api/dup/delete with mode=hardlink dedupes via hard link (same fs)', async () => {
+    // Create two identical files in a temp dir on the same fs as TEST_TMP
+    const hlDir = join(TEST_TMP, 'dup_hl');
+    mkdirSync(hlDir, { recursive: true });
+    const keepPath = join(hlDir, 'keep.txt');
+    const delPath = join(hlDir, 'dup.txt');
+    writeFileSync(keepPath, 'hardlink-content');
+    writeFileSync(delPath, 'hardlink-content');
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/delete', {
+      files: [delPath], mode: 'hardlink', keep: keepPath,
+    });
+    assert.strictEqual(status, 200);
+    // dup.txt should now be a hard link to keep.txt (same inode) and still readable
+    const st1 = await statPromise(keepPath);
+    const st2 = await statPromise(delPath);
+    assert.strictEqual(st1.ino, st2.ino, 'files should share inode after hardlink dedupe');
+    assert.strictEqual(data.linked.length, 1);
+    // cleanup
+    try { unlinkSync(keepPath); unlinkSync(delPath); rmdirSync(hlDir); } catch {}
+  });
+
+  it('POST /api/dup/delete returns emptyDirs for dirs emptied by deletion', async () => {
+    const edDir = join(TEST_TMP, 'dup_empty_xx');
+    mkdirSync(edDir, { recursive: true });
+    const sub = join(edDir, 'onlyfile.txt');
+    writeFileSync(sub, 'sole content');
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/delete', {
+      files: [sub], mode: 'permanent',
+    });
+    assert.strictEqual(status, 200);
+    assert.ok(Array.isArray(data.emptyDirs), 'emptyDirs should be an array');
+    assert.ok(data.emptyDirs.includes(edDir), 'parent dir should be reported as emptied');
+    try { rmdirSync(edDir); } catch {}
+  });
+
+  it('POST /api/dup/delete mode=permanent with non-empty parent returns no emptyDirs', async () => {
+    const neDir = join(TEST_TMP, 'dup_nonempty_xx');
+    mkdirSync(neDir, { recursive: true });
+    const sub = join(neDir, 'one.txt');
+    const other = join(neDir, 'two.txt');
+    writeFileSync(sub, 'content 1');
+    writeFileSync(other, 'content 2');
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/delete', {
+      files: [sub], mode: 'permanent',
+    });
+    assert.strictEqual(status, 200);
+    // parent still has two.txt → not empty
+    assert.ok(!data.emptyDirs.includes(neDir));
+    try { unlinkSync(other); rmdirSync(neDir); } catch {}
+  });
+
+  it('POST /api/dup/delete mode=hardlink with unsafe keep rejected (whitelist)', async () => {
+    const hlDir = join(TEST_TMP, 'dup_hl2');
+    mkdirSync(hlDir, { recursive: true });
+    const keepPath = join(hlDir, 'keep.txt');
+    const delPath = join(hlDir, 'dup.txt');
+    writeFileSync(keepPath, 'x-hardlink-content');
+    writeFileSync(delPath, 'x-hardlink-content');
+    const { status } = await httpRequest('POST', '/app/fnclearup/api/dup/delete', {
+      files: [delPath], mode: 'hardlink', keep: '/etc/passwd',   // not whitelisted
+    });
+    assert.notStrictEqual(status, 500);   // never crashes server
+    // cleanup
+    try { unlinkSync(keepPath); unlinkSync(delPath); rmdirSync(hlDir); } catch {}
   });
 });
 
