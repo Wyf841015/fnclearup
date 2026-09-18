@@ -17,6 +17,7 @@ import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js'
 import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
 import { handleBigFilesScan, handleBigFilesStop, handleBigFilesDelete } from './api/bigfiles.js';
 import { handleDiskVolumes, handleDiskTree, handleDiskStop } from './api/diskanalysis.js';
+import { handleSimDupScan, handleSimDupStatus, handleSimDupStop, setSimDupPaths } from './api/simdup.js';
 import { handleDockerStopped, handleDockerStoppedRemove, handleDockerBuildCache, handleDockerBuildCachePrune } from './api/docker_cleanup.js';
 
 // ── Paths ──
@@ -35,6 +36,10 @@ setDupPaths(DUP_STATE_DIR, DUP_SCAN_SCRIPT);
 const EMPTY_STATE_DIR = join(DATA_DIR, 'empty_dir');
 const EMPTY_SCAN_SCRIPT = join(TARGET_DIR, 'empty_dir_scan.js');
 setEmptyDirPaths(EMPTY_STATE_DIR, EMPTY_SCAN_SCRIPT);
+
+// Init similar-image/video state (reuses dup state dir for scan jobs)
+const SIM_SCAN_SCRIPT = join(TARGET_DIR, 'simdup_scan.js');
+setSimDupPaths(DUP_STATE_DIR, SIM_SCAN_SCRIPT);
 
 // GET /api/browse?path=/vol2
 function handleBrowse(req, res) {
@@ -144,6 +149,10 @@ async function handle(req, res) {
       if (method === 'GET' && path === '/api/diskanalysis/volumes') { await handleDiskVolumes(req, res); return; }
       if (method === 'POST' && path === '/api/diskanalysis/tree') { await handleDiskTree(req, res); return; }
       if (method === 'POST' && path === '/api/diskanalysis/stop') { handleDiskStop(req, res); return; }
+      // Similar image/video
+      if (method === 'POST' && path === '/api/simdup/scan') { await handleSimDupScan(req, res); return; }
+      if (method === 'GET' && path === '/api/simdup/status') { handleSimDupStatus(req, res); return; }
+      if (method === 'POST' && path === '/api/simdup/stop') { handleSimDupStop(req, res); return; }
       // Docker cleanup (stopped containers + build cache)
       if (method === 'GET' && path === '/api/docker/stopped') { await handleDockerStopped(req, res); return; }
       if (method === 'POST' && path === '/api/docker/stopped/remove') { await handleDockerStoppedRemove(req, res); return; }

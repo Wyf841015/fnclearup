@@ -177,6 +177,7 @@ async function switchTab(tabName) {
   else if(tabName==='docker') { App.dockerVolumesLoaded=false; await loadDockerVolumes(); switchInnerTab('volumes'); }
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
+  else if(tabName==='simdup') { /* lazy — user clicks scan */ }
   else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
   else if(tabName==='diskanalysis') { if(!App.dsLoaded) { App.dsLoaded=true; dsLoadVolumes(); } }
   else if(tabName==='dockercleanup') { dcCheckAvailable(); }
@@ -1170,6 +1171,102 @@ function dsRenderTypes(types) {
   });
   html += '</div></div>';
   container.innerHTML = html;
+}
+
+// ════════════════════════════════
+// Similar Image/Video Detection (P0-2)
+// ════════════════════════════════
+let _simScanning = false;
+let _simJob = null;
+
+async function simDupScan() {
+  if (_simScanning) return;
+  const path = ($('simdup-path')?.value || '').trim();
+  if (!path) { showToast('请输入扫描目录', 'error'); return; }
+  const type = $('simdup-type')?.value || 'image';
+  const threshold = parseInt($('simdup-threshold')?.value || '10', 10) || 10;
+
+  _simScanning = true;
+  const btn = $('simdupBtn'); const stopBtn = $('simdupStopBtn'); const status = $('simdup-status'); const list = $('simdup-list');
+  if (btn) btn.disabled = true;
+  if (stopBtn) stopBtn.style.display = '';
+  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描 ' + path + ' …'; }
+  if (list) list.innerHTML = '';
+
+  try {
+    const r = await API.post('api/simdup/scan', { type, paths: [path], threshold });
+    if (!r.success) throw new Error(r.error || 'scan failed');
+    _simJob = r.jobId;
+    // poll
+    const t0 = Date.now();
+    while (_simScanning) {
+      await new Promise(res => setTimeout(res, 800));
+      const s = await API.get('api/simdup/status?job=' + encodeURIComponent(_simJob));
+      const el = $('simdup-elapsed'); if (el) el.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
+      simDupRenderProgress(s);
+      if (s.status === 'done') {
+        simDupRenderResult(s);
+        if (status) { status.className = 'success'; status.textContent = `✅ 扫描完成：${s.stats.totalFiles} 个${type==='video'?'视频':'图片'}，发现 ${s.stats.groups} 个相似组（${s.stats.files} 个重复文件）`; }
+        break;
+      }
+      if (s.status === 'aborted') {
+        if (status) { status.className = 'error'; status.textContent = '⏹ 已停止'; }
+        break;
+      }
+      if (s.status === 'error') { throw new Error(s.error || 'scan error'); }
+    }
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+    if (list) list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">⚠️</div><h3>扫描失败</h3><p>' + escHtml(e.message) + '</p></div>';
+  } finally {
+    _simScanning = false;
+    if (btn) btn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+function simDupRenderProgress(s) {
+  const total = s.progress?.total || 0;
+  const proc = s.progress?.processed || 0;
+  if (total > 0 && s.status !== 'done') {
+    const pct = Math.round((proc / total) * 100);
+    const statusEl = $('simdup-status');
+    if (statusEl) { statusEl.className = 'loading'; statusEl.textContent = `⏳ ${s.status==='paused'?'已暂停':''} 哈希计算 ${proc}/${total} (${pct}%)${s.progress?.currentFile?(' · ' + s.progress.currentFile.split('/').pop()):''}`; }
+  }
+}
+
+function simDupRenderResult(s) {
+  const list = $('simdup-list'); if (!list) return;
+  if ($('simdup-total')) $('simdup-total').textContent = s.stats?.totalFiles ?? 0;
+  if ($('simdup-groups')) $('simdup-groups').textContent = s.stats?.groups ?? 0;
+  if ($('simdup-files')) $('simdup-files').textContent = s.stats?.files ?? 0;
+  if (!s.groups || !s.groups.length) {
+    list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现相似文件</h3><p>当前阈值下没有匹配项，可换「宽松」策略重试</p></div>';
+    return;
+  }
+  let clusters = [];
+  s.groups.forEach(g => {
+    g.files.forEach(f => clusters.push({ group: g.group, path: f.path, name: f.name, size: f.size, size_str: f.size_str }));
+  });
+  let html = '<div class="list-scroll"><table class="data-table"><thead><tr>' +
+    '<th style="width:50px">组</th><th>文件名</th><th style="width:13%">大小</th><th style="width:38%">位置</th></tr></thead><tbody>';
+  clusters.forEach(c => {
+    const dir = c.path.slice(0, c.path.lastIndexOf('/')) || '/';
+    html += `<tr>
+      <td style="text-align:center"><span style="background:var(--color-primary);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">${c.group}</span></td>
+      <td><span title="${escHtml(c.path)}">${escHtml(c.name)}</span></td>
+      <td style="font-family:var(--font-mono);color:var(--color-primary)">${escHtml(c.size_str)}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dir)}">${escHtml(dir)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+}
+
+async function simDupStop() {
+  if (!_simJob) return;
+  _simScanning = false;
+  try { await API.post('api/simdup/stop?job=' + encodeURIComponent(_simJob), {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
 }
 
 async function stopBigFiles() {
@@ -2736,6 +2833,7 @@ function init() {
     showDupDeleteModal, hideDupDeleteModal,
     confirmDupDelete,
     updateDupSelectedCount, loadMoreDupResults,
+    simDupScan, simDupStop,
     showBrowseModal, showDupBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
     renderDupPaths, removeDupPath,
     startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
