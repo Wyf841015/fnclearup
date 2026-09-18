@@ -46,18 +46,32 @@ async function hashFile(fp, batchId, mode) {
   try {
     const st = statSync(fp);
 
-    // Partial mode: hash only the first bytes (4096) — fast pre-filter to reject
-    // files that differ at the head before paying for a full read. Mirrors jdupes'
-    // partial-hash exclusion step. Returns header hash + size + mtime so the parent
-    // can group by size+partial before deciding which files need a full hash.
+    // Partial mode (Czkawka two-ended pre-filter): hash the first 4096 bytes
+    // AND the last 4096 bytes (or entire file if smaller). Two-ended pre-hash
+    // rejects files that differ at head OR tail (e.g. truncated/cut files with
+    // identical headers) BEFORE paying for a full-stream read — strictly more
+    // discriminating than single-headed (jdupes) partial hashing. Group key in
+    // the parent is size + partial, so files differing in size are already out.
     if (mode === 'partial') {
       const PARTIAL_BYTES = 4096;
       const hash = createHash('sha256');
       const fd = openSync(fp, 'r');
-      const buf = Buffer.alloc(PARTIAL_BYTES);
-      const n = readSync(fd, buf, 0, PARTIAL_BYTES, 0);
+      if (st.size <= PARTIAL_BYTES) {
+        // small file: single read covers everything
+        const buf = Buffer.alloc(PARTIAL_BYTES);
+        const n = readSync(fd, buf, 0, PARTIAL_BYTES, 0);
+        hash.update(buf.slice(0, n));
+      } else {
+        // head 4KB
+        const head = Buffer.alloc(PARTIAL_BYTES);
+        const nh = readSync(fd, head, 0, PARTIAL_BYTES, 0);
+        hash.update(head.slice(0, nh));
+        // tail 4KB (only if file is larger than head segment)
+        const tail = Buffer.alloc(PARTIAL_BYTES);
+        const nt = readSync(fd, tail, 0, PARTIAL_BYTES, st.size - PARTIAL_BYTES);
+        hash.update(tail.slice(0, nt));
+      }
       closeSync(fd);
-      hash.update(buf.slice(0, n));
       return { path: fp, size: st.size, mtimeMs: st.mtimeMs, partial: hash.digest('hex') };
     }
 
