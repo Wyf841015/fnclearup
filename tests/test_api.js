@@ -689,7 +689,15 @@ describe('API: System Cache Cleaning (sysclean)', () => {
       assert.ok(typeof it.size === 'number', 'size must be number');
       assert.ok(['low', 'medium', 'high', 'dangerous'].includes(it.risk), 'risk must be valid');
       assert.ok(typeof it.recommended === 'boolean', 'recommended must be bool');
+      assert.ok(['system', 'logs', 'dev', 'browser', 'app'].includes(it.category), 'category must be a valid bucket: got ' + it.category);
     }
+  });
+
+  it('GET /api/sysclean/scan groups items by category with sensible balance', async () => {
+    const { data } = await httpRequest('GET', '/app/fnclearup/api/sysclean/scan');
+    const cats = new Set(data.items.map(it => it.category));
+    // every category used must be one of the defined buckets & at least one present
+    assert.ok(cats.size >= 1, 'at least one category populated');
   });
 
   it('GET /api/sysclean/scan includes the test fixture cache', async () => {

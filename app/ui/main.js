@@ -2084,6 +2084,15 @@ const RISK_LABELS = {
   dangerous: { label: '危险', color: '#dc2626', bg: '#7f1d1d' },
 };
 
+// Category badges for sysclean classification (MangoDisk-style buckets).
+const CAT_BADGE = {
+  system:  { label: '系统', color: '#1d4ed8', bg: '#dbeafe' },
+  logs:    { label: '日志', color: '#7c3aed', bg: '#ede9fe' },
+  dev:     { label: '开发', color: '#0f766e', bg: '#ccfbf1' },
+  browser: { label: '浏览器', color: '#b45309', bg: '#fef3c7' },
+  app:     { label: '应用', color: '#be185d', bg: '#fce7f3' },
+};
+
 function getSysCleanRiskFilter() {
   return document.querySelector('input[name="syscleanRiskFilter"]:checked')?.value || 'all';
 }
@@ -2116,10 +2125,14 @@ function renderSysCleanList() {
   const list = $('sysclean-list');
   if (!list) return;
   const filter = getSysCleanRiskFilter();
+  const catFilter = getSysCleanCatFilter();
   const items = SysCleanState.items.filter(it => {
     if (filter === 'low') return it.risk === 'low';
     if (filter === 'medium') return it.risk === 'low' || it.risk === 'medium';
     return true; // 'all' shows everything
+  }).filter(it => {
+    if (catFilter === 'all') return true;
+    return it.category === catFilter;
   });
   if (items.length === 0) {
     list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--color-text-secondary)">没有匹配的项</div>';
@@ -2127,7 +2140,7 @@ function renderSysCleanList() {
   }
   let html = '<div class="list-scroll"><table class="data-table" id="sysclean-table"><thead><tr>' +
     '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllSysClean(this)"></th>' +
-    '<th style="width:64px">风险</th><th>名称</th><th>路径</th><th style="text-align:right">大小</th>' +
+    '<th style="width:64px">风险</th><th style="width:70px">分类</th><th>名称</th><th>路径</th><th style="text-align:right">大小</th>' +
     '</tr></thead><tbody>';
   for (const it of items) {
     const r = RISK_LABELS[it.risk] || RISK_LABELS.low;
@@ -2136,9 +2149,11 @@ function renderSysCleanList() {
     const disabled = isDangerous ? 'disabled' : '';
     const rowStyle = isDangerous ? 'style="opacity:0.6"' : '';
     const riskBadge = `<span class="file-badge" style="background:${r.bg};color:${r.color}">${r.label}</span>`;
+    const catBadge = `<span class="file-badge" style="background:${CAT_BADGE[it.category]?.bg||'#eee'};color:${CAT_BADGE[it.category]?.color||'#333'}">${CAT_BADGE[it.category]?.label||it.category||'-'}</span>`;
     html += `<tr ${rowStyle}>
       <td><input type="checkbox" class="sysclean-cb" value="${escHtml(it.id)}" data-size="${it.size}" data-label="${escHtml(it.label)}" onchange="updateSysCleanSelectInfo()" ${checked} ${disabled}></td>
       <td>${riskBadge}</td>
+      <td>${catBadge}</td>
       <td style="white-space:nowrap" title="${escHtml(it.label)}">${escHtml(it.name || it.label)}</td>
       <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(it.path)}">${escHtml(it.path)}</td>
       <td style="text-align:right;font-family:var(--font-mono);font-size:13px">${escHtml(it.size_str)}</td>
@@ -2147,6 +2162,11 @@ function renderSysCleanList() {
   html += '</tbody></table></div>';
   list.innerHTML = html;
   updateSysCleanSelectInfo();
+}
+
+function getSysCleanCatFilter() {
+  const el = document.querySelector('input[name="syscleanCatFilter"]:checked');
+  return el ? el.value : 'all';
 }
 
 function selectAllSysClean(el) {

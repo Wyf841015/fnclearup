@@ -61,21 +61,22 @@ function isRecommended(id) {
 
 // Per-user cache items are emitted once per discovered HOME (root + each UID).
 // Returns array of {id, path, ...} with id formatted as `<baseId>:<username>`.
+// category groups targets for the frontend's category drill-down (MangoDisk-style).
 const USER_CACHE_TEMPLATES = [
-  { id: 'npm', label: 'NPM 缓存', subPath: '.npm', recurse: true, risk: 'low' },
-  { id: 'pip', label: 'PIP 缓存', subPath: '.cache/pip', recurse: true, risk: 'low' },
-  { id: 'uv', label: 'uv 缓存', subPath: '.cache/uv', recurse: true, risk: 'low' },
-  { id: 'node-gyp', label: 'node-gyp 缓存', subPath: '.cache/node-gyp', recurse: true, risk: 'low' },
-  { id: 'typescript', label: 'TypeScript 增量编译缓存', subPath: '.cache/typescript', recurse: true, risk: 'medium' },
-  { id: 'playwright', label: 'Playwright 浏览器 (重下耗时)', subPath: '.cache/ms-playwright', recurse: true, risk: 'high' },
-  { id: 'chrome-cache', label: 'Chrome 浏览器缓存 (会丢登录)', subPath: '.cache/google-chrome', recurse: true, risk: 'high' },
-  { id: 'firefox-cache', label: 'Firefox 浏览器缓存', subPath: '.cache/mozilla', recurse: true, risk: 'high' },
-  { id: 'brave-cache', label: 'Brave 浏览器缓存', subPath: '.cache/BraveSoftware', recurse: true, risk: 'high' },
+  { id: 'npm', label: 'NPM 缓存', subPath: '.npm', recurse: true, risk: 'low', category: 'dev' },
+  { id: 'pip', label: 'PIP 缓存', subPath: '.cache/pip', recurse: true, risk: 'low', category: 'dev' },
+  { id: 'uv', label: 'uv 缓存', subPath: '.cache/uv', recurse: true, risk: 'low', category: 'dev' },
+  { id: 'node-gyp', label: 'node-gyp 缓存', subPath: '.cache/node-gyp', recurse: true, risk: 'low', category: 'dev' },
+  { id: 'typescript', label: 'TypeScript 增量编译缓存', subPath: '.cache/typescript', recurse: true, risk: 'medium', category: 'dev' },
+  { id: 'playwright', label: 'Playwright 浏览器 (重下耗时)', subPath: '.cache/ms-playwright', recurse: true, risk: 'high', category: 'dev' },
+  { id: 'chrome-cache', label: 'Chrome 浏览器缓存 (会丢登录)', subPath: '.cache/google-chrome', recurse: true, risk: 'high', category: 'browser' },
+  { id: 'firefox-cache', label: 'Firefox 浏览器缓存', subPath: '.cache/mozilla', recurse: true, risk: 'high', category: 'browser' },
+  { id: 'brave-cache', label: 'Brave 浏览器缓存', subPath: '.cache/BraveSoftware', recurse: true, risk: 'high', category: 'browser' },
   // cache-other is the "auto-discover anything else under ~/.cache" item.
   // We exclude the single-level children that are already covered by the
   // templates above so users don't see double-counted items (e.g. both
   // 'PIP 缓存' and '其它 ~/.cache: pip' for the same 1.4 GB directory).
-  { id: 'cache-other', label: '其它 ~/.cache 子目录', subPath: '.cache', recurse: true, risk: 'low',
+  { id: 'cache-other', label: '其它 ~/.cache 子目录', subPath: '.cache', recurse: true, risk: 'low', category: 'app',
     dynamicChildren: true,
     excludeSingleChildNames: new Set([
       'pip', 'uv', 'node-gyp', 'typescript', 'ms-playwright',
@@ -88,19 +89,19 @@ const USER_CACHE_TEMPLATES = [
 // Multi-home user caches are generated per-user at scan time via USER_CACHE_TEMPLATES.
 const SCAN_TARGETS = [
   // Package manager caches
-  { id: 'apt-archives', label: 'APT 下载缓存 (deb)', path: '/var/cache/apt/archives', recurse: true, risk: 'low',
+  { id: 'apt-archives', label: 'APT 下载缓存 (deb)', path: '/var/cache/apt/archives', recurse: true, risk: 'low', category: 'system',
     filter: (n) => n.endsWith('.deb') },
-  { id: 'apt-lists', label: 'APT 列表缓存', path: '/var/lib/apt/lists', recurse: true, risk: 'low',
+  { id: 'apt-lists', label: 'APT 列表缓存', path: '/var/lib/apt/lists', recurse: true, risk: 'low', category: 'system',
     filter: (n) => !n.startsWith('partial') && !n.endsWith('.gpg') },
   // System logs (admin: rotate .gz + 旧 .1)
-  { id: 'syslog-gz', label: '系统日志轮转文件 (.gz)', path: '/var/log', recurse: false, risk: 'low',
+  { id: 'syslog-gz', label: '系统日志轮转文件 (.gz)', path: '/var/log', recurse: false, risk: 'low', category: 'logs',
     filter: (n) => n.endsWith('.gz') },
-  { id: 'syslog-old', label: '系统日志历史档 (.1)', path: '/var/log', recurse: false, risk: 'low',
+  { id: 'syslog-old', label: '系统日志历史档 (.1)', path: '/var/log', recurse: false, risk: 'low', category: 'logs',
     filter: (n) => /\.1$/.test(n) && (n.startsWith('syslog') || n.startsWith('auth.log') || n.startsWith('mail.log') || n.startsWith('kern.log') || n.startsWith('daemon.log') || n.startsWith('user.log') || n.startsWith('messages')) },
-  { id: 'journal', label: 'systemd journal 日志', path: '/var/log/journal', recurse: true, risk: 'low',
+  { id: 'journal', label: 'systemd journal 日志', path: '/var/log/journal', recurse: true, risk: 'low', category: 'logs',
     filter: (n) => n.endsWith('.journal') },
   // App logs in /vol*/@appcenter/*/logs (only those >50MB)
-  { id: 'app-logs', label: '应用日志 (>50MB)', path: '/vol*/@appcenter', recurse: true, risk: 'medium',
+  { id: 'app-logs', label: '应用日志 (>50MB)', path: '/vol*/@appcenter', recurse: true, risk: 'medium', category: 'logs',
     filter: (n, full, st) => {
       if (n === 'logs' && st && st.isDirectory()) {
         // Sum files in this logs dir
@@ -134,6 +135,7 @@ function buildUserCacheItems() {
         label: `${t.label} (${displayHome})`,
         recurse: t.recurse,
         risk: t.risk,
+        category: t.category,
         recommended: isRecommended(`${t.id}:${u.username}`),
         dynamicChildren: t.dynamicChildren || false,
         excludeSingleChildNames: t.excludeSingleChildNames,
@@ -197,6 +199,7 @@ export function handleSysCleanScan(req, res) {
             label: `${target.label}: ${e}`,
             size, size_str: formatBytes(size),
             risk: target.risk,
+            category: target.category,
             recommended: target.recommended === true || isRecommended(id),
           });
         }
@@ -216,6 +219,7 @@ export function handleSysCleanScan(req, res) {
         label: target.label,
         size, size_str: formatBytes(size),
         risk: target.risk,
+        category: target.category,
         recommended: target.recommended === true || isRecommended(target.id),
       });
     } else {
@@ -238,6 +242,7 @@ export function handleSysCleanScan(req, res) {
             label: `${target.label}: ${e}`,
             size, size_str: formatBytes(size),
             risk: target.risk,
+            category: target.category,
             recommended: target.recommended === true || isRecommended(id),
           });
         }
