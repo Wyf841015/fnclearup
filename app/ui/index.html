@@ -39,6 +39,7 @@
       <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
       <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
       <button type="button" class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="false"><i data-lucide="clock"></i> 定时</button>
+      <button type="button" class="tab-btn" data-tab="diskanalysis" onclick="switchTab('diskanalysis')" role="tab" aria-selected="false"><i data-lucide="pie-chart"></i> 空间</button>
       <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false"><i data-lucide="hard-drive"></i> 大文件</button>
       <button type="button" class="tab-btn" data-tab="dockercleanup" onclick="switchTab('dockercleanup')" role="tab" aria-selected="false"><i data-lucide="container"></i> 清理</button>
     </div>
@@ -455,6 +456,36 @@
             💡 点击 🧾 查看每次清理的文件清单
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Tab: 空间分析 (P0-1) -->
+    <div class="tab-panel" data-panel="diskanalysis">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="hard-drive"></i></div><div class="kpi-body"><div class="kpi-label">总已用</div><div class="kpi-value" id="ds-total-used">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="database"></i></div><div class="kpi-body"><div class="kpi-label">总容量</div><div class="kpi-value" id="ds-total-cap">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="layers"></i></div><div class="kpi-body"><div class="kpi-label">最大卷</div><div class="kpi-value" id="ds-max-vol">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">当前路径</div><div class="kpi-value" id="ds-current-path">/vol*</div></div></div>
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <h2><span><i data-lucide="pie-chart"></i></span><span>磁盘空间分析</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" onclick="dsLoadVolumes()" id="dsRefreshBtn"><span><i data-lucide="refresh-cw"></i></span><span>刷新卷</span></button>
+            <button type="button" class="btn btn-ghost" onclick="dsDrillDown('/vol*')" id="dsScanBtn"><span><i data-lucide="search"></i></span><span>扫描全部卷</span></button>
+            <button type="button" class="btn btn-ghost" onclick="dsStop()" id="dsStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:10px" id="ds-volumes-card">
+          <div class="section-header"><h3 style="font-size:1rem;margin:0"><span>卷用量</span></h3></div>
+          <div id="ds-volumes-list"><div style="color:var(--color-text-muted);padding:10px">点击「刷新卷」加载各卷用量…</div></div>
+        </div>
+
+        <div id="ds-status" class="loading" style="display:none"></div>
+        <div id="ds-dirs"></div>
+        <div id="ds-types"></div>
       </div>
     </div>
 

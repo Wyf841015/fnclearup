@@ -178,6 +178,7 @@ async function switchTab(tabName) {
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
   else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
+  else if(tabName==='diskanalysis') { if(!App.dsLoaded) { App.dsLoaded=true; dsLoadVolumes(); } }
   else if(tabName==='dockercleanup') { dcCheckAvailable(); }
 }
 
@@ -1024,6 +1025,151 @@ async function doBigFilesScan() {
     if (scanBtn) scanBtn.disabled = false;
     if (stopBtn) stopBtn.style.display = 'none';
   }
+}
+
+// ════════════════════════════════
+// Disk Space Analysis (P0-1)
+// ════════════════════════════════
+let _dsScanning = false;
+let _dsCurrentTreePath = '/vol*';
+
+async function dsLoadVolumes() {
+  const listEl = $('ds-volumes-list');
+  if (!listEl) return;
+  try {
+    listEl.innerHTML = '<div class="loading">⏳ 加载卷用量…</div>';
+    const data = await API.get('api/diskanalysis/volumes');
+    if ($('ds-total-used')) $('ds-total-used').textContent = data.total_str || '0 B';
+    if ($('ds-total-cap')) $('ds-total-cap').textContent = data.capacity ? formatBytes(data.capacity) : '-';
+    let maxVol = null;
+    (data.volumes || []).forEach(v => {
+      if (!maxVol || v.used > maxVol.used) maxVol = v;
+    });
+    if ($('ds-max-vol')) $('ds-max-vol').textContent = maxVol ? `${maxVol.path} ${maxVol.used_str}` : '-';
+
+    const vols = data.volumes || [];
+    if (!vols.length) {
+      listEl.innerHTML = '<div style="color:var(--color-text-muted);padding:10px">未检测到 /vol* 卷</div>';
+      return;
+    }
+    let html = '';
+    vols.forEach(v => {
+      const pct = v.total > 0 ? Math.round((v.used / v.total) * 100) : 0;
+      const barColor = pct >= 90 ? 'var(--color-danger)' : pct >= 70 ? 'var(--color-warning)' : 'var(--color-primary)';
+      html += `<div style="padding:8px 0;border-bottom:1px solid var(--color-border)">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+          <span style="font-weight:600">${escHtml(v.path)}</span>
+          <span style="font-family:var(--font-mono);color:var(--color-text-secondary)">${escHtml(v.used_str)} / ${escHtml(v.total_str)} (${pct}%)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:8px;background:var(--color-border);border-radius:4px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${barColor};border-radius:4px"></div>
+          </div>
+          <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" onclick="dsDrillDown('${escHtml(v.path)}')" title="分析此卷">分析</button>
+        </div>
+      </div>`;
+    });
+    listEl.innerHTML = html;
+  } catch (e) {
+    listEl.innerHTML = '<div style="color:var(--color-danger);padding:10px">❌ 加载失败: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function dsDrillDown(path) {
+  if (_dsScanning) return;
+  _dsScanning = true;
+  const status = $('ds-status');
+  const scanBtn = $('dsScanBtn');
+  const stopBtn = $('dsStopBtn');
+  if (scanBtn) scanBtn.disabled = true;
+  if (stopBtn) stopBtn.style.display = '';
+  if (status) { status.className = 'loading'; status.style.display = ''; status.textContent = '⏳ 正在分析 ' + path + ' …'; }
+  if (path === '/vol*') {
+    // scan all volumes together
+  }
+  _dsCurrentTreePath = path;
+  if ($('ds-current-path')) $('ds-current-path').textContent = path;
+
+  try {
+    const data = await API.post('api/diskanalysis/tree', { path: path === '/vol*' ? '/' : path, maxDepth: 3 });
+    if (status) {
+      status.className = 'success';
+      const stopped = data.scanned > 0 && data.total === 0 ? ' [已停止/权限受限]' : '';
+      status.textContent = `✅ 扫描了 ${(data.scanned || 0).toLocaleString()} 个条目，${(data.total_files || 0).toLocaleString()} 个文件，共 ${data.total_str}${stopped}`;
+    }
+    dsRenderDirs(data.dirs || [], path === '/vol*');
+    dsRenderTypes(data.types || []);
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+    const dirsEl = $('ds-dirs'); if (dirsEl) dirsEl.innerHTML = '';
+    const typesEl = $('ds-types'); if (typesEl) typesEl.innerHTML = '';
+  } finally {
+    _dsScanning = false;
+    if (scanBtn) scanBtn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+async function dsStop() {
+  _dsScanning = false;
+  try { await API.post('api/diskanalysis/stop', {}); showToast('已请求停止', 'info'); } catch (e) { /* ignore */ }
+}
+
+function dsRenderDirs(dirs, isAll) {
+  const container = $('ds-dirs');
+  if (!container) return;
+  if (!dirs.length) {
+    container.innerHTML = '';
+    return;
+  }
+  const maxSize = dirs[0].size || 1;
+  const TYPE_LABEL = { video: '视频', audio: '音频', image: '图片', archive: '压缩', docs: '文档', installer: '安装包', code: '代码', other: '其他' };
+  let html = `<div class="card" style="margin-top:10px">
+    <div class="section-header"><h3 style="font-size:1rem;margin:0"><span>📁 占用最大的目录${isAll ? '（全部卷）' : ''}</span></h3></div>
+    <div class="list-scroll"><table class="data-table">
+      <thead><tr><th style="width:46px">#</th><th>目录</th><th style="width:130px">占用</th><th style="width:140px">占比</th><th style="width:54px"></th></tr></thead><tbody>`;
+  dirs.forEach((d, i) => {
+    const pct = Math.round((d.size / maxSize) * 100);
+    const depthFull = d.path;
+    html += `<tr>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i + 1}</td>
+      <td title="${escHtml(d.path)}" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);font-size:12px">${escHtml(d.name)}&nbsp;<span style="color:var(--color-text-muted);font-size:11px">${escHtml(d.path.slice(0, Math.max(0, d.path.lastIndexOf('/'))))}</span></td>
+      <td style="font-family:var(--font-mono);font-weight:600;color:var(--color-primary)">${escHtml(d.size_str)}</td>
+      <td><div style="flex:1;height:6px;background:var(--color-border);border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--color-primary)"></div></div></td>
+      <td><button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" onclick="dsDrillDown('${escHtml(d.path)}')">下钻</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table></div></div>';
+  container.innerHTML = html;
+}
+
+function dsRenderTypes(types) {
+  const container = $('ds-types');
+  if (!container) return;
+  if (!types || !types.length) { container.innerHTML = ''; return; }
+  const TYPE_LABEL = { video: '视频', audio: '音频', image: '图片', archive: '压缩', docs: '文档', installer: '安装包', code: '代码', other: '其他' };
+  const COLORS = { video:'#e74c3c', audio:'#9b59b6', image:'#2ecc71', archive:'#f39c12', docs:'#3498db', installer:'#e67e22', code:'#1abc9c', other:'#95a5a6' };
+  const totalBytes = types.reduce((s, t) => s + t.bytes, 0) || 1;
+  const sorted = [...types].sort((a, b) => b.bytes - a.bytes);
+  let seg = '';
+  sorted.forEach(t => { if (t.bytes > 0) seg += `<div style="width:${Math.max(0.5, (t.bytes / totalBytes) * 100)}%;height:100%;background:${COLORS[t.type] || '#888'}" title="${TYPE_LABEL[t.type]} ${t.bytes_str}"></div>`; });
+
+  let html = `<div class="card" style="margin-top:10px">
+    <div class="section-header"><h3 style="font-size:1rem;margin:0"><span>🗂 文件类型分布</span></h3></div>
+    <div style="display:flex;height:22px;border-radius:4px;overflow:hidden;margin:8px 0">${seg}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;font-size:12px">`;
+  sorted.forEach(t => {
+    if (t.bytes <= 0) return;
+    const pct = Math.round((t.bytes / totalBytes) * 100);
+    html += `<div style="display:flex;align-items:center;gap:6px">
+      <span style="width:10px;height:10px;border-radius:2px;background:${COLORS[t.type] || '#888'}"></span>
+      <span>${TYPE_LABEL[t.type] || t.type}</span>
+      <span style="font-family:var(--font-mono);color:var(--color-text-secondary)">${escHtml(t.bytes_str)}</span>
+      <span style="color:var(--color-text-muted)">${pct}%</span>
+    </div>`;
+  });
+  html += '</div></div>';
+  container.innerHTML = html;
 }
 
 async function stopBigFiles() {
@@ -2606,6 +2752,7 @@ function init() {
     doBigFilesScan, stopBigFiles,
     confirmBigFilesDelete, closeBigFilesDeleteModal, doBigFilesDelete,
     bigfilesSelectAll, bigfilesUpdateSelectInfo, bigfilesRefreshConfirmBtn,
+    dsLoadVolumes, dsDrillDown, dsStop,
     dcCheckAvailable, dcScan, renderDcStoppedList, dcSelectAll, dcUpdateSelectInfo, dcRemoveSelected, dcPruneCache,
   };
   Object.assign(window, exports);

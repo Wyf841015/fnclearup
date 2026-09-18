@@ -16,6 +16,7 @@ import { handleSysCleanScan, handleSysCleanClean, handleSysCleanListManifests, h
 import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js';
 import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
 import { handleBigFilesScan, handleBigFilesStop, handleBigFilesDelete } from './api/bigfiles.js';
+import { handleDiskVolumes, handleDiskTree, handleDiskStop } from './api/diskanalysis.js';
 import { handleDockerStopped, handleDockerStoppedRemove, handleDockerBuildCache, handleDockerBuildCachePrune } from './api/docker_cleanup.js';
 
 // ── Paths ──
@@ -139,6 +140,10 @@ async function handle(req, res) {
       if (method === 'GET' && path === '/api/bigfiles/scan') { await handleBigFilesScan(req, res); return; }
       if (method === 'POST' && path === '/api/bigfiles/stop') { handleBigFilesStop(req, res); return; }
       if (method === 'POST' && path === '/api/bigfiles/delete') { await handleBigFilesDelete(req, res); return; }
+      // Disk space analysis
+      if (method === 'GET' && path === '/api/diskanalysis/volumes') { await handleDiskVolumes(req, res); return; }
+      if (method === 'POST' && path === '/api/diskanalysis/tree') { await handleDiskTree(req, res); return; }
+      if (method === 'POST' && path === '/api/diskanalysis/stop') { handleDiskStop(req, res); return; }
       // Docker cleanup (stopped containers + build cache)
       if (method === 'GET' && path === '/api/docker/stopped') { await handleDockerStopped(req, res); return; }
       if (method === 'POST' && path === '/api/docker/stopped/remove') { await handleDockerStoppedRemove(req, res); return; }
