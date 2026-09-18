@@ -36,6 +36,7 @@
       <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false"><i data-lucide="clock"></i> tmp</button>
       <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false"><i data-lucide="clipboard-list"></i> 去重</button>
       <button type="button" class="tab-btn" data-tab="simdup" onclick="switchTab('simdup')" role="tab" aria-selected="false"><i data-lucide="images"></i> 相似</button>
+      <button type="button" class="tab-btn" data-tab="broken" onclick="switchTab('broken')" role="tab" aria-selected="false"><i data-lucide="file-x"></i> 异常</button>
       <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false"><i data-lucide="inbox"></i> 去空</button>
       <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
       <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
@@ -299,6 +300,36 @@
         </div>
         <div id="simdup-status"></div>
         <div id="simdup-list"></div>
+      </div>
+    </div>
+
+    <!-- Tab: 异常文件检测 (P0-3) -->
+    <div class="tab-panel" data-panel="broken">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-x"></i></div><div class="kpi-body"><div class="kpi-label">异常文件</div><div class="kpi-value" id="broken-total">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-circle"></i></div><div class="kpi-body"><div class="kpi-label">空文件</div><div class="kpi-value" id="broken-empty">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="link-2-off"></i></div><div class="kpi-body"><div class="kpi-label">无效链接</div><div class="kpi-value" id="broken-links">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="bug-off"></i></div><div class="kpi-body"><div class="kpi-label">损坏文件</div><div class="kpi-value" id="broken-files">-</div></div></div>
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <h2><span><i data-lucide="file-x"></i></span><span>异常文件检测</span></h2>
+          <div class="section-actions">
+            <input id="broken-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1)" style="width:220px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-secondary)"><input type="checkbox" id="broken-checkmedia"> 检损坏媒体</label>
+            <button type="button" class="btn btn-primary" onclick="brokScan()" id="brokenBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
+            <button type="button" class="btn btn-ghost" onclick="brokStop()" id="brokenStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+          </div>
+        </div>
+        <div id="broken-status"></div>
+        <!-- 分类切换 -->
+        <div class="dup-inner-tabs" style="margin-bottom:8px">
+          <button type="button" class="dup-inner-tab-btn active" data-brokTab="empty" onclick="brokSwitchCat('empty')">空文件</button>
+          <button type="button" class="dup-inner-tab-btn" data-brokTab="links" onclick="brokSwitchCat('links')">无效链接</button>
+          <button type="button" class="dup-inner-tab-btn" data-brokTab="broken" onclick="brokSwitchCat('broken')">损坏文件</button>
+        </div>
+        <div id="broken-list"></div>
       </div>
     </div>
 
