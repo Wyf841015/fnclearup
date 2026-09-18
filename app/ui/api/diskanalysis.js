@@ -146,14 +146,17 @@ export async function handleDiskTree(req, res) {
   }
 
   async function walk(root, depth, dirPath) {
-    if (job.stopped || depth > maxDepth) return;
+    // P1-8 fix: enforce the 3-minute hard timeout defined by SCAN_BUDGET_MS.
+    // Without this, very large trees can run indefinitely (manual /stop is the
+    // only way to stop them). Also check periodically inside the loop.
+    if (job.stopped || depth > maxDepth || (Date.now() - t0 > SCAN_BUDGET_MS)) { job.stopped = true; return; }
     let entries;
     try { entries = readdirSync(dirPath, { withFileTypes: true }); }
     catch { return; }
 
     let dirUsage = 0;
     for (const e of entries) {
-      if (job.stopped) return;
+      if (job.stopped || (Date.now() - t0 > SCAN_BUDGET_MS)) { job.stopped = true; return; }
       const full = join(dirPath, e.name);
       scanned++;
       try {

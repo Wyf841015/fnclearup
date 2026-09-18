@@ -315,8 +315,18 @@ export async function handleDupDelete(req, res) {
         // the dupe's data blocks WITHOUT deleting it (data remains reachable). Only valid
         // when the original is on the same filesystem.
         if (!keep || !existsSync(fp)) throw new Error('硬链接去重需要有效的原始文件');
+        // P1-2 fix: the kept file must still exist BEFORE we unlink the duplicate,
+        // otherwise unlinkSync destroys the only copy and linkSync(keep,...) fails
+        // below (keep vanished) → the duplicate is unrecoverable. Also verify they
+        // share a filesystem so linkSync won't throw EXDEV after unlink.
+        if (!existsSync(keep)) throw new Error('原始文件不存在: ' + keep);
         if (!isSafePath(keep)) throw new Error('原始文件路径越界');
         if (fp === keep) continue;
+        // Same-filesystem guard: linkSync throws EXDEV across devices, but that
+        // happens AFTER unlinkSync destroyed the duplicate. Check st_dev up front.
+        const fpSt = statSync(fp), keepSt = statSync(keep);
+        if (fpSt.ino === keepSt.ino) throw new Error('文件已硬链接过');
+        if (fpSt.dev !== keepSt.dev) throw new Error('跨文件系统无法硬链接: ' + fp);
         unlinkSync(fp);                    // remove the duplicate inode
         linkSync(keep, fp);                // link fp → keep (shares data blocks)
         linked.push(fp);
@@ -333,12 +343,11 @@ export async function handleDupDelete(req, res) {
             finalDest = join(dirname(dest), `${basename(dest).slice(0, -ext2.length)}_${counter}${ext2}`);
             counter++;
           }
-          try { renameSync(fp, finalDest); }
-          catch (e2) { if (e2.code === 'EXDEV') { cpSync(fp, finalDest); unlinkSync(fp); } else throw e2; }
+          try { renameSync(fp, finalDest); deleted++; }
+          catch (e2) { if (e2.code === 'EXDEV') { cpSync(fp, finalDest); unlinkSync(fp); deleted++; } else throw e2; }
         } else {
           failed.push({ path: fp, reason: '路径格式不支持回收站: ' + fp + ' (需 /volN/UID/... 格式)' });
         }
-        deleted++;
       }
       // P2-6: after any deletion/link, check whether the file's parent dir is now empty
       try {

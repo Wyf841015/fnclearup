@@ -41,6 +41,15 @@ async function walk(dir, state) {
     if (state._aborted) return;
     if (totalFiles >= MAX_FILES) return;
     const full = join(dir, e.name);
+    // P1-7 fix: re-read the state file periodically so an external POST /stop
+    // (writes _aborted=true to disk) actually halts the scan. In-memory _aborted
+    // would otherwise stay false forever → stop is a no-op.
+    if (totalFiles % 50 === 0) {
+      try {
+        const raw = JSON.parse(readFileSync(join(stateDir, `${jobId}.json`), 'utf8'));
+        if (raw._aborted) { state._aborted = true; state.status = 'aborted'; writeState(state); return; }
+      } catch { /* ignore transient read errors */ }
+    }
     try {
       if (e.isDirectory()) {
         await walk(full, state);

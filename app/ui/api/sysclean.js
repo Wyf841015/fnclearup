@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, lstatSync, statSync, unlinkSync, rmSync, mkdirSync, renameSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { sendJSON, execCmd, parseBody, formatBytes, getManifestDir } from '../lib/util.js';
+import { VOL_GLOBS } from '../lib/config.js';
 
 // Cache items under ALL users' HOME (root + every /vol<N>/<UID>).
 // fnclearup runs as root on fnOS, so without this each non-root user's
@@ -177,11 +178,18 @@ export function handleSysCleanScan(req, res) {
   for (const target of allTargets) {
     if (target.dynamicChildren) {
       // Auto-discover subdirectories matching the filter
-      if (!existsSync(target.path)) continue;
+      // P1-4 fix: paths containing * (e.g. /vol*/@appcenter) are glob patterns —
+      // expand to real existing volumes before scanning. Without this, every
+      // glob-path target was silently skipped (existsSync false → continue).
+      const expandedPaths = target.path.includes('*')
+        ? VOL_GLOBS.map(v => target.path.replace('*', v)).filter(p => existsSync(p))
+        : [target.path];
+      if (expandedPaths.length === 0) continue;
       try {
-        const entries = readdirSync(target.path);
+        for (const resolvedPath of expandedPaths) {
+        const entries = readdirSync(resolvedPath);
         for (const e of entries) {
-          const full = join(target.path, e);
+          const full = join(resolvedPath, e);
           const st = (() => { try { return lstatSync(full); } catch { return null; } })();
           if (!st || !st.isDirectory()) continue;
           // Skip excluded sub-paths (cache-other template's curated set,
@@ -203,6 +211,7 @@ export function handleSysCleanScan(req, res) {
             recommended: target.recommended === true || isRecommended(id),
           });
         }
+        } // end for resolvedPath (P1-4 glob expansion)
       } catch { console.error('[sysclean.js]'); }
       continue;
     }
@@ -282,7 +291,14 @@ export async function handleSysCleanClean(req, res) {
   const allTargets = [...SCAN_TARGETS, ...buildUserCacheItems()];
   const idMap = new Map();
   for (const t of allTargets) {
-    idMap.set(t.id, { path: t.path, label: t.label, target_id: t.id });
+    // P0-1 fix: only register unfiltered targets in idMap. Filtered targets
+    // (syslog-gz, syslog-old, journal etc.) must only be accessed via their
+    // child ids (e.g. "syslog-gz:syslog.1.gz") which are produced by scan.
+    // Registering their base path (e.g. /var/log) as a deletable target would
+    // allow rm -rf /var/log when a bare target id is sent to the API.
+    if (!t.filter) {
+      idMap.set(t.id, { path: t.path, label: t.label, target_id: t.id });
+    }
   }
 
   // For dynamicChildren per-user items (cache-other:USER or app-logs),

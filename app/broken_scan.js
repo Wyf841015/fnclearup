@@ -72,6 +72,13 @@ async function walk(dir, state, counts) {
     if (state._aborted) return;
     if (counts.scanned >= MAX_FILES) return;
     const full = join(dir, e.name);
+    // P1-7 fix: periodically re-read the state file so an external POST /stop
+    // (which writes _aborted=true to disk) actually stops the scan. Without
+    // reloadControl, the in-memory _aborted stays false forever → stop is a no-op.
+    if (counts.scanned % 50 === 0) {
+      const stillRun = await reloadControl(state);
+      if (!stillRun) return;
+    }
     counts.scanned++;
     try {
       if (e.isDirectory()) {

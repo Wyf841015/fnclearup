@@ -101,6 +101,20 @@ async function handle(req, res) {
   for (const k of Object.keys(corsHeaders)) res.setHeader(k, corsHeaders[k]);
   if (method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
+  // CSRF guard (P0-2): write requests (POST) must carry a same-origin/whitelisted
+  // Origin header. A malicious page can issue a CORS-simple POST (text/plain body,
+  // no preflight) that parseBody accepts — without this check a visit to an evil
+  // site could trigger destructive endpoints (sysclean/clean, dup/delete, etc.).
+  // Missing Origin is allowed (native curl, same-host gateway proxy) — this blocks
+  // cross-origin browser POSTs which always carry Origin.
+  if (method === 'POST') {
+    const origin = req.headers.origin;
+    if (origin && !CORS_ORIGINS.includes(origin)) {
+      sendJSON(res, 403, { error: 'request origin not allowed', success: false });
+      return;
+    }
+  }
+
   try {
     // API routes
     if (cleanPath.startsWith('/api/')) {
@@ -350,7 +364,11 @@ async function handleQuickSummary(req, res) {
             try {
               const subdirs = readdirSync(join(appDir, d.name));
               for (const sd of subdirs) {
-                const sdStat = statSync(join(appDir, d.name, sd)).catch(() => null);
+                // P1-3 fix: statSync is synchronous (returns a Stats object, not a
+                // Promise) — .catch() on it always threw TypeError which was swallowed
+                // by the outer try/catch, leaving orphanSize 0 forever.
+                let sdStat = null;
+                try { sdStat = statSync(join(appDir, d.name, sd)); } catch { sdStat = null; }
                 if (sdStat) orphanSize += sdStat.size;
               }
             } catch { console.error('[server.js]'); }
