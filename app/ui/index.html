@@ -37,6 +37,7 @@
       <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false"><i data-lucide="clipboard-list"></i> 去重</button>
       <button type="button" class="tab-btn" data-tab="simdup" onclick="switchTab('simdup')" role="tab" aria-selected="false"><i data-lucide="images"></i> 相似</button>
       <button type="button" class="tab-btn" data-tab="broken" onclick="switchTab('broken')" role="tab" aria-selected="false"><i data-lucide="file-x"></i> 异常</button>
+      <button type="button" class="tab-btn" data-tab="namematch" onclick="switchTab('namematch')" role="tab" aria-selected="false"><i data-lucide="copy-x"></i> 重名</button>
       <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false"><i data-lucide="inbox"></i> 去空</button>
       <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
       <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
@@ -332,6 +333,29 @@
           <button type="button" class="dup-inner-tab-btn" data-brokTab="dl" onclick="brokSwitchCat('dl')">下载残留</button>
         </div>
         <div id="broken-list"></div>
+      </div>
+    </div>
+
+    <!-- Tab: 重名冲突检测 (P2-2) -->
+    <div class="tab-panel" data-panel="namematch">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="copy-x"></i></div><div class="kpi-body"><div class="kpi-label">重名组</div><div class="kpi-value" id="name-groups">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-text"></i></div><div class="kpi-body"><div class="kpi-label">涉及文件</div><div class="kpi-value" id="name-files">-</div></div></div>
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <h2><span><i data-lucide="copy-x"></i></span><span>重名冲突检测</span></h2>
+          <div class="section-actions">
+            <input id="name-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1)" style="width:220px">
+            <button type="button" class="btn btn-primary" onclick="nmScan()" id="nmBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
+            <button type="button" class="btn btn-ghost" onclick="nmStop()" id="nmStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+          </div>
+        </div>
+        <div id="nm-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
+          扫描 80,000 个文件以内，找出散落在不同目录下的同名文件分组（不区分大小写）。
+        </div>
+        <div id="nm-list" style="margin-top:12px"></div>
       </div>
     </div>
 
