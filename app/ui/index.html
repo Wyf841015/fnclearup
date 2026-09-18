@@ -400,6 +400,15 @@
           <label class="delete-radio"><input type="radio" name="syscleanRiskFilter" value="low"><span>仅低风险</span></label>
           <label class="delete-radio"><input type="radio" name="syscleanRiskFilter" value="medium"><span>中+低</span></label>
         </div>
+        <div class="delete-mode-select" style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="color:var(--color-text-secondary);font-size:13px">分类：</span>
+          <label class="delete-radio"><input type="radio" name="syscleanCatFilter" value="all" checked onchange="renderSysCleanList()"><span>全部</span></label>
+          <label class="delete-radio"><input type="radio" name="syscleanCatFilter" value="system" onchange="renderSysCleanList()"><span>系统</span></label>
+          <label class="delete-radio"><input type="radio" name="syscleanCatFilter" value="logs" onchange="renderSysCleanList()"><span>日志</span></label>
+          <label class="delete-radio"><input type="radio" name="syscleanCatFilter" value="dev" onchange="renderSysCleanList()"><span>开发</span></label>
+          <label class="delete-radio"><input type="radio" name="syscleanCatFilter" value="browser" onchange="renderSysCleanList()"><span>浏览器</span></label>
+          <label class="delete-radio"><input type="radio" name="syscleanCatFilter" value="app" onchange="renderSysCleanList()"><span>应用</span></label>
+        </div>
         <div id="sysclean-status"></div>
         <div id="sysclean-list" style="margin-top:12px"></div>
         <div id="sysclean-empty" class="dup-empty-state"><div class="dup-empty-icon">🧹</div><h3>尚未开始扫描</h3><p>扫描 APT 缓存、NPM/PIP 缓存、系统日志轮转文件、缩略图、浏览器缓存等可清理项。</p></div>
