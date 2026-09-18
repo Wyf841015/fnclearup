@@ -1,5 +1,5 @@
 // ── Global constants ──
-export const VERSION = '0.9.8';
+export const VERSION = '0.11.0';
 
 // Whitelist of volumes that may be browsed/deleted. /vol02 is fnOS's real netdisk
 // mount root (not /vol2) — netdisk residuals like /vol02/1000-1-0985cb1c live here.
