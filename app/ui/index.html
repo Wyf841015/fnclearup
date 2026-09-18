@@ -295,6 +295,7 @@
               <option value="16">宽松 (≤16)</option>
             </select>
             <input id="simdup-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1/photos)" style="width:220px">
+            <button type="button" class="btn btn-ghost" onclick="showBrowseModal('simdup-path')" title="浏览目录"><span>🔍</span></button>
             <button type="button" class="btn btn-primary" onclick="simDupScan()" id="simdupBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="simDupStop()" id="simdupStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
           </div>
@@ -319,6 +320,7 @@
           <h2><span><i data-lucide="file-x"></i></span><span>异常文件检测</span></h2>
           <div class="section-actions">
             <input id="broken-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1)" style="width:220px">
+            <button type="button" class="btn btn-ghost" onclick="showBrowseModal('broken-path')" title="浏览目录"><span>🔍</span></button>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-secondary)"><input type="checkbox" id="broken-checkmedia"> 检损坏媒体</label>
             <button type="button" class="btn btn-primary" onclick="brokScan()" id="brokenBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="brokStop()" id="brokenStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
@@ -348,6 +350,7 @@
           <h2><span><i data-lucide="copy-x"></i></span><span>重名冲突检测</span></h2>
           <div class="section-actions">
             <input id="name-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1)" style="width:220px">
+            <button type="button" class="btn btn-ghost" onclick="showBrowseModal('name-path')" title="浏览目录"><span>🔍</span></button>
             <button type="button" class="btn btn-primary" onclick="nmScan()" id="nmBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="nmStop()" id="nmStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
           </div>
@@ -572,7 +575,9 @@
           <h2><span><i data-lucide="pie-chart"></i></span><span>磁盘空间分析</span></h2>
           <div class="section-actions">
             <button type="button" class="btn btn-primary" onclick="dsLoadVolumes()" id="dsRefreshBtn"><span><i data-lucide="refresh-cw"></i></span><span>刷新卷</span></button>
-            <button type="button" class="btn btn-ghost" onclick="dsDrillDown('/vol*')" id="dsScanBtn"><span><i data-lucide="search"></i></span><span>扫描全部卷</span></button>
+            <input id="ds-path" type="text" class="form-input" value="/vol*" placeholder="扫描路径 (如 /vol1/photos)" style="width:220px">
+            <button type="button" class="btn btn-ghost" onclick="showBrowseModal('ds-path')" title="浏览目录"><span>🔍</span></button>
+            <button type="button" class="btn btn-ghost" onclick="dsDrillDown($('ds-path')?.value||'/vol*')" id="dsScanBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="dsStop()" id="dsStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
           </div>
         </div>
