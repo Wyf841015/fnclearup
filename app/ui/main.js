@@ -1292,6 +1292,7 @@ async function brokScan() {
   if (list) list.innerHTML = '';
   $('broken-total')&&($('broken-total').textContent='-'); $('broken-empty')&&($('broken-empty').textContent='-');
   $('broken-links')&&($('broken-links').textContent='-'); $('broken-files')&&($('broken-files').textContent='-');
+  $('broken-dl')&&($('broken-dl').textContent='-');
 
   try {
     const r = await API.post('api/broken/scan', { paths: [path], checkBroken });
@@ -1302,11 +1303,12 @@ async function brokScan() {
       const s = await API.get('api/broken/status?job=' + encodeURIComponent(_brokJob));
       _brokState = s;
       if (s.status === 'done') {
-        if (status) { status.className = 'success'; status.textContent = `✅ 扫描 ${s.stats.scanned} 项：${s.stats.empty} 空文件 / ${s.stats.invalid_links} 无效链接 / ${s.stats.broken} 损坏文件`; }
-        $('broken-total')&&($('broken-total').textContent = s.stats.empty + s.stats.invalid_links + s.stats.broken);
+        if (status) { status.className = 'success'; status.textContent = `✅ 扫描 ${s.stats.scanned} 项：${s.stats.empty} 空文件 / ${s.stats.invalid_links} 无效链接 / ${s.stats.broken} 损坏文件 / ${s.stats.download_residue ?? 0} 下载残留`; }
+        $('broken-total')&&($('broken-total').textContent = s.stats.empty + s.stats.invalid_links + s.stats.broken + (s.stats.download_residue ?? 0));
         $('broken-empty')&&($('broken-empty').textContent = s.stats.empty);
         $('broken-links')&&($('broken-links').textContent = s.stats.invalid_links);
         $('broken-files')&&($('broken-files').textContent = s.stats.broken);
+        $('broken-dl')&&($('broken-dl').textContent = s.stats.download_residue ?? 0);
         brokRender(s);
         break;
       }
@@ -1337,6 +1339,7 @@ function brokRender(s) {
   let items = [], label = '';
   if (_brokCat === 'empty') { items = s.empty||[]; label = '空文件'; }
   else if (_brokCat === 'links') { items = s.invalid_links||[]; label = '无效链接'; }
+  else if (_brokCat === 'dl') { items = s.download_residue||[]; label = '下载残留'; }
   else { items = s.broken||[]; label = '损坏文件'; }
   if (!items.length) {
     list.innerHTML = `<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现${label}</h3><p>当前目录没有匹配项</p></div>`;

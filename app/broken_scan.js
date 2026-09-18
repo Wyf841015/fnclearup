@@ -24,6 +24,8 @@ const MAX_FILES = 60000;
 const YIELD = 300;
 const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']);
 const VID_EXTS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.rmvb']);
+// Download-in-progress / leftover partial files (semi-downloaded fragments).
+const DL_RESIDUE_EXTS = new Set(['.part', '.crdownload', '.download', '.partial', '.aria2']);
 const FFMPEG = '/usr/bin/ffmpeg';
 
 const [scanPathsRaw, jobId, stateDir, checkBrokenRaw] = process.argv.slice(2);
@@ -34,6 +36,7 @@ if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
 let emptyFiles = [];       // { path, name, size }
 let invalidLinks = [];     // { path, target }
 let brokenFiles = [];      // { path, name, size, error }
+let downloadResidue = [];  // { path, name, size, size_str }
 
 function writeState(data) {
   const path = join(stateDir, `${jobId}.json`);
@@ -83,6 +86,11 @@ async function walk(dir, state, counts) {
         if (st.size === 0) {
           emptyFiles.push({ path: full, name: e.name, size: 0 });
         }
+        // download residue: leftover partial-download fragments (non-empty .part/.crdownload etc.)
+        const dlEx = extname(e.name).toLowerCase();
+        if (DL_RESIDUE_EXTS.has(dlEx)) {
+          downloadResidue.push({ path: full, name: e.name, size: st.size, size_str: st.size });
+        }
         // broken-media check: only if enabled + media ext + nonzero (skip empty)
         if (checkBroken && st.size > 0) {
           const ex = extname(e.name).toLowerCase();
@@ -115,8 +123,8 @@ function q(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
 const state = {
   id: jobId, type: 'broken', checkBroken, rootPaths: scanPaths,
   status: 'counting', progress: { scanned: 0, processed: 0, currentFile: '' },
-  empty: [], invalid_links: [], broken: [],
-  stats: { scanned: 0, empty: 0, invalid_links: 0, broken: 0 },
+  empty: [], invalid_links: [], broken: [], download_residue: [],
+  stats: { scanned: 0, empty: 0, invalid_links: 0, broken: 0, download_residue: 0 },
   error: null, startTime: Date.now(), _aborted: false, _paused: false,
 };
 writeState(state);
@@ -139,11 +147,13 @@ writeState(state);
   state.empty = emptyFiles.slice(0, 2000).map(f => ({ path: f.path, name: f.name, size: 0, size_str: '0 B' }));
   state.invalid_links = invalidLinks.slice(0, 2000).map(l => ({ path: l.path, name: l.name, target: l.target }));
   state.broken = brokenFiles.slice(0, 2000).map(f => ({ path: f.path, name: f.name, size: f.size, size_str: toStr(f.size), error: f.error }));
+  state.download_residue = downloadResidue.slice(0, 2000).map(f => ({ path: f.path, name: f.name, size: f.size, size_str: toStr(f.size) }));
   state.stats = {
     scanned: counts.scanned,
     empty: emptyFiles.length,
     invalid_links: invalidLinks.length,
     broken: brokenFiles.length,
+    download_residue: downloadResidue.length,
     checkBroken,
   };
   writeState(state);

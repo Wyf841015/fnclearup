@@ -310,6 +310,7 @@
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-circle"></i></div><div class="kpi-body"><div class="kpi-label">空文件</div><div class="kpi-value" id="broken-empty">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="link-2-off"></i></div><div class="kpi-body"><div class="kpi-label">无效链接</div><div class="kpi-value" id="broken-links">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="bug-off"></i></div><div class="kpi-body"><div class="kpi-label">损坏文件</div><div class="kpi-value" id="broken-files">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="download"></i></div><div class="kpi-body"><div class="kpi-label">下载残留</div><div class="kpi-value" id="broken-dl">-</div></div></div>
       </div>
 
       <div class="card">
@@ -328,6 +329,7 @@
           <button type="button" class="dup-inner-tab-btn active" data-brokTab="empty" onclick="brokSwitchCat('empty')">空文件</button>
           <button type="button" class="dup-inner-tab-btn" data-brokTab="links" onclick="brokSwitchCat('links')">无效链接</button>
           <button type="button" class="dup-inner-tab-btn" data-brokTab="broken" onclick="brokSwitchCat('broken')">损坏文件</button>
+          <button type="button" class="dup-inner-tab-btn" data-brokTab="dl" onclick="brokSwitchCat('dl')">下载残留</button>
         </div>
         <div id="broken-list"></div>
       </div>
