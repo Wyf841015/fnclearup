@@ -54,6 +54,9 @@ function setupFixture() {
   // valid tiny png
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000100ffff03000006000557bfab4d', 'hex');
   writeFileSync(join(BROKEN_ROOT, 'good.png'), png);
+  // download residue fixtures
+  writeFileSync(join(BROKEN_ROOT, 'movie.mp4.part'), Buffer.alloc(2048));
+  writeFileSync(join(BROKEN_ROOT, 'setup.exe.crdownload'), Buffer.alloc(1024));
 }
 
 before(async () => {
@@ -108,5 +111,8 @@ describe('Broken end-to-end (needs ffmpeg for media)', () => {
     if (ffmpegOK) {
       assert.ok(state.data.broken.some(f => f.name === 'corrupt.jpg'), 'detects corrupt.jpg');
     }
+    // download residue
+    assert.ok(state.data.download_residue.some(f => f.name === 'movie.mp4.part'), 'detects .part residue');
+    assert.ok(state.data.download_residue.some(f => f.name === 'setup.exe.crdownload'), 'detects .crdownload residue');
   });
 });
