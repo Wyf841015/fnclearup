@@ -265,11 +265,19 @@ export function handleSysCleanScan(req, res) {
 }
 
 // Whitelist: only allow deletion of paths in SCAN_TARGETS or any per-user cache item
+// P1-4 fix: targets whose path contains * (e.g. /vol*/@appcenter) are glob patterns —
+// compare using a regex derived from the pattern so real paths like /vol1/@appcenter/fnclearup pass.
 function isTargetPath(p) {
   if (typeof p !== 'string') return false;
   for (const t of SCAN_TARGETS) {
-    if (p === t.path) return true;
-    if (p.startsWith(t.path + '/')) return true;
+    if (t.path.includes('*')) {
+      // /vol*/@appcenter → regex ^/vol\d+/@appcenter(/|$)
+      const pat = new RegExp('^' + t.path.replace(/\*/g, 'vol\\d+') + '(/|$)');
+      if (pat.test(p)) return true;
+    } else {
+      if (p === t.path) return true;
+      if (p.startsWith(t.path + '/')) return true;
+    }
   }
   for (const u of buildUserCacheItems()) {
     if (p === u.path) return true;
@@ -325,7 +333,14 @@ export async function handleSysCleanClean(req, res) {
       for (const target of SCAN_TARGETS) {
         if (id.startsWith(target.id + ':')) {
           const rest = id.slice(target.id.length + 1);
-          path = join(target.path, rest);
+          // P1-4 fix applied to fallback: paths containing * are glob patterns —
+          // expand to real existing volumes so the resolved path actually exists.
+          let targetPath = target.path;
+          if (targetPath.includes('*')) {
+            const expanded = VOL_GLOBS.map(v => targetPath.replace('*', v)).filter(p => existsSync(p));
+            targetPath = expanded[0] || targetPath; // first existing volume
+          }
+          path = join(targetPath, rest);
           label = `${target.label}: ${rest}`;
           target_id = target.id;
           resolved = true;
