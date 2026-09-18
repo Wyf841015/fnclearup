@@ -101,17 +101,28 @@ async function handle(req, res) {
   for (const k of Object.keys(corsHeaders)) res.setHeader(k, corsHeaders[k]);
   if (method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-  // CSRF guard (P0-2): write requests (POST) must carry a same-origin/whitelisted
-  // Origin header. A malicious page can issue a CORS-simple POST (text/plain body,
-  // no preflight) that parseBody accepts — without this check a visit to an evil
-  // site could trigger destructive endpoints (sysclean/clean, dup/delete, etc.).
-  // Missing Origin is allowed (native curl, same-host gateway proxy) — this blocks
-  // cross-origin browser POSTs which always carry Origin.
+  // CSRF guard (P0-2): block cross-site destructive POSTs. Primary signal is the
+  // browser-standard Sec-Fetch-Site header — browsers set it on every request
+  // ('same-origin'/'same-site'/'none' are fine; 'cross-site' means a malicious
+  // page drove the request). Server-side gateway proxying / native curl send NO
+  // Sec-Fetch-Site header, so they're always allowed (not a browser context).
+  // Fallback for older browsers lacking Sec-Fetch-Site: compare Origin hostname
+  // against Host hostname. Never use a hardcoded origin whitelist — the fnOS
+  // gateway domain is unknown at build time.
   if (method === 'POST') {
-    const origin = req.headers.origin;
-    if (origin && !CORS_ORIGINS.includes(origin)) {
+    const sfs = req.headers['sec-fetch-site'];
+    if (sfs && sfs.toLowerCase() === 'cross-site') {
       sendJSON(res, 403, { error: 'request origin not allowed', success: false });
       return;
+    }
+    if (!sfs && req.headers.origin) {
+      let originHost = null;
+      try { originHost = new URL(req.headers.origin).hostname; } catch { /* malformed */ }
+      const baseReqHost = (req.headers.host || '').replace(/:\d+$/, '').toLowerCase();
+      if (originHost && originHost.toLowerCase() !== baseReqHost) {
+        sendJSON(res, 403, { error: 'request origin not allowed', success: false });
+        return;
+      }
     }
   }
 
