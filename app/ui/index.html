@@ -35,6 +35,7 @@
       <button type="button" class="tab-btn" data-tab="docker" onclick="switchTab('docker')" role="tab" aria-selected="false"><i data-lucide="container"></i> Docker</button>
       <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false"><i data-lucide="clock"></i> tmp</button>
       <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false"><i data-lucide="clipboard-list"></i> 去重</button>
+      <button type="button" class="tab-btn" data-tab="simdup" onclick="switchTab('simdup')" role="tab" aria-selected="false"><i data-lucide="images"></i> 相似</button>
       <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false"><i data-lucide="inbox"></i> 去空</button>
       <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
       <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
@@ -266,6 +267,38 @@
           </div>
           <div class="dup-empty-state" id="filesEmpty"><div class="dup-empty-icon">📂</div><h3>尚未开始扫描</h3><p>输入目录路径，点击开始扫描查找重复文件。</p></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Tab: 相似图片/视频检测 (P0-2) -->
+    <div class="tab-panel" data-panel="simdup">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="images"></i></div><div class="kpi-body"><div class="kpi-label">待检文件</div><div class="kpi-value" id="simdup-total">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="layers"></i></div><div class="kpi-body"><div class="kpi-label">相似组</div><div class="kpi-value" id="simdup-groups">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="files"></i></div><div class="kpi-body"><div class="kpi-label">疑似文件</div><div class="kpi-value" id="simdup-files">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">耗时</div><div class="kpi-value" id="simdup-elapsed">-</div></div></div>
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <h2><span><i data-lucide="images"></i></span><span>相似图片 / 视频检测</span></h2>
+          <div class="section-actions">
+            <select id="simdup-type" class="form-select" style="width:auto;min-width:110px">
+              <option value="image" selected>图片</option>
+              <option value="video">视频</option>
+            </select>
+            <select id="simdup-threshold" class="form-select" style="width:auto;min-width:100px">
+              <option value="6">严格 (≤6)</option>
+              <option value="10" selected>标准 (≤10)</option>
+              <option value="16">宽松 (≤16)</option>
+            </select>
+            <input id="simdup-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1/photos)" style="width:220px">
+            <button type="button" class="btn btn-primary" onclick="simDupScan()" id="simdupBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
+            <button type="button" class="btn btn-ghost" onclick="simDupStop()" id="simdupStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+          </div>
+        </div>
+        <div id="simdup-status"></div>
+        <div id="simdup-list"></div>
       </div>
     </div>
 
