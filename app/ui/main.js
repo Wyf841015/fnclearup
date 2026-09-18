@@ -178,6 +178,7 @@ async function switchTab(tabName) {
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
   else if(tabName==='simdup') { /* lazy — user clicks scan */ }
+  else if(tabName==='broken') { /* lazy */ }
   else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
   else if(tabName==='diskanalysis') { if(!App.dsLoaded) { App.dsLoaded=true; dsLoadVolumes(); } }
   else if(tabName==='dockercleanup') { dcCheckAvailable(); }
@@ -1267,6 +1268,99 @@ async function simDupStop() {
   if (!_simJob) return;
   _simScanning = false;
   try { await API.post('api/simdup/stop?job=' + encodeURIComponent(_simJob), {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
+}
+
+// ════════════════════════════════
+// Abnormal File Detection (P0-3)
+// ════════════════════════════════
+let _brokScanning = false;
+let _brokJob = null;
+let _brokCat = 'empty';
+let _brokState = null;
+
+async function brokScan() {
+  if (_brokScanning) return;
+  const path = ($('broken-path')?.value || '').trim();
+  if (!path) { showToast('请输入扫描目录', 'error'); return; }
+  const checkBroken = ($('broken-checkmedia')?.checked) === true;
+
+  _brokScanning = true;
+  const btn = $('brokenBtn'); const stopBtn = $('brokenStopBtn'); const status = $('broken-status'); const list = $('broken-list');
+  if (btn) btn.disabled = true;
+  if (stopBtn) stopBtn.style.display = '';
+  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描 ' + path + ' …'; }
+  if (list) list.innerHTML = '';
+  $('broken-total')&&($('broken-total').textContent='-'); $('broken-empty')&&($('broken-empty').textContent='-');
+  $('broken-links')&&($('broken-links').textContent='-'); $('broken-files')&&($('broken-files').textContent='-');
+
+  try {
+    const r = await API.post('api/broken/scan', { paths: [path], checkBroken });
+    if (!r.success) throw new Error(r.error || 'scan failed');
+    _brokJob = r.jobId;
+    while (_brokScanning) {
+      await new Promise(res => setTimeout(res, 800));
+      const s = await API.get('api/broken/status?job=' + encodeURIComponent(_brokJob));
+      _brokState = s;
+      if (s.status === 'done') {
+        if (status) { status.className = 'success'; status.textContent = `✅ 扫描 ${s.stats.scanned} 项：${s.stats.empty} 空文件 / ${s.stats.invalid_links} 无效链接 / ${s.stats.broken} 损坏文件`; }
+        $('broken-total')&&($('broken-total').textContent = s.stats.empty + s.stats.invalid_links + s.stats.broken);
+        $('broken-empty')&&($('broken-empty').textContent = s.stats.empty);
+        $('broken-links')&&($('broken-links').textContent = s.stats.invalid_links);
+        $('broken-files')&&($('broken-files').textContent = s.stats.broken);
+        brokRender(s);
+        break;
+      }
+      if (s.status === 'aborted') { if (status) { status.className = 'error'; status.textContent = '⏹ 已停止'; } break; }
+      if (s.status === 'error') { throw new Error(s.error || 'scan error'); }
+      if (s.status === 'scanning') {
+        if (status) { status.className = 'loading'; status.textContent = `⏳ 扫描中… 已处理 ${s.progress?.processed || 0}`; }
+      }
+    }
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+    if (list) list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">⚠️</div><h3>扫描失败</h3><p>' + escHtml(e.message) + '</p></div>';
+  } finally {
+    _brokScanning = false;
+    if (btn) btn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+function brokSwitchCat(cat) {
+  _brokCat = cat;
+  document.querySelectorAll('.dup-inner-tab-btn[data-brokTab]').forEach(b=>b.classList.toggle('active', b.dataset.brokTab===cat));
+  brokRender(_brokState);
+}
+
+function brokRender(s) {
+  const list = $('broken-list'); if (!list || !s) return;
+  let items = [], label = '';
+  if (_brokCat === 'empty') { items = s.empty||[]; label = '空文件'; }
+  else if (_brokCat === 'links') { items = s.invalid_links||[]; label = '无效链接'; }
+  else { items = s.broken||[]; label = '损坏文件'; }
+  if (!items.length) {
+    list.innerHTML = `<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现${label}</h3><p>当前目录没有匹配项</p></div>`;
+    return;
+  }
+  let html = '<div class="list-scroll"><table class="data-table"><thead><tr><th style="width:46px">#</th><th>文件名</th><th style="width:14%">信息</th><th style="width:40%">位置</th></tr></thead><tbody>';
+  items.forEach((it, i) => {
+    const dir = it.path.slice(0, it.path.lastIndexOf('/')) || '/';
+    const info = _brokCat === 'links' ? (it.target || '') : (it.size_str || (it.error || ''));
+    html += `<tr>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i+1}</td>
+      <td><span title="${escHtml(it.path)}">${escHtml(it.name)}</span></td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(info)}">${escHtml(info)}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dir)}">${escHtml(dir)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+}
+
+async function brokStop() {
+  if (!_brokJob) return;
+  _brokScanning = false;
+  try { await API.post('api/broken/stop?job=' + encodeURIComponent(_brokJob), {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
 }
 
 async function stopBigFiles() {
@@ -2834,6 +2928,7 @@ function init() {
     confirmDupDelete,
     updateDupSelectedCount, loadMoreDupResults,
     simDupScan, simDupStop,
+    brokScan, brokStop, brokSwitchCat, brokRender,
     showBrowseModal, showDupBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
     renderDupPaths, removeDupPath,
     startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
