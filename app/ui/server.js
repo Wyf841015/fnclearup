@@ -101,17 +101,19 @@ async function handle(req, res) {
   for (const k of Object.keys(corsHeaders)) res.setHeader(k, corsHeaders[k]);
   if (method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-  // CSRF guard (P0-2): block cross-site destructive POSTs. Primary signal is the
-  // browser-standard Sec-Fetch-Site header — browsers set it on every request
-  // ('same-origin'/'same-site'/'none' are fine; 'cross-site' means a malicious
-  // page drove the request). Server-side gateway proxying / native curl send NO
-  // Sec-Fetch-Site header, so they're always allowed (not a browser context).
-  // Fallback for older browsers lacking Sec-Fetch-Site: compare Origin hostname
-  // against Host hostname. Never use a hardcoded origin whitelist — the fnOS
-  // gateway domain is unknown at build time.
-  if (method === 'POST') {
-    const sfs = req.headers['sec-fetch-site'];
-    if (sfs && sfs.toLowerCase() === 'cross-site') {
+  // CSRF guard (P0-2): block cross-site destructive POSTs.
+  // Strategy for fnOS gateway environment:
+  //   1. If the request carries X-Trim-Userid (injected ONLY by fnOS gateway),
+  //      it's authenticated → allow (a malicious page can't inject this header).
+  //   2. If Sec-Fetch-Site is 'cross-site' (browser-only, set by modern browsers
+  //      on every fetch) → block (standard CSRF signal).
+  //   3. If Origin is present but doesn't match Host (fnOS gateway may forward
+  //      Origin but rewrite Host to localhost) → only block when there is NO
+  //      X-Trim-Userid (i.e. request didn't go through the gateway).
+  //   4. No Origin header (curl, server-side, or gateway that strips Origin) → allow.
+  if (method === 'POST' && !req.headers['x-trim-userid']) {
+    const sfs = (req.headers['sec-fetch-site'] || '').toLowerCase();
+    if (sfs === 'cross-site') {
       sendJSON(res, 403, { error: 'request origin not allowed', success: false });
       return;
     }
