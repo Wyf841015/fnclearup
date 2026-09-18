@@ -179,6 +179,7 @@ async function switchTab(tabName) {
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
   else if(tabName==='simdup') { /* lazy — user clicks scan */ }
   else if(tabName==='broken') { /* lazy */ }
+  else if(tabName==='namematch') { /* lazy */ }
   else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
   else if(tabName==='diskanalysis') { if(!App.dsLoaded) { App.dsLoaded=true; dsLoadVolumes(); } }
   else if(tabName==='dockercleanup') { dcCheckAvailable(); }
@@ -1364,6 +1365,80 @@ async function brokStop() {
   if (!_brokJob) return;
   _brokScanning = false;
   try { await API.post('api/broken/stop?job=' + encodeURIComponent(_brokJob), {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
+}
+
+// ════════════════════════════════
+// Same-name Conflict Detection (P2-2)
+// ════════════════════════════════
+let _nmScanning = false;
+let _nmJob = null;
+
+async function nmScan() {
+  if (_nmScanning) return;
+  const path = ($('name-path')?.value || '').trim();
+  if (!path) { showToast('请输入扫描目录', 'error'); return; }
+
+  _nmScanning = true;
+  const btn = $('nmBtn'); const stopBtn = $('nmStopBtn'); const status = $('nm-status'); const list = $('nm-list');
+  if (btn) btn.disabled = true;
+  if (stopBtn) stopBtn.style.display = '';
+  if (status) status.textContent = '⏳ 正在扫描 ' + path + ' …';
+  if (list) list.innerHTML = '';
+  $('name-groups')&&($('name-groups').textContent='-'); $('name-files')&&($('name-files').textContent='-');
+
+  try {
+    const r = await API.post('api/namematch/scan', { paths: [path] });
+    if (!r.success) throw new Error(r.error || 'scan failed');
+    _nmJob = r.jobId;
+    while (_nmScanning) {
+      await new Promise(res => setTimeout(res, 800));
+      const s = await API.get('api/namematch/status?job=' + encodeURIComponent(_nmJob));
+      if (s.status === 'done') {
+        if (status) status.textContent = `✅ 扫描 ${s.stats.scanned} 个文件，发现 ${s.stats.groups} 组重名（共 ${s.stats.files_in_groups} 个文件）`;
+        $('name-groups')&&($('name-groups').textContent = s.stats.groups);
+        $('name-files')&&($('name-files').textContent = s.stats.files_in_groups);
+        nmRender(s);
+        break;
+      }
+      if (s.status === 'aborted') { if (status) status.textContent = '⏹ 已停止'; break; }
+      if (s.status === 'error') { throw new Error(s.error || 'scan error'); }
+      if (s.status === 'scanning' && status) status.textContent = `⏳ 扫描中… 已检查 ${s.progress?.scanned || 0} 个文件`;
+    }
+  } catch (e) {
+    if (status) status.textContent = '❌ ' + e.message;
+    if (list) list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">⚠️</div><h3>扫描失败</h3><p>' + escHtml(e.message) + '</p></div>';
+  } finally {
+    _nmScanning = false;
+    if (btn) btn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+function nmRender(s) {
+  const list = $('nm-list'); if (!list) return;
+  const groups = s.groups || [];
+  if (!groups.length) {
+    list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现重名文件</h3><p>没有同名文件散落在不同目录</p></div>';
+    return;
+  }
+  let html = '<div class="list-scroll"><table class="data-table"><thead><tr><th style="width:46px">#</th><th>文件名</th><th style="width:70px">份数</th><th style="width:14%">总大小</th><th>位置</th></tr></thead><tbody>';
+  groups.forEach((g, i) => {
+    html += `<tr>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i+1}</td>
+      <td style="white-space:nowrap">${escHtml(g.name)}</td>
+      <td style="font-family:var(--font-mono);font-size:13px">×${g.count}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${formatBytes(g.total_size)}</td>
+      <td><div style="display:flex;flex-direction:column;gap:2px;font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary)">${g.files.map(f => '<span title="' + escHtml(f.path) + '" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">📄 ' + escHtml(f.dir) + ' (' + (f.size_str||'') + ')</span>').join('')}</div></td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+}
+
+async function nmStop() {
+  if (!_nmJob) return;
+  _nmScanning = false;
+  try { await API.post('api/namematch/stop?job=' + encodeURIComponent(_nmJob), {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
 }
 
 async function stopBigFiles() {
@@ -2952,6 +3027,7 @@ function init() {
     updateDupSelectedCount, loadMoreDupResults,
     simDupScan, simDupStop,
     brokScan, brokStop, brokSwitchCat, brokRender,
+    nmScan, nmStop, nmRender,
     showBrowseModal, showDupBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
     renderDupPaths, removeDupPath,
     startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
