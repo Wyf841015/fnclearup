@@ -71,11 +71,13 @@ button i[data-lucide]{pointer-events:none}
 .header-left h1::before{content:'';font-size:28px}
 .subtitle{font-size:13px;color:var(--color-text-secondary);line-height:1.5}
 .header-controls{display:flex;gap:8px;align-items:center}
-.sponsor-btn{display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:var(--radius-full);cursor:pointer;font-size:14px;font-weight:600;font-family:var(--font);white-space:nowrap;transition:background-color .25s ease, box-shadow .25s ease, transform .25s ease;background:var(--color-card-bg);color:oklch(55% 0.20 30);border:1px solid oklch(80% 0.015 250)}
+.sponsor-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;border:none;border-radius:var(--radius-full);cursor:pointer;font-size:13px;font-weight:600;font-family:var(--font);white-space:nowrap;transition:background-color .25s ease, box-shadow .25s ease, transform .25s ease;background:var(--color-card-bg);color:oklch(55% 0.20 30);border:1px solid oklch(80% 0.015 250)}
+.sponsor-btn span,.theme-toggle span{display:inline-flex;align-items:center;line-height:1}
+.sponsor-btn svg,.theme-toggle svg{width:15px;height:15px}
 .sponsor-btn:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);background:oklch(95% 0.005 250)}
 html.dark .sponsor-btn{color:oklch(75% 0.15 30);border-color:oklch(30% 0.008 250)}
 html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
-.theme-toggle{display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:var(--radius-full);cursor:pointer;font-size:14px;font-weight:600;font-family:var(--font);white-space:nowrap;transition:background-color .25s ease, box-shadow .25s ease, transform .25s ease;background:var(--color-card-bg);color:var(--color-primary);border:1px solid var(--color-border)}
+.theme-toggle{display:flex;align-items:center;gap:5px;padding:7px 14px;border:none;border-radius:var(--radius-full);cursor:pointer;font-size:13px;font-weight:600;font-family:var(--font);white-space:nowrap;transition:background-color .25s ease, box-shadow .25s ease, transform .25s ease;background:var(--color-card-bg);color:var(--color-primary);border:1px solid var(--color-border)}
 .theme-toggle:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);background:var(--color-hover-bg)}
 .theme-toggle:focus-visible,.sponsor-btn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 .version-badge{font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);padding:4px 8px;border-radius:var(--radius-full);border:1px solid var(--color-border);white-space:nowrap;margin-left:auto}
