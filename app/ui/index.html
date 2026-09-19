@@ -17,14 +17,14 @@
 <div class="container">
   <header class="header">
     <div class="header-left">
-      <h1>FnOS 系统清理</h1>
+      <h1>FnOS 系统清理<span class="version-badge" id="versionBadge" title="当前版本">v0.7.2</span></h1>
       <p class="subtitle">智能扫描系统，精准识别已卸载应用残留、Docker 未使用资源、临时文件和重复文件，一键安全清理</p>
     </div>
     <div class="header-controls">
       <button type="button" class="sponsor-btn" title="一键清理汇总" onclick="showCleanupSummary()"><span><i data-lucide="bar-chart-3"></i></span><span>总览</span></button>
       <button type="button" class="sponsor-btn" title="赞助作者" onclick="showSponsorModal()"><span><i data-lucide="heart"></i></span><span>赞助</span></button>
       <button type="button" class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题"><span><i data-lucide="sun"></i></span><span>主题</span></button>
-      <span class="version-badge" id="versionBadge" title="当前版本">v0.7.2</span>
+      <button type="button" class="sponsor-btn" title="联系作者" onclick="showContactModal()"><span><i data-lucide="message-circle"></i></span><span>联系</span></button>
     </div>
   </header>
 
@@ -928,6 +928,21 @@
     </div>
   </div>
   <div id="sponsorImgOverlay" class="sponsor-img-full-overlay" onclick="if(event.target===this)this.classList.remove('show')"><img id="sponsorImgFull" alt="大图" onclick="event.stopPropagation()"></div>
+
+  <!-- 联系作者弹窗 -->
+  <div id="contactModal" class="sponsor-modal-overlay" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="sponsor-modal-content" onclick="event.stopPropagation()" style="max-width:360px">
+      <div class="sponsor-header"><h3><span><i data-lucide="message-circle"></i></span><span>联系作者</span></h3><button type="button" class="sponsor-modal-close" onclick="document.getElementById('contactModal').classList.remove('show')">✕</button></div>
+      <p>加入 QQ 群，反馈问题 / 提需求 / 交流使用</p>
+      <div style="text-align:center;padding:12px 0">
+        <div style="font-size:30px;font-weight:800;color:var(--color-primary);letter-spacing:2px;padding:12px;background:var(--color-bg);border-radius:12px;cursor:pointer;user-select:all" id="qqNumber" onclick="copyQQNumber()">745565752</div>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin-top:8px">QQ 群号（点击可复制）</p>
+      </div>
+      <div style="text-align:center;padding-bottom:8px">
+        <button type="button" class="btn" onclick="copyQQNumber()">📋 复制群号</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 清理汇总弹窗 -->
   <div id="cleanupSummaryModal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('visible')">

@@ -147,6 +147,29 @@ function showCleanupSummary() {
 function showSponsorModal() { $('#sponsorModal')?.classList.add('show'); }
 function showSponsorImgFull(img) { const o=document.getElementById('sponsorImgOverlay'); if(o){o.classList.add('show');document.getElementById('sponsorImgFull').src=img.src;} }
 
+// 联系作者
+function showContactModal() { $('#contactModal')?.classList.add('show'); }
+function copyQQNumber() {
+  const qq = '745565752';
+  const done = () => {
+    const el = $('#qqNumber');
+    if (el) { const orig = el.textContent; el.textContent = '✓ 已复制'; setTimeout(() => el.textContent = orig, 1500); }
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(qq).then(done).catch(() => fallbackCopyQQ(qq, done));
+    } else { fallbackCopyQQ(qq, done); }
+  } catch (e) { fallbackCopyQQ(qq, done); }
+}
+function fallbackCopyQQ(qq, done) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = qq; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); if (done) done();
+  } catch (e) { /* ignore */ }
+}
+
 // ── Helper: selectAll for any table ──
 function selectAllHandler(tableId, checkboxClass) {
   const tbl = $(tableId);
@@ -3000,7 +3023,7 @@ function init() {
 
   // Export all functions to window for inline onclick and event delegation
   const exports = {
-    toggleTheme, showSponsorModal, showSponsorImgFull,
+    toggleTheme, showSponsorModal, showSponsorImgFull, showContactModal,
     showCleanupSummary, refreshCleanupSummary, filterTable, exportTableToCSV,
     switchTab,
     doScan, selectAllApp, updateSelectInfo,
