@@ -80,7 +80,7 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 .theme-toggle{display:flex;align-items:center;gap:5px;padding:7px 14px;border:none;border-radius:var(--radius-full);cursor:pointer;font-size:13px;font-weight:600;font-family:var(--font);white-space:nowrap;transition:background-color .25s ease, box-shadow .25s ease, transform .25s ease;background:var(--color-card-bg);color:var(--color-primary);border:1px solid var(--color-border)}
 .theme-toggle:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);background:var(--color-hover-bg)}
 .theme-toggle:focus-visible,.sponsor-btn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
-.version-badge{font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);padding:4px 8px;border-radius:var(--radius-full);border:1px solid var(--color-border);white-space:nowrap;margin-left:auto}
+.version-badge{font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary);padding:2px 6px;border-radius:var(--radius-sm);border:1px solid var(--color-border);white-space:nowrap;font-weight:500;letter-spacing:0}
 .version-badge.new-version{color:oklch(55% 0.20 30);border-color:oklch(55% 0.20 30);animation:pulse-glow 2s ease-in-out infinite;cursor:pointer}
 @keyframes pulse-glow{0%,100%{box-shadow:0 0 0 oklch(55% 0.20 30 / 0)}50%{box-shadow:0 0 8px oklch(55% 0.20 30 / 0.4)}}
 
