@@ -3069,6 +3069,7 @@ function init() {
     bigfilesSelectAll, bigfilesUpdateSelectInfo, bigfilesRefreshConfirmBtn,
     dsLoadVolumes, dsDrillDown, dsStop,
     dcCheckAvailable, dcScan, renderDcStoppedList, dcSelectAll, dcUpdateSelectInfo, dcRemoveSelected, dcPruneCache,
+    copyQQNumber,
   };
   Object.assign(window, exports);
 

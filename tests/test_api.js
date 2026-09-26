@@ -1325,16 +1325,36 @@ describe('Frontend: Modal onclick functions exist in main.js', () => {
 
     // For each onclick fn, assert it appears in the exports block OR is defined before use
     // (doXxx is the executed function; confirmXxx is the entry that opens the modal)
+    //
+    // Regression (2026-09-26): this test used to whitelist ['closeModal',
+    // 'showSponsorModal', 'showSponsorImgFull'] as "builtin", which masked the
+    // fact that those names must ALSO live in the exports block — copyQQNumber
+    // was missed entirely and the QQ-group copy button silently did nothing.
+    // The exports block (Object.assign(window, exports)) is the only way an
+    // IIFE-scoped function reaches an inline onclick handler, so no exemptions.
+    const exportsBlock = main.split('const exports')[1] || '';
     for (const fn of fns) {
-      // Allow closeModal/hideXxx which are simple toggles; just check they are defined
       assert.ok(main.includes(`function ${fn}`) || main.includes(`${fn}:`), `function ${fn} not defined in main.js`);
-      // And that the function is reachable: either in exports block, or it's an external API like closeModal
       // exports block items are comma-separated across multiple lines — check the substring exists as a list item
-      const exportsBlock = main.split('const exports')[1] || '';
       const isExported = new RegExp(`(?:^|\\n|,\\s*|\\s)${fn}\\s*[,}]`).test(exportsBlock);
-      const isBuiltin = ['closeModal', 'showSponsorModal', 'showSponsorImgFull'].includes(fn);
-      assert.ok(isExported || isBuiltin, `function ${fn} is not exported to window and not a builtin`);
+      assert.ok(isExported, `function ${fn} is not exported to window (inline onclick would fail silently)`);
     }
+  });
+
+  // Stronger guard: assert the full set at once so the failure message names every miss.
+  it('every inline onclick function appears in the exports block', async () => {
+    const fs = await import('node:fs');
+    const html = fs.readFileSync(join(UI_DIR, 'index.html'), 'utf-8');
+    const main = fs.readFileSync(join(UI_DIR, 'main.js'), 'utf-8');
+    const called = new Set(
+      [...html.matchAll(/onclick="([a-zA-Z_$][\w$]*)\s*\([^"]*\)"/g)]
+        .map(m => m[1])
+        .filter(n => !['if', 'for', 'while', 'return', 'this', 'event', 'document', 'window'].includes(n))
+    );
+    const start = main.indexOf('const exports');
+    const block = start >= 0 ? main.slice(start, main.indexOf('};', start)) : '';
+    const missing = [...called].filter(fn => !new RegExp(`(?:^|\\n|,\\s*|\\s)${fn}\\s*[,}]`).test(block));
+    assert.deepStrictEqual(missing, [], `未 export（inline onclick 静默失效）: ${missing.join(', ')}`);
   });
 });
 
