@@ -4,6 +4,54 @@ import { sendJSON, execCmd, isSafePath, parseBody } from '../lib/util.js';
 import { VOL_GLOBS } from '../lib/config.js';
 import { moveToTrash } from './trash.js';
 
+// ---------------------------------------------------------------------------
+// 应用系统用户删除守卫
+//
+// 实测 fnOS 用户体系（/etc/passwd, 2026-09-26 核对）：
+//   - 第三方应用账号  uid 944-989,  gid=901   ← 唯一该被 userdel 的目标
+//   - fnOS 组件账号   uid 960-999,  gid=901   ← 大多同 gid，必须靠黑名单排除
+//   - 系统服务账号    polkitd/systemd-network/systemd-timesync  gid=uid
+//   - 真实用户        admin uid=1000 gid=1001
+//   - 其他            nobody/wsdd2/libvirt-qemu  gid 各自
+//
+// 旧实现只判 `uid < 900` → admin(1000)/polkitd(995)/systemd-network(998)
+// 全部通过守护，userdel -r admin 会连带删掉用户全部数据。
+//
+// 三层判据（任一不满足即拒绝删除）：
+//   1) uid 落在应用账号区间 [900, 1000)
+//   2) gid == 901（fnOS 应用账号组，排除 admin/polkitd/systemd-*/nobody）
+//   3) 用户名不在核心组件黑名单（应用商店/权限/包管理/运行时等）
+// ---------------------------------------------------------------------------
+export const APP_USER_GID = 901;
+export const APP_USER_UID_MIN = 900;
+export const APP_USER_UID_MAX = 1000;
+
+// 核心组件账号：删掉会破坏 fnOS 本身（应用商店/权限系统/包管理/运行时/网络）
+const PROTECTED_USERS = new Set([
+  'root', 'admin', 'nobody', 'daemon', 'bin', 'sys', 'sync', 'games', 'man',
+  'polkitd', 'systemd-network', 'systemd-timesync', 'systemd-resolve',
+  'systemd-journal', 'systemd-timesync1',
+  'fnos-apps-store', 'package', 'supervisor', 'fnos', 'trim',
+  'nodejs_v22', 'nodejs_v24', 'bunjs', 'python312', 'trim-media',
+]);
+
+// 返回 { ok: true } 或 { ok: false, reason: string }
+export function canDeleteAppUser({ username, uid, gid }) {
+  if (!username || username.startsWith('-')) {
+    return { ok: false, reason: '用户名非法' };
+  }
+  if (PROTECTED_USERS.has(username)) {
+    return { ok: false, reason: '系统核心账号，已跳过' };
+  }
+  if (!Number.isInteger(uid) || uid < APP_USER_UID_MIN || uid >= APP_USER_UID_MAX) {
+    return { ok: false, reason: `uid ${uid} 不在应用账号区间 [${APP_USER_UID_MIN},${APP_USER_UID_MAX})` };
+  }
+  if (gid !== APP_USER_GID) {
+    return { ok: false, reason: `gid ${gid} 不是应用账号组(${APP_USER_GID})` };
+  }
+  return { ok: true };
+}
+
 // POST /api/scan
 export async function handleScan(req, res) {
   const result = await execCmd('appcenter-cli', ['list'], 30000);
@@ -106,18 +154,22 @@ export async function handleDelete(req, res) {
       const username = m[2];
       if (seenUsers.has(username)) continue; // dedupe
       seenUsers.add(username);
-      // Safety guard: only ever delete fnOS app accounts (uid >= 900).
-      // System/reserved users (root, daemon, fnos-apps-store, ...) must never be touched.
+      // 三层守护: uid 区间 + gid==901 + 核心组件黑名单 (见 canDeleteAppUser)
+      // Safety guard: only ever delete fnOS app accounts. System/reserved users
+      // (root, admin, polkitd, fnos-apps-store, systemd-*, ...) must never be touched.
       const ur = await execCmd('id', ['-u', username], 5000);
       if (ur.code !== 0) continue; // no such user -> nothing to delete
       const uid = parseInt(ur.stdout.trim(), 10);
-      if (!Number.isInteger(uid) || uid < 900) {
-        usersFailed.push(`${username} (系统保留用户，已跳过)`);
+      const gr = await execCmd('id', ['-g', username], 5000);
+      const gid = gr.code === 0 ? parseInt(gr.stdout.trim(), 10) : NaN;
+      const verdict = canDeleteAppUser({ username, uid, gid });
+      if (!verdict.ok) {
+        usersFailed.push(`${username} (${verdict.reason})`);
         continue;
       }
       const dr = await execCmd('userdel', ['-r', username], 30000);
       if (dr.code === 0) usersDeleted.push(username);
-      else usersFailed.push(username);
+      else usersFailed.push(`${username} (userdel 失败: ${(dr.stderr || '').trim().split('\n')[0] || 'code ' + dr.code})`);
     }
   }
   sendJSON(res, 200, { deleted, failed, skipped, total: deleted.length, failures: failed.length, users_deleted: usersDeleted, users_failed: usersFailed, success: true });
