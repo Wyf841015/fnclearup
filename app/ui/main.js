@@ -151,23 +151,55 @@ function showSponsorImgFull(img) { const o=document.getElementById('sponsorImgOv
 function showContactModal() { $('#contactModal')?.classList.add('show'); }
 function copyQQNumber() {
   const qq = '745565752';
-  const done = () => {
-    const el = $('#qqNumber');
-    if (el) { const orig = el.textContent; el.textContent = '✓ 已复制'; setTimeout(() => el.textContent = orig, 1500); }
+  const el = $('#qqNumber');
+  const feedback = (ok) => {
+    if (!el) return;
+    const orig = el.textContent;
+    el.textContent = ok ? '✓ 已复制' : '复制失败，请长按/选中后手动复制';
+    el.style.color = ok ? 'var(--color-success)' : 'var(--color-warning)';
+    setTimeout(() => { el.textContent = orig; el.style.color = ''; }, 2000);
   };
+  // 降级链: navigator.clipboard → execCommand(带 focus) → 选中文本让用户手动复制
+  // 每一级都必须兜住异常并给出可见反馈，绝不静默失败。
+  const manualFallback = () => {
+    try {
+      if (!el) return feedback(false);
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection && window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+    } catch (e) { /* ignore — 反馈仍要给 */ }
+    feedback(false);
+  };
+  const execFallback = () => {
+    let ta = null;
+    try {
+      ta = document.getElementById('__qqCopyTa');
+      if (!ta) {
+        ta = document.createElement('textarea');
+        ta.id = '__qqCopyTa';
+        ta.value = qq;
+        ta.setAttribute('readonly', '');
+        // 必须在 body 直属、尺寸非 0，否则 CEF 里 select() 会失败
+        ta.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;z-index:99999';
+        document.body.appendChild(ta);
+      }
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, qq.length);
+      if (document.execCommand('copy')) { ta.remove(); return feedback(true); }
+    } catch (e) { /* 落到 manualFallback */ }
+    if (ta && ta.remove) { try { ta.remove(); } catch (e) { /* ignore */ } }
+    manualFallback();
+  };
+  // fnOS WebView 走 http（非安全上下文）时 navigator.clipboard 通常为 undefined
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(qq).then(done).catch(() => fallbackCopyQQ(qq, done));
-    } else { fallbackCopyQQ(qq, done); }
-  } catch (e) { fallbackCopyQQ(qq, done); }
-}
-function fallbackCopyQQ(qq, done) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = qq; ta.style.position='fixed'; ta.style.opacity='0';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-    document.body.removeChild(ta); if (done) done();
-  } catch (e) { /* ignore */ }
+      navigator.clipboard.writeText(qq).then(() => feedback(true)).catch(execFallback);
+    } else {
+      execFallback();
+    }
+  } catch (e) { execFallback(); }
 }
 
 // ── Helper: selectAll for any table ──
@@ -3073,13 +3105,18 @@ function init() {
   };
   Object.assign(window, exports);
 
-  // Convert all inline [onclick] buttons to event listeners (bypass IIFE scope issue)
+  // Convert all inline [onclick] buttons to DOM-0 handlers (bypass IIFE scope issue).
+  // Use el.onclick= rather than addEventListener: the fnOS WebView (CEF) fires DOM-0
+  // reliably on dynamically re-rendered elements, where addEventListener may be dropped.
+  // Also stamp an idempotency marker so re-running this never double-binds.
   document.querySelectorAll('[onclick]').forEach(el => {
+    if (el.__rewired) return;
     const attr = el.getAttribute('onclick');
     const fnName = attr.replace(/\(.*\)/, '').trim();
     if (typeof window[fnName] === 'function') {
+      el.__rewired = true;
       el.removeAttribute('onclick');
-      el.addEventListener('click', function(e) {
+      el.onclick = function(e) {
         const match = attr.match(/\(([^)]*)\)/);
         if (match && match[1].trim()) {
           const args = match[1].split(',').map(a => {
@@ -3093,7 +3130,7 @@ function init() {
         } else {
           window[fnName]();
         }
-      });
+      };
     }
   });
 
