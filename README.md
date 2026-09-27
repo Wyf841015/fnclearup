@@ -313,6 +313,12 @@
 
 ## 版本历史
 
+### v0.11.1 (2026-09-26)
+- 🔴 **P0 修复「应用清理删除用户」守护失效** — 旧守护只判 `uid < 900`，但实测 fnOS 上 `admin` uid=1000、`polkitd` 995、`systemd-network` 998 全部 ≥900，守护形同虚设；且路径 `/volX/@appmeta|@appconf|@appdata|@apphome/<name>` 全部匹配 `@app[^/]+` 正则，第二段被直接当 username 传给 `userdel -r`，最坏可删掉用户全部数据或导致断网。修复为三层判据：**uid ∈ [900,1000) + gid == 901（fnOS 应用账号组）+ 核心组件黑名单**（应用商店/权限/包管理/运行时/网络等）
+- 🐛 **修复「QQ群号复制按钮点了没反应」** — 两层根因：① `copyQQNumber` 未 export 到 window，IIFE 闭包导致 inline onclick 静默 ReferenceError；② fnOS WebView 走 http（非安全上下文）时 `navigator.clipboard` 为 `undefined`，旧 fallback 的 `ta.select()` 未先 `focus()` 导致 CEF 下 select 失败，且失败时无任何 UI 反馈。修复：补 export + 三级降级链（clipboard → execCommand 带 focus → 手动选中文本）+ 成功/失败双路可见反馈
+- 🔧 **inline onclick 绑定方式改为 DOM-0** — fnOS WebView (CEF) 对动态重渲元素的 `addEventListener` 可能不触发，改用 `el.onclick=`（最可靠），并加 `__rewired` 幂等标记防重复绑定
+- 🧪 测试加固 — 移除导出检查里的 `isBuiltin` 白名单（正是它掩盖了漏导出），新增守卫一次性比对全部 inline onclick 函数 vs exports 块；新增删用户守护 26 项 + 复制降级链 14 项测试
+
 ### v0.9.6 (2026-08-20)
 - 修复：同步删除关联系统用户失效（@app\d+ 正则无法匹配 @appcenter/@appstore，用户永远不删）——改为匹配任意 @app* 目录 + uid≥900 守护
 - 修复：应用残余卸载失败（@appcenter 路径不匹配回收站 regex，改为永久删除）
