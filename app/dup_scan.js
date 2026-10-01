@@ -105,7 +105,7 @@ async function main() {
     status: 'counting',
     progress: { total: 0, processed: 0, currentFile: '' },
     files: [], duplicates: [],
-    stats: { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 },
+    stats: { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0, cacheHits: 0, hashed: 0, cacheHitRate: 0, partialSkipped: 0, sizeSkipped: 0 },
     error: null, startTime: Date.now(),
     _aborted: false, _paused: false, _prev_status: 'counting',
   };
@@ -165,13 +165,14 @@ async function main() {
     if (group.length >= 2) candidates.push(...group);
   }
   const skippedCount = allFiles.length - candidates.length;
+  if (skippedCount > 0) state.stats.sizeSkipped = skippedCount;
   state.progress.currentFile = `大小预分组完成: ${allFiles.length}→${candidates.length} 个候选 (${skippedCount} 个唯一大小已跳过)`;
   writeState(stateDir, jobId, state);
 
   if (!candidates.length) {
     state.status = 'complete';
     state.duplicates = [];
-    state.stats = { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 };
+    state.stats = { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0, cacheHits: 0, hashed: 0, cacheHitRate: 0, partialSkipped: 0, sizeSkipped: state.stats.sizeSkipped || 0 };
     writeState(stateDir, jobId, state);
     return;
   }
@@ -228,6 +229,9 @@ async function main() {
   for (const group of partialMap.values()) {
     if (group.length >= 2) needFull.push(...group);
   }
+  // P2 缓存/预筛可观测性: 让用户看到"这次省了多少磁盘读取"
+  state.stats.partialSkipped = Math.max(0, candidates.length - needFull.length);
+  state.stats.candidates = candidates.length;
   state.progress.currentFile = `部分哈希预筛完成: ${candidates.length}→${needFull.length} 个需全量哈希`;
   writeState(stateDir, jobId, state);
 
@@ -235,7 +239,7 @@ async function main() {
     await pool.terminate();
     state.status = 'complete';
     state.duplicates = [];
-    state.stats = { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0 };
+    state.stats = { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0, cacheHits: 0, hashed: 0, cacheHitRate: 0, partialSkipped: 0, sizeSkipped: state.stats.sizeSkipped || 0 };
     writeState(stateDir, jobId, state);
     return;
   }
@@ -256,6 +260,10 @@ async function main() {
       toHash.push(f);
     }
   }
+  state.stats.cacheHits = cacheHits.length;
+  state.stats.hashed = toHash.length;
+  state.stats.cacheHitRate = (cacheHits.length + toHash.length)
+    ? Math.round(cacheHits.length / (cacheHits.length + toHash.length) * 100) : 0;
   if (cacheHits.length) {
     state.progress.currentFile = `哈希缓存命中: ${cacheHits.length} 个文件跳过读取 (size+mtime 未变)` + (toHash.length ? `，需新哈希 ${toHash.length} 个` : '');
     writeState(stateDir, jobId, state);
@@ -354,7 +362,14 @@ async function main() {
   state.status = 'complete';
   state.files = fileHashes;
   state.duplicates = duplicates;
-  state.stats = { totalFiles: fileHashes.length, duplicateGroups: duplicates.length, duplicateFiles: dupFiles, wastedBytes };
+  state.stats.totalFiles = fileHashes.length;
+  state.stats.duplicateGroups = duplicates.length;
+  state.stats.duplicateFiles = dupFiles;
+  state.stats.wastedBytes = wastedBytes;
+  state.stats.hashed = toHash.length;
+  state.stats.cacheHits = cacheHits.length;
+  state.stats.cacheHitRate = (cacheHits.length + toHash.length)
+    ? Math.round(cacheHits.length / (cacheHits.length + toHash.length) * 100) : 0;
   writeState(stateDir, jobId, state);
 }
 

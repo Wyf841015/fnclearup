@@ -872,7 +872,21 @@ function finishDupScan(tab, data) {
   }
   DupState[tab].duplicates = dups;
   const totalGroups = pagination.total || dups.length;
-  const stEl=$(ids.stats); if(stEl){stEl.style.display='';stEl.innerHTML='<div class="dup-stat-card"><div class="dup-stat-value">'+(stats.totalFiles||0)+'</div><div class="dup-stat-label">扫描文件</div></div><div class="dup-stat-card"><div class="dup-stat-value">'+totalGroups+'</div><div class="dup-stat-label">重复组</div></div><div class="dup-stat-card warning"><div class="dup-stat-value">'+(stats.duplicateFiles||0)+'</div><div class="dup-stat-label">重复文件</div></div><div class="dup-stat-card danger"><div class="dup-stat-value">'+(stats.wastedHuman||'0 B')+'</div><div class="dup-stat-label">浪费空间</div></div>';}
+  // P2 可观测性: 展示持久化哈希缓存的命中情况(jdupes --hash-db 同等能力)。
+  // 用户由此能看到"二次扫描没重新读盘", 而不必每次都靠猜。
+  var _cacheStat='';
+  var _cHits=stats.cacheHits||0, _cHashed=stats.hashed||0, _cPart=stats.partialSkipped||0;
+  if(_cHits+_cHashed>0){
+    var _rate=stats.cacheHitRate||0;
+    var _cls=_rate>=80?'':'warning';
+    _cacheStat='<div class="dup-stat-card '+_cls+'"><div class="dup-stat-value">'+_rate+'%</div>'
+      +'<div class="dup-stat-label">缓存命中 · 新哈希 '+_cHashed+'</div></div>';
+    if(_cPart>0){
+      _cacheStat+='<div class="dup-stat-card"><div class="dup-stat-value">'+_cPart+'</div>'
+        +'<div class="dup-stat-label">预筛已排除</div></div>';
+    }
+  }
+  const stEl=$(ids.stats); if(stEl){stEl.style.display='';stEl.innerHTML='<div class="dup-stat-card"><div class="dup-stat-value">'+(stats.totalFiles||0)+'</div><div class="dup-stat-label">扫描文件</div></div><div class="dup-stat-card"><div class="dup-stat-value">'+totalGroups+'</div><div class="dup-stat-label">重复组</div></div><div class="dup-stat-card warning"><div class="dup-stat-value">'+(stats.duplicateFiles||0)+'</div><div class="dup-stat-label">重复文件</div></div><div class="dup-stat-card danger"><div class="dup-stat-value">'+(stats.wastedHuman||'0 B')+'</div><div class="dup-stat-label">浪费空间</div></div>'+_cacheStat;}
   if(se)se.innerHTML='✅ 完成';
   renderDupList(tab, dups);
   $(ids.results)&&($(ids.results).style.display='');
