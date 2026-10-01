@@ -22,9 +22,9 @@ const mainJs = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'main.js'), 'utf8');
 
 /** 取出某选择器的规则体(按花括号配平, 支持多行写法) */
 function rule(sel) {
-  const i = css.indexOf(sel);
+  const i = css.indexOf(sel + '{');
   if (i < 0) return null;
-  const open = css.indexOf('{', i);
+  const open = i + sel.length;
   if (open < 0) return null;
   let depth = 0;
   for (let k = open; k < css.length; k++) {

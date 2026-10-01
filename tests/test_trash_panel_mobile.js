@@ -22,11 +22,15 @@ const ROOT = path.join(__dirname, '..');
 const css = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'styles', 'style.css'), 'utf8');
 const html = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'index.html'), 'utf8');
 
-/** 取某选择器的规则体(花括号配平, 支持多行) */
+/**
+ * 取某选择器的规则体(花括号配平, 支持多行)。
+ * 必须精确匹配 "选择器{" —— 用 indexOf(sel) 会先撞上 .kpi-card:nth-child(5)
+ * 这类更长的选择器前缀, 取到错误的规则体(实测踩过)。
+ */
 function rule(sel) {
-  const i = css.indexOf(sel);
+  const i = css.indexOf(sel + '{');
   if (i < 0) return null;
-  const open = css.indexOf('{', i);
+  const open = i + sel.length;
   let depth = 0;
   for (let k = open; k < css.length; k++) {
     if (css[k] === '{') depth++;
@@ -35,17 +39,24 @@ function rule(sel) {
   return null;
 }
 
-test('回收站 KPI 不再硬编码 5 列(硬编码是移动端挤成一条的直接原因)', () => {
+test('回收站 KPI 固定 2 列, 且第 5 张跨列收尾(不留半边空白)', () => {
   const r = rule('.tab-panel[data-panel="trash"] .kpi-row');
   assert.ok(r, '.kpi-row 的回收站规则缺失');
   assert.ok(!/repeat\(\s*5\s*,\s*1fr\s*\)/.test(r),
     '不能用 repeat(5,1fr) —— 移动端也强制 5 列, 数值被截成一两个字符');
-  assert.ok(/repeat\(\s*auto-fit\s*,\s*minmax/.test(r),
-    '应用 auto-fit + minmax, 由容器宽度决定列数');
-  // minmax 下限要能在 360px 屏上至少放下 2 列, 否则退化成单列过长
-  const mm = /minmax\(\s*min\(100%,\s*(\d+)px\)/.exec(r);
-  assert.ok(mm, 'minmax 未使用 min(100%, Npx) 形式 —— Npx 过大时窄屏会溢出');
-  assert.ok(Number(mm[1]) <= 160, `minmax 下限 ${mm[1]}px 偏大, 360px 屏放不下 2 列`);
+  // 实测 360px 下 auto-fit 会排成 2+2+1, 第 5 张孤零零独占一行留空,
+  // 因此固定 2 列 + 让第 5 张 grid-column:1/-1 铺满收尾
+  assert.ok(/repeat\(\s*2\s*,\s*minmax\(0,\s*1fr\)\s*\)/.test(r),
+    '应固定 2 列并用 minmax(0,1fr) 防止内容撑破列宽');
+  const fifth = rule('.tab-panel[data-panel="trash"] .kpi-card:nth-child(5)');
+  assert.ok(fifth, '缺少第 5 张卡的规则');
+  assert.ok(/grid-column\s*:\s*1\s*\/\s*-1/.test(fifth),
+    '第 5 张必须跨两列, 否则 2+2+1 的排布会在右侧留半边空白');
+  // 通栏卡内标签贴左、数值贴右, 内容不能全堆在一侧
+  const body = rule('.tab-panel[data-panel="trash"] .kpi-card:nth-child(5) .kpi-body');
+  assert.ok(body, '通栏卡的 kpi-body 缺规则');
+  assert.ok(/grid-template-columns\s*:\s*1fr\s+auto/.test(body),
+    '通栏卡应为 1fr auto —— 标签占左侧、数值贴右, 两侧对齐');
 });
 
 test('KPI 数值与标签在窄屏必须自身截断, 而不是把卡片撑破', () => {
@@ -62,8 +73,12 @@ test('KPI 数值与标签在窄屏必须自身截断, 而不是把卡片撑破',
   assert.ok(/flex-shrink\s*:\s*0/.test(icon), '图标未设 flex-shrink:0');
   // 卡片本身要有最小内边距, 不能为省空间压到 6px
   const card = rule('.tab-panel[data-panel="trash"] .kpi-card');
-  const pad = /padding\s*:\s*(\d+)px/.exec(card);
-  assert.ok(pad && Number(pad[1]) >= 8, `KPI 卡片内边距 ${pad && pad[1]}px 过小, 内容贴边显得局促`);
+  // padding 可能是 `10px` 也可能是 `9px 10px`(上下 左右), 取横向值判断
+  const pads = [...card.matchAll(/padding\s*:([^;]+)/g)].map(x => x[1]);
+  const nums = pads.flatMap(v => (v.match(/(\d+)px/g) || []).map(n => Number(n.replace('px',''))));
+  assert.ok(nums.length, '未找到 padding 声明');
+  assert.ok(Math.min(...nums) >= 8,
+    `KPI 卡片内边距过小(最小 ${Math.min(...nums)}px), 内容贴边显得局促: ${pads.join(' | ')}`);
 });
 
 test('按钮区统一为 grid, 不再有半宽左对齐的孤儿按钮', () => {
