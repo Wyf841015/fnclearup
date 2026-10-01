@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, openSync, readSync, closeSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 import { parentPort } from 'node:worker_threads';
+import { PARTIAL_SEGMENT_BYTES } from './storage_profile.js';
 
 const ID3_READ_SIZE = 10240;
 
@@ -46,14 +47,19 @@ async function hashFile(fp, batchId, mode) {
   try {
     const st = statSync(fp);
 
-    // Partial mode (Czkawka two-ended pre-filter): hash the first 4096 bytes
-    // AND the last 4096 bytes (or entire file if smaller). Two-ended pre-hash
-    // rejects files that differ at head OR tail (e.g. truncated/cut files with
-    // identical headers) BEFORE paying for a full-stream read — strictly more
-    // discriminating than single-headed (jdupes) partial hashing. Group key in
-    // the parent is size + partial, so files differing in size are already out.
+    // Partial mode (Czkawka two-ended pre-filter): hash the first
+    // PARTIAL_SEGMENT_BYTES AND the last PARTIAL_SEGMENT_BYTES (or the whole
+    // file if smaller). Two-ended pre-hash rejects files that differ at head
+    // OR tail (e.g. truncated/cut files with identical headers) BEFORE paying
+    // for a full-stream read. Group key in the parent is size + partial, so
+    // files differing in size are already out.
+    //
+    // P0 (2026-09-30): 4KB -> 32KB per segment. 原实现 4KB 太小, 大量文件
+    // (尤其 MP4/MOV/ISO/压缩包, 文件头高度雷同) 区分度不足, 被迫进入全量
+    // SHA-256。这里只加大单段读取、保持 seek 次数恒为 2 —— 机械盘上多一次
+    // seek 的成本(数毫秒)远高于多读几十 KB, 所以不能加采样点, 只能加长度。
     if (mode === 'partial') {
-      const PARTIAL_BYTES = 4096;
+      const PARTIAL_BYTES = PARTIAL_SEGMENT_BYTES;
       const hash = createHash('sha256');
       const fd = openSync(fp, 'r');
       if (st.size <= PARTIAL_BYTES) {

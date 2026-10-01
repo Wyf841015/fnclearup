@@ -10,11 +10,14 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSy
 import { join, extname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { getHashPool } from './dup_hash_pool.js';
+import { profileFor } from './storage_profile.js';
 
 const MUSIC_EXTS = new Set(['.mp3','.flac','.wav','.aac','.ogg','.m4a','.wma','.alac','.ape','.dsf']);
 const POLL_MS = 1000;
-const WORKER_COUNT = 4;
-const PARTIAL_BYTES = 4096;
+// 哈希并发度按介质动态推导 (P0, 2026-09-30): 原为固定 4。
+// 本机双核 + 机械盘 RAID1, 固定 4 既超订 CPU 又造成寻道竞争。
+let WORKER_COUNT = 4;      // main() 内按 storage_profile 覆盖
+const PARTIAL_BYTES = 4096;   // 仅作小文件快速路径的参考值, 实际值见 dup_hash_worker.js
 const HASH_CACHE_FILE = 'dup_hash_cache.json';   // key: path → {size, mtimeMs, hash, ext, id3}
 
 // ── Hash cache (persistent across runs, mirrors jdupes -y/--hash-db) ──
@@ -84,6 +87,11 @@ async function main() {
 
   const [scanType, scanPathsRaw, jobId, stateDir, minSizeRaw, keepModeRaw] = args;
   const scanPaths = scanPathsRaw.split(',').map(p => p.trim()).filter(Boolean);
+  const storageProfile = profileFor(scanPaths);
+  WORKER_COUNT = storageProfile.poolSize;
+  process.stderr.write(
+    `[dup_scan] 哈希并发度=${WORKER_COUNT} · ${storageProfile.reason}\n`
+  );
   let minSize = parseInt(minSizeRaw, 10);
   if (!Number.isFinite(minSize) || minSize < 0) minSize = 0;   // 0 = no min-size filter
   const keepMode = keepModeRaw || 'first';   // first | newest | deepest (which file to KEEP per group)
@@ -93,6 +101,7 @@ async function main() {
 
   let state = {
     id: jobId, scanType, rootPaths: scanPaths,
+    storageProfile,
     status: 'counting',
     progress: { total: 0, processed: 0, currentFile: '' },
     files: [], duplicates: [],
