@@ -17,7 +17,7 @@ import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js'
 import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
 import { handleBigFilesScan, handleBigFilesStop, handleBigFilesDelete } from './api/bigfiles.js';
 import { handleDiskVolumes, handleDiskTree, handleDiskStop } from './api/diskanalysis.js';
-import { handleSimDupScan, handleSimDupStatus, handleSimDupStop, setSimDupPaths } from './api/simdup.js';
+import { handleSimDupScan, handleSimDupStatus, handleSimDupStop, handleSimDupThumb, setSimDupPaths } from './api/simdup.js';
 import { handleBrokenScan, handleBrokenStatus, handleBrokenStop, setBrokenPaths } from './api/broken.js';
 import { handleNamematchScan, handleNamematchStatus, handleNamematchStop, setNamematchPaths } from './api/namematch.js';
 import { handleDockerStopped, handleDockerStoppedRemove, handleDockerBuildCache, handleDockerBuildCachePrune } from './api/docker_cleanup.js';
@@ -189,6 +189,7 @@ async function handle(req, res) {
       // Similar image/video
       if (method === 'POST' && path === '/api/simdup/scan') { await handleSimDupScan(req, res); return; }
       if (method === 'GET' && path === '/api/simdup/status') { handleSimDupStatus(req, res); return; }
+  if (method === 'GET' && path === '/api/simdup/thumb') { handleSimDupThumb(req, res, url); return; }
       if (method === 'POST' && path === '/api/simdup/stop') { handleSimDupStop(req, res); return; }
       // Abnormal files
       if (method === 'POST' && path === '/api/broken/scan') { await handleBrokenScan(req, res); return; }

@@ -1331,8 +1331,52 @@ function simSimilarityCell(dist){
   return '<td style="font-family:var(--font-mono);color:'+col+';font-size:12px" title="dHash 汉明距离 '+dist+' / 64">'+pct+'%</td>';
 }
 
+// P1-4: 并排对比。缩略图由 /api/simdup/thumb 按需生成(ffmpeg 抽帧 + 磁盘缓存),
+// 这里只负责组装 DOM。原生 <dialog> 而非自定义 modal —— fnOS WebView/CEF 下
+// 自定义 overlay 常出现 getComputedStyle 显示正常但视觉层不渲染的问题。
+let _simCmpGroups = null;
+function simDupThumbUrl(p){ return 'api/simdup/thumb?path=' + encodeURIComponent(p); }
+
+function simDupCompareGroup(groupNo){
+  if(!_simCmpGroups) return;
+  const g = _simCmpGroups.find(x => x.group === groupNo);
+  const dlg = $('simdupCompareDlg'), body = $('simdupCmpBody'), title = $('simdupCmpTitle');
+  if(!g || !dlg || !body) return;
+  const pct = simSimilarityPct(g.minDist);
+  title.textContent = '第 ' + g.group + ' 组 · ' + g.files.length + ' 个文件'
+    + (pct==null ? '' : ' · 最相似 ' + pct + '% (dHash 距离 ' + g.minDist + '/64)');
+  body.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">'
+    + g.files.map(f => {
+        const p = simSimilarityPct(f.minDist);
+        const col = p==null ? 'var(--color-text-secondary)'
+          : (p>=95 ? 'var(--color-success,#22c55e)' : (p>=80 ? 'var(--color-primary)' : 'var(--color-warning,#f59e0b)'));
+        return '<figure style="margin:0;display:flex;flex-direction:column;gap:6px">'
+          + '<a href="'+escHtml(f.path)+'" target="_blank" rel="noopener" '
+          + 'style="display:block;aspect-ratio:4/3;background:var(--bg-subtle,#f1f5f9);border-radius:8px;overflow:hidden;border:1px solid var(--border-color,#e2e8f0)">'
+          + '<img src="'+escHtml(simDupThumbUrl(f.path))+'" alt="'+escHtml(f.name)+'" loading="lazy" '
+          + 'style="width:100%;height:100%;object-fit:contain;display:block"></a>'
+          + '<figcaption style="font-size:12px;line-height:1.5;word-break:break-all">'
+          + '<div title="'+escHtml(f.path)+'" style="font-weight:600">'+escHtml(f.name)+'</div>'
+          + '<div style="color:var(--color-text-secondary)">'+escHtml(f.size_str)+'</div>'
+          + (f.minDist==null ? '' :
+             '<div style="color:'+col+';font-family:var(--font-mono)">相似 '+p+'% · 距离 '+f.minDist+'</div>')
+          + '</figcaption></figure>';
+      }).join('')
+    + '</div>';
+  if(typeof dlg.showModal === 'function'){ try{ dlg.showModal(); }catch(e){ dlg.setAttribute('open',''); } }
+  else dlg.setAttribute('open','');
+}
+
+function simDupCompareClose(){
+  const dlg = $('simdupCompareDlg');
+  if(!dlg) return;
+  if(typeof dlg.close === 'function'){ try{ dlg.close(); }catch(e){} }
+  dlg.removeAttribute('open');
+}
+
 function simDupRenderResult(s) {
   const list = $('simdup-list'); if (!list) return;
+  _simCmpGroups = s.groups || [];   // P1-4: 供对比弹窗取用
   if ($('simdup-total')) $('simdup-total').textContent = s.stats?.totalFiles ?? 0;
   if ($('simdup-groups')) $('simdup-groups').textContent = s.stats?.groups ?? 0;
   if ($('simdup-files')) $('simdup-files').textContent = s.stats?.files ?? 0;
@@ -1358,7 +1402,7 @@ function simDupRenderResult(s) {
   clusters.forEach(c => {
     const dir = c.path.slice(0, c.path.lastIndexOf('/')) || '/';
     html += `<tr>
-      <td style="text-align:center"><span style="background:var(--color-primary);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">${c.group}</span></td>
+      <td style="text-align:center"><button type="button" class="simdup-cmp-btn" data-grp="${c.group}" title="并排对比该组">${c.group}</button></td>
       <td><span title="${escHtml(c.path)}">${escHtml(c.name)}</span></td>
       <td style="font-family:var(--font-mono);color:var(--color-primary)">${escHtml(c.size_str)}</td>
       ${simSimilarityCell(c.minDist)}
@@ -1367,7 +1411,27 @@ function simDupRenderResult(s) {
   });
   html += '</tbody></table></div>';
   list.innerHTML = html;
+  // P1-4: 事件委托绑定(inline onclick 在 CEF/WebView 下常静默失效)
+  list.querySelectorAll('.simdup-cmp-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){ simDupCompareGroup(parseInt(btn.dataset.grp, 10)); });
+  });
 }
+
+// 对比弹窗的关闭绑定(关闭按钮 / 点遮罩 / ESC)
+(function(){
+  function bind(){
+    const c = document.getElementById('simdupCmpClose');
+    if(c && !c._simdupBound){ c._simdupBound = true; c.addEventListener('click', simDupCompareClose); }
+    const d = document.getElementById('simdupCompareDlg');
+    if(d && !d._simdupBound){
+      d._simdupBound = true;
+      d.addEventListener('click', function(e){ if(e.target === d) simDupCompareClose(); });
+      d.addEventListener('cancel', function(e){ e.preventDefault(); simDupCompareClose(); });
+    }
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+  else bind();
+})();
 
 async function simDupStop() {
   if (!_simJob) return;
