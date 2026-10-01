@@ -100,7 +100,20 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
 .tab-panel[data-panel="schedule"] .kpi-row,
 .tab-panel[data-panel="bigfiles"] .kpi-row{grid-template-columns:repeat(2,1fr)}
-.tab-panel[data-panel="trash"] .kpi-row{grid-template-columns:repeat(5,1fr)}
+/* 回收站 5 个 KPI: 原为硬编码 repeat(5,1fr), 移动端也强制 5 列 → 数值被截成
+   "3._" 这样只剩一两个字符、标签完全消失、第 3 卡还被屏幕边缘裁掉。
+   改用 auto-fit 自适应: 宽屏一行排开, 窄屏自动降到 3/2 列, 不依赖媒体查询
+   (fnOS 移动 WebView 常以桌面 UA 渲染, max-width 断点不触发)。 */
+.tab-panel[data-panel="trash"] .kpi-row{
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,132px),1fr));
+  gap:8px;margin-bottom:14px;
+}
+.tab-panel[data-panel="trash"] .kpi-card{padding:10px;gap:8px}
+.tab-panel[data-panel="trash"] .kpi-icon{width:28px;height:28px;flex-shrink:0}
+.tab-panel[data-panel="trash"] .kpi-label{font-size:11px;line-height:1.3;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.tab-panel[data-panel="trash"] .kpi-value{font-size:17px;line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi-card{background:var(--color-card-bg);border-radius:var(--radius-md);padding:20px 24px;border:1px solid var(--color-border);display:flex;align-items:center;gap:16px;transition:transform .2s ease, box-shadow .2s ease, border-color .2s ease;position:relative;overflow:hidden;cursor:default;box-shadow:var(--shadow)}
 .kpi-card:hover{transform:translateY(-2px);box-shadow:0 0 16px oklch(45% 0.15 265 / 0.15),var(--shadow-md);border-color:var(--color-primary)}
 .kpi-card:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
@@ -395,6 +408,21 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .section-header .section-actions{flex-wrap:wrap}
   .modal{padding:24px;max-width:95%}
   .sponsor-qr-row{flex-direction:column;align-items:center}
+/* 回收站按钮区: 6 个按钮(扫描/30天/90天/1年/全部清空/浏览内容)。
+   原先基础规则只约束 flex 属性而没定 display, 媒体查询又另起一套 grid,
+   导致「浏览内容」半宽左对齐、与上方全宽和 2 列网格宽度不一致。
+   统一成 2 列网格: 扫描与浏览内容各占满一行, 4 个清理按钮 2x2 排列。
+   同样不依赖媒体查询 —— 窄屏本来就是这个形态, 宽屏保持 3 列更合适。 */
+.tab-panel[data-panel="trash"] .section-header{
+  display:grid;gap:6px;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,132px),1fr));
+}
+.tab-panel[data-panel="trash"] .section-header #trashScanBtn,
+.tab-panel[data-panel="trash"] .section-header #trashBrowseBtn{grid-column:1/-1}
+/* 高危操作(全部清空)与分级清理拉开视觉层级 */
+.tab-panel[data-panel="trash"] .section-header #trashCleanAllBtn{
+  grid-column:1/-1;border-color:var(--color-danger);
+}
   .tab-panel[data-panel="trash"] .section-header .btn{flex:1 1 auto;min-width:0;justify-content:center;padding:8px 10px;font-size:12px}
   .tab-panel[data-panel="trash"] .section-header .btn span:last-child{overflow:hidden;text-overflow:ellipsis}
   .tab-panel[data-panel="schedule"] .kpi-row{grid-template-columns:repeat(2,1fr)}
@@ -440,9 +468,6 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .dup-file-item{flex-wrap:wrap}
   .dup-group-header{flex-wrap:wrap;gap:6px}
   .dup-group-delete-btn{padding:4px 6px}
-  .tab-panel[data-panel="trash"] .section-header{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-  .tab-panel[data-panel="trash"] .section-header .btn{padding:7px 6px;font-size:11px;gap:4px}
-  .tab-panel[data-panel="trash"] .section-header .btn#trashScanBtn{grid-column:span 2}
 #trash-list .data-table{display:none}
 /* 回收站卡片 —— 布局不依赖媒体查询: fnOS 移动 WebView 常不触发 max-width 断点,
    若把样式只写在 480px 里, 真机上就退化成无样式的裸 div(表现为挤作一团)。
