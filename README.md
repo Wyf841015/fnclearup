@@ -4,6 +4,120 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.11.2 更新
+
+本版聚焦**性能对齐行业基线**、**删除安全**、**多目录选择**与**移动端可用性**。
+
+### 性能：哈希并发按介质自适应
+
+- **问题** — 哈希 worker 原硬编码 4 个。本机是 **Intel Celeron J3355 双核** +
+  `sda`/`sdb` **机械盘 RAID1**(WD43PURZ) + `sdc` 固态盘，固定 4 既是 2 倍 CPU 超订，
+  又让机械盘多线程随机读产生寻道竞争。fclones 官方文档明确建议机械盘用
+  `--threads 1`，并报告过 2x~10x 的性能差异。
+- **修复** — 新增 `app/storage_profile.js`，读 `/sys/block/<dev>/queue/rotational`
+  判定扫描目标所在卷的介质类型（自动穿透 LVM / device-mapper）：
+  **机械盘降为单线程 / 固态盘取 `min(4, CPU 核数)` / 介质无法确定时保守按机械盘处理 /
+  多路径混合时取更保守的一侧**。推导结果写入任务状态并输出日志：
+  `[dup_scan] 哈希并发度=1 · 机械盘(/vol2) — 单线程避免寻道竞争`
+
+### 性能：partial 预筛采样量 4KB → 32KB
+
+- 每段 4KB 区分度不足，MP4/MOV/ISO/压缩包文件头高度雷同，大量文件被迫进入全量哈希。
+- 改为**头尾各 32KB（合计 64KB）**，对齐 file-deduplicator 的头尾 64KiB 水平。
+- **只加大单段读取、保持 seek 次数恒为 2** —— 机械盘上多一次 seek 的成本（数毫秒）
+  远高于多读几十 KB，因此**不加**中段采样点。
+
+### 🔒 安全：保护 fnOS 系统目录与卷内回收站（P0）
+
+- **问题** — 删除校验的白名单只到卷粒度（`/vol*`），导致
+  `/vol3/@appcenter`（**所有应用的安装目录**）、`@appdata`、`@appmeta`、`@apphome`、
+  `@appconf`、`@appshare`、`@apptemp`、`@sysappmeta`，以及 `/volN/<uid>/.@#local`
+  （**卷内回收站**）**全部通过校验**。重复扫描命中各应用的同名 LICENSE/图标后勾选删除，
+  会**误删其他应用文件导致应用起不来**。
+- **修复** — 用**精确名单**（非 `@` 前缀正则，避免误伤用户自建的 `/vol1/1000/@我的相册`）
+  拦截上述 8 个系统目录 + 回收站；删除/大文件/空目录三个端点接入并回传**拦截数量与逐条原因**，
+  前端明确提示「N 个受保护未删除」。
+- **刻意不接入应用卸载器**(`app.js`) —— 它的语义就是卸载应用（删除目标本就是 `@appcenter`），
+  接入会废掉卸载能力；只读端点不接入（仍可「看到」系统目录里的重复文件，只是删不掉）。
+- **自身数据目录差异化豁免** — 读写场景豁免（要写哈希缓存/manifest/导出），
+  删除场景**一律不豁免**（否则清理工具会把自己的缓存和审计清单一起删）。
+
+### 🚀 扫描排除规则（可自定义）
+
+- **问题** — 原先扫描除最小体积外无任何路径排除，每次扫 `/vol1` 都要把 `@appdata`
+  的 SQLite、`node_modules`、`.git`、Docker overlay 全走一遍；哈希缓存虽能跳过重复计算，
+  但 `walk + statSync` 的元数据开销跑不掉，且系统目录里发现的"重复文件"多半是各应用
+  共用的 LICENSE/图标，对清理没有价值。对标 fclones 的 `.hashignore`。
+- **修复** — 新增零依赖 `app/exclude_rules.js`，`dup_scan` 与 `simdup_scan`
+  在 **readdir 之后、stat 之前**剪枝（目录整棵跳过）；规则落盘
+  `<TRM_PKGVAR>/data/scan_exclude.json`，`GET/POST /api/dup/exclude-rules` 读写，
+  重复文件面板提供折叠式编辑区（展开时才懒加载）。
+- **匹配语义** — 不含 `/` 的规则按**路径段**匹配（任意层级，支持 `*` `?`）；
+  含 `/` 的按路径模式匹配（`**` 任意层、`*` 单层）；`/` 开头为绝对路径前缀。
+  空规则 = 不排除任何内容；文件缺失或损坏时**回落到默认规则，绝不中断扫描**。
+- **默认 18 条** — `@app*` / `@sysapp*`（覆盖 fnOS 全部 8 个系统目录）、
+  `node_modules`、`.git`、`__pycache__`、`lost+found`、`overlay2` 等。
+  刻意**不用** `@*` —— 那会误伤用户自建的 `/vol1/1000/@我的相册`。
+  注意这是"跳过扫描"（性能），与删除保护（安全）是两回事，后者用精确名单、从严。
+
+### 🚀 哈希缓存命中统计可见化
+
+统计区新增「缓存命中 · 新哈希 N」与「预筛已排除」卡片，命中率 ≥80% 为常规色、<80% 走告警色。
+实测（机械盘 `/vol2`，100 文件/30 组重复）：**冷启动 0 命中 / 60 哈希 / 0%**，
+**二次扫描 60 命中 / 0 哈希 / 100%** —— 缓存确实是有效的，只是以前看不见。
+
+### 🚀 相似文件显示相似度并支持并排对比
+
+- **相似度透出** — 此前 dHash 距离算完就丢掉了。现在每文件输出 `minDist`、每组输出
+  `minDist` + 最相近的 5 对，**按相似度升序排列**（最像的组排最前），前端新增「相似度」列并分档着色。
+  实测同源 3 张：`a0~a2=2 (97%)`、`a0~a1=5 (92%)`、`a1~a2=7 (89%)`；异源 2 张未误聚。
+- **并排对比** — 新增 `GET /api/simdup/thumb` 缩略图 API（320px JPEG，ffmpeg 抽帧取第 1 秒避免黑屏），
+  缓存于 `<TRM_PKGVAR>/data/thumbs/`（键含 `size+mtime`，文件一变即失效）；
+  组号改为可点击按钮，点开用**原生 `<dialog>`** 并排展示该组全部缩略图 + 名称 + 大小 + 各自相似度。
+  选型说明：原生 `<dialog>` 而非自定义 modal —— fnOS WebView/CEF 下自定义 overlay 常出现
+  `getComputedStyle` 显示正常但视觉层不渲染的问题。
+
+### 🚀 四个 Tab 统一为去重风格的多目录选择
+
+**相似 / 异常 / 重名 / 大文件** 原先都是单个文本框（大小文件还是下拉），只能选一个目录。
+现全部改为与去重一致的**目录标签列表 + 「📁 添加目录」**，可一次添加多个目录。
+
+- `simdup` / `broken` / `namematch` 后端本就接受 `paths` 数组，属**纯前端改造**；
+  `bigfiles` 后端只接受单个 `path`，改为 `getAll('path')` 读重复参数并累积去重 `roots`，
+  **保留单 path 与不传（= `/vol*`）的旧行为**兼容旧调用方。
+- 现有 `renderDupPaths` / `removeDupPath` / `showDupBrowseModal` 三个组件本就只依赖
+  `tab + 'PathList'` 这个 DOM id 与 `DupState[tab].paths`，因此**组件代码一行未改**。
+
+### 🐛 修复：全站按钮点击无反应（P0 回归）
+
+- **根因** — 插入 `blockedNotice` 时锚点只取到 `showToast` 里的 `setTimeout` 那一行，
+  **把 `showToast` 的闭合 `}` 吞掉了**，导致其后插入的所有函数都落在 `showToast` 的**函数体内**。
+  模块作用域的 `exports` 块引用它们时抛 `ReferenceError`，`init()` 中断，
+  `Object.assign(window, exports)` 从未执行 → **全站按钮无任何绑定**。
+- **为什么没被拦住** — 这类错误**语法完全合法**，`node --check` 通过；字符串断言类测试也查不出
+  （它们只检查"这段文字在不在"）。必须**真把 main.js 跑起来**。
+- **防回归** — 新增 `tests/test_main_js_loadable.js`：用 DOM stub **真实加载 main.js**，
+  断言 `init()` 不抛错、`window` 上挂出函数；另有精确断言 `showToast` 在 8 行内闭合。
+
+### 🎨 移动端布局修复（据真机截图）
+
+- **回收站 KPI 卡片** — 原硬编码 `repeat(5,1fr)`，移动端也强制 5 列 →
+  数值被截成 `3._`、标签完全消失、第 3 张卡被屏幕右边缘裁掉。
+  改为**固定 2 列 + 第 5 张跨列收尾**，通栏卡内标签贴左、数值贴右。
+  验证方式：抽出真实 CSS 组成预览页，用 CDP 把视口设为 **360×780** 模拟 fnOS WebView，
+  逐卡读取 `getBoundingClientRect` 与 `scrollWidth` 确认无截断无溢出，并截图肉眼复核。
+- **回收站列表卡片** — `.trash-card-path` 原用 `word-break:break-all`，长路径被**逐字符**折成竖条
+  （这正是"叠在一起"的观感来源）；改为 `overflow-wrap:anywhere` + 限 3 行，完整路径用 `title` 查看。
+  容器改用 `grid auto-fit`，**不依赖媒体查询** —— fnOS 移动 WebView 常以桌面 UA 渲染，
+  `max-width` 断点根本不触发，写进媒体查询等于没写。
+- **回收站按钮区** — 原基础规则里没定 `display`，宽度逻辑全在媒体查询里，导致窄屏下
+  「浏览内容」半宽左对齐、与上方全宽按钮和 2 列网格宽度不一致。统一为 grid，
+  高危的「全部清空」独占一行并加红色边框，与可逆的分级清理拉开层级。
+
+### 测试
+
+**245 passed / 0 failed**（基线 171 → +74）
+
 ## v0.11.0 更新
 
 - 🐛 **CSRF 安全校验** — 新增 POST 写操作跨站请求防护（P0-2 审计修复）：有 `X-Trim-Userid`（fnOS 网关认证）的请求直接放行，无认证请求按 `Sec-Fetch-Site: cross-site` 判断，本地直连不受影响
@@ -313,6 +427,67 @@
 
 ## 版本历史
 
+**扫描排除规则(可自定义)**
+
+- 问题: 原先扫描除最小体积外没有任何路径排除, 每次扫 /vol1 都要把 @appdata 的 SQLite、
+  node_modules、.git、Docker overlay 全走一遍; 哈希缓存能跳过重复计算, 但 walk+statSync
+  的元数据开销跑不掉, 且系统目录里发现的"重复文件"多半是各应用共用的 LICENSE/图标。
+- 修复: 新增零依赖 app/exclude_rules.js, dup_scan 与 simdup_scan 在 readdir 之后 stat 之前
+  剪枝(目录整棵跳过); 规则落盘 TRM_PKGVAR/data/scan_exclude.json,
+  GET/POST /api/dup/exclude-rules 读写, 面板提供折叠式编辑区(展开时懒加载)。
+- 默认 18 条含 @app*/@sysapp*(覆盖 fnOS 全部 8 个系统目录)与 node_modules/.git/__pycache__/
+  lost+found/overlay2 等。刻意不用 @* —— 会误伤用户自建的 /vol1/1000/@我的相册。
+
+**哈希缓存命中统计可见化**
+
+- 统计区新增「缓存命中 · 新哈希 N」与「预筛已排除」卡片, 命中率 ≥80% 为常规色、<80% 走告警色。
+- 实测(/vol2, 100 文件/30 组重复): 冷 0 命中/60 哈希/0%; 热 60 命中/0 哈希/100%。
+
+**保护 fnOS 系统目录与卷内回收站(删除安全, P0)**
+
+- 问题: 删除校验白名单只到卷粒度(/vol*), 导致 @appcenter(所有应用安装目录)、@appdata、
+  @appmeta、@apphome、@appconf、@appshare、@apptemp、@sysappmeta 与卷内回收站
+  (/volN/<uid>/.@#local) 全部通过校验 —— 勾选删除会误删其他应用文件导致应用起不来。
+- 修复: 用精确名单(非 @ 前缀正则, 避免误伤 /vol1/1000/@我的相册)拦截 8 个系统目录 + 回收站,
+  删除/大文件/空目录三端点接入并回传拦截数量与逐条原因。
+- 刻意不接入 app.js(应用卸载器) —— 它的语义就是卸载应用, 接入会废掉卸载能力。
+- 自身数据目录差异化豁免: 读写豁免, 删除不豁免(否则会删掉自己的缓存和审计清单)。
+
+**相似文件显示相似度并支持并排对比**
+
+- 相似度: 每文件输出 minDist、每组输出 minDist + 最相近 5 对, 按相似度升序(最像的排最前),
+  前端新增「相似度」列并分档着色。实测同源 3 张: 距离 2 (97%) / 5 (92%) / 7 (89%)。
+- 对比视图: 新增 GET /api/simdup/thumb 缩略图 API(320px JPEG, ffmpeg 抽帧取第 1 秒避免黑屏),
+  缓存于 TRM_PKGVAR/data/thumbs(键含 size+mtime, 文件一变即失效); 组号改为可点击,
+  点开用原生 <dialog> 并排展示缩略图 + 名称 + 大小 + 各自相似度。
+- 安全: 须过 isSafePath 且扩展名在图片/视频白名单(.js/.sh/.exe 等拒绝)。
+
+**相似/异常/重名/大文件统一为多目录选择**
+
+- 四个 tab 原为单文本框(大小文件还是下拉), 现改为与去重一致的目录标签列表, 可多选。
+- simdup/broken/namematch 后端本就接受 paths 数组(纯前端改造);
+  bigfiles 后端改为 getAll('path') 读重复参数并累积去重 roots, 保留单 path 与不传(=/vol*)的旧行为。
+- 实测: 单根 /vol3 -> /vol3; 多根 -> /vol3,/vol2; 四根含重复 -> 去重为 2 个;
+  不传 path -> /vol1,/vol2,/vol3; /etc 与 /vol99 -> 403。
+
+**修复全站按钮失效(showToast 闭合花括号被吞, P0 回归)**
+
+- 根因: 插入 blockedNotice 时锚点只取到 setTimeout 那一行, 把 showToast 的闭合 } 吞掉了,
+  导致其后插入的所有函数都落在 showToast 的函数体内; 模块作用域 exports 块引用它们时抛
+  ReferenceError, init() 中断, Object.assign(window,exports) 从未执行, 全站按钮无任何绑定。
+- 为什么没被拦住: 这类错误语法完全合法, node --check 通过; 字符串断言类测试也查不出
+  (只检查"这段文字在不在")。必须真把 main.js 跑起来。
+- 防回归: 新增 tests/test_main_js_loadable.js, 用 DOM stub 真实加载 main.js 并断言 init() 不抛错。
+
+**移动端布局修复(据真机截图)**
+
+- 回收站 KPI: 原硬编码 repeat(5,1fr), 移动端也强制 5 列 → 数值截成 3._、标签消失、
+  第 3 张卡被屏幕右边缘裁掉。改为固定 2 列 + 第 5 张跨列收尾, 通栏卡内标签贴左数值贴右。
+- 回收站列表卡片: .trash-card-path 原用 word-break:break-all, 长路径被逐字符折成竖条
+  (正是"叠在一起"的观感来源); 改为 overflow-wrap:anywhere + 限 3 行, 完整路径用 title 查看。
+- 全部改用 grid auto-fit 而非媒体查询 —— fnOS 移动 WebView 常以桌面 UA 渲染,
+  max-width 断点根本不触发, 写进媒体查询等于没写。
+
 ### v0.11.2
 
 **哈希并发按介质自适应(不再固定 4 worker)**
@@ -358,7 +533,7 @@
   manifest、导出),**删除场景不豁免**(否则清理工具会把自己的缓存和审计清单一起删掉)。
 - 验证: 真实 server + 真实删除请求,混合提交"正常文件 + @appcenter 诱饵 + 回收站路径",
   结果 `实际删除=1  blockedCount=2`,诱饵文件确认未被删除。
-- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 229 passed / 0 failed。
+- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 245 passed / 0 failed。
 
 **扫描排除规则(可自定义)**
 
@@ -382,7 +557,7 @@
 - 结果可观测: 统计卡新增「排除跳过」,`stats.excluded` / `stats.scanned` 上报。
 - 测试: 新增 `tests/test_exclude_rules.js` (12 项),含一条**全项目相对 import
   可解析性**检查(曾因 `../../../exclude_rules.js` 多写一级导致 server 启动即崩,
-  而 `node --check` 不校验 import 路径)。全量 229 passed / 0 failed。
+  而 `node --check` 不校验 import 路径)。全量 245 passed / 0 failed。
 
 **相似文件并排对比(眼见为实)**
 
@@ -441,7 +616,7 @@
   `"[object Object]"`),不是文件内容,导致所有介质都被误判为固态盘。
   已改用 `readFileSync`,并有回归测试锁死(`test_storage_profile.js`)。
 
-- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 229 passed / 0 failed。
+- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 245 passed / 0 failed。
 
 ### v0.11.1 (2026-09-26)
 - 🔴 **P0 修复「应用清理删除用户」守护失效** — 旧守护只判 `uid < 900`，但实测 fnOS 上 `admin` uid=1000、`polkitd` 995、`systemd-network` 998 全部 ≥900，守护形同虚设；且路径 `/volX/@appmeta|@appconf|@appdata|@apphome/<name>` 全部匹配 `@app[^/]+` 正则，第二段被直接当 username 传给 `userdel -r`，最坏可删掉用户全部数据或导致断网。修复为三层判据：**uid ∈ [900,1000) + gid == 901（fnOS 应用账号组）+ 核心组件黑名单**（应用商店/权限/包管理/运行时/网络等）
