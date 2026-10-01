@@ -358,7 +358,23 @@
   manifest、导出),**删除场景不豁免**(否则清理工具会把自己的缓存和审计清单一起删掉)。
 - 验证: 真实 server + 真实删除请求,混合提交"正常文件 + @appcenter 诱饵 + 回收站路径",
   结果 `实际删除=1  blockedCount=2`,诱饵文件确认未被删除。
-- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 189 passed / 0 failed。
+- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 198 passed / 0 failed。
+
+**哈希缓存命中统计可见化**
+
+- 背景: 重复文件扫描一直带持久化哈希缓存(`path → {size, mtimeMs, hash, ext, id3}`,
+  对标 `jdupes --hash-db`),二次扫描几乎不读盘 —— 但界面上没有任何数字体现,
+  用户只能靠"感觉这次好像快了点"来判断。这是 Czkawka 的招牌卖点
+  (官方 benchmark: 363,215 文件首次 8s → 二次 7s; 相似图片 54s → 1s)。
+- 修复: `dup_scan.js` 的 `stats` 新增 `cacheHits` / `hashed` / `cacheHitRate` /
+  `partialSkipped` / `sizeSkipped`;统计区新增「缓存命中 · 新哈希 N」卡片
+  (命中率 ≥80% 用默认样式,<80% 走 warning 色),预筛排除数 >0 时追加一张
+  「预筛已排除」卡。未进入哈希阶段(如完全无重复)时不占位显示。
+- 实测(机械盘 `/vol2`,100 文件 30 组重复,同一目录连扫两次):
+  | | 缓存命中 | 实际哈希 | 命中率 | 预筛排除 |
+  |---|---|---|---|---|
+  | 第一次(冷) | 0 | 60 | 0% | 40 |
+  | 第二次(热) | 60 | 0 | **100%** | 40 |
 
 **修复介质判定的一个隐蔽错误**
 
@@ -366,7 +382,7 @@
   `"[object Object]"`),不是文件内容,导致所有介质都被误判为固态盘。
   已改用 `readFileSync`,并有回归测试锁死(`test_storage_profile.js`)。
 
-- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 189 passed / 0 failed。
+- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 198 passed / 0 failed。
 
 ### v0.11.1 (2026-09-26)
 - 🔴 **P0 修复「应用清理删除用户」守护失效** — 旧守护只判 `uid < 900`，但实测 fnOS 上 `admin` uid=1000、`polkitd` 995、`systemd-network` 998 全部 ≥900，守护形同虚设；且路径 `/volX/@appmeta|@appconf|@appdata|@apphome/<name>` 全部匹配 `@app[^/]+` 正则，第二段被直接当 username 传给 `userdel -r`，最坏可删掉用户全部数据或导致断网。修复为三层判据：**uid ∈ [900,1000) + gid == 901（fnOS 应用账号组）+ 核心组件黑名单**（应用商店/权限/包管理/运行时/网络等）
