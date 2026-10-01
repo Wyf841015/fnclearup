@@ -12,7 +12,8 @@
 import { execCmd } from './ui/lib/util.js';
 import { existsSync } from 'node:fs';
 
-const FFMPEG = '/usr/bin/ffmpeg';
+// fnOS 自带 ffmpeg 位于 /usr/bin; 允许用 FFMPEG_PATH 覆盖(开发机/自定义安装)
+const FFMPEG = process.env.FFMPEG_PATH || '/usr/bin/ffmpeg';
 
 // Convert a file to a 9×8 grayscale raw stream (64 bytes? no — 9*8=72 px),
 // then compute the 64-bit dHash (8 rows × 8 diffs).
