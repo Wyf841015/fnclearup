@@ -495,3 +495,20 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .schedule-file-list{margin:4px 0 2px 12px;max-height:200px;overflow-y:auto;font-size:12px}
 .schedule-file-list ul{margin:0;padding-left:16px;list-style:disc}
 .schedule-file-list li{word-break:break-all;line-height:1.4;padding:1px 0}
+
+
+/* ── P1-4: 相似组"对比"按钮 + 对比弹窗 ───────────────────────────────────
+   组号做成可点击按钮, 点开并排预览该组所有文件的缩略图。
+   用原生 <dialog> 而非自定义 modal —— fnOS WebView/CEF 下自定义 overlay
+   常出现 getComputedStyle 显示正常但视觉层不渲染的问题。 */
+.simdup-cmp-btn, .simdup-cmp-btn{
+  background: var(--color-primary); color: #fff; border: none; border-radius: 10px;
+  padding: 1px 8px; font-size: 12px; cursor: pointer; font-family: inherit;
+  min-width: 24px; line-height: 1.5;
+  transition: filter .15s, transform .15s;
+}
+.simdup-cmp-btn:hover, .simdup-cmp-btn:hover{ filter: brightness(1.12); transform: scale(1.06); }
+.simdup-cmp-btn:active, .simdup-cmp-btn:active{ transform: scale(.96); }
+#simdupCompareDlg{ border: none; padding: 0; }
+#simdupCompareDlg::backdrop{ background: rgba(0,0,0,.45); }
+#simdupCompareBody{ display: block; }

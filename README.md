@@ -358,7 +358,25 @@
   manifest、导出),**删除场景不豁免**(否则清理工具会把自己的缓存和审计清单一起删掉)。
 - 验证: 真实 server + 真实删除请求,混合提交"正常文件 + @appcenter 诱饵 + 回收站路径",
   结果 `实际删除=1  blockedCount=2`,诱饵文件确认未被删除。
-- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 208 passed / 0 failed。
+- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 218 passed / 0 failed。
+
+**相似文件并排对比(眼见为实)**
+
+- 背景: 有了相似度百分比仍不够 —— 用户要看到图才能决定删哪张
+  (dupeGuru Picture mode / Czkawka side-by-side 都是这个思路)。
+- 修复: 新增 `GET /api/simdup/thumb?path=<文件>`,按需生成 320px 宽 JPEG
+  缩略图(ffmpeg 抽帧;视频取第 1 秒避免黑屏片头),落盘缓存于
+  `<TRM_PKGVAR>/data/thumbs/`,缓存键含 `size+mtime`,文件一变即自动失效。
+  相似结果表的组号改为可点击按钮,点开用原生 `<dialog>` 并排展示该组全部
+  缩略图 + 名称 + 大小 + 各自相似度,点击图片可在新标签打开原图。
+- 安全: 路径须过 `isSafePath` 且扩展名在图片/视频白名单内
+  (`.js`/`.sh`/`.exe` 等一律拒绝),失败返回明确的 403/400/404/500。
+- 选型说明: 用原生 `<dialog>` 而非自定义 modal —— fnOS WebView/CEF 下自定义
+  overlay 常出现 `getComputedStyle` 显示正常但视觉层不渲染的问题;
+  按钮绑定用 `addEventListener` 事件委托而非 inline `onclick`(后者在 CEF 下常静默失效)。
+- 实测: 真实图片 → `200 image/jpeg 320x213`;真实视频 → `200 image/jpeg 320x180`;
+  伪装的坏文件 → 500;`.js` 文件 → 400;`/etc/passwd` → 403;目录 → 400;
+  不存在 → 404;重复请求命中缓存,未重复生成。
 
 **相似图片/视频: 显示相似度并按相似度排序**
 
@@ -399,7 +417,7 @@
   `"[object Object]"`),不是文件内容,导致所有介质都被误判为固态盘。
   已改用 `readFileSync`,并有回归测试锁死(`test_storage_profile.js`)。
 
-- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 208 passed / 0 failed。
+- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 218 passed / 0 failed。
 
 ### v0.11.1 (2026-09-26)
 - 🔴 **P0 修复「应用清理删除用户」守护失效** — 旧守护只判 `uid < 900`，但实测 fnOS 上 `admin` uid=1000、`polkitd` 995、`systemd-network` 998 全部 ≥900，守护形同虚设；且路径 `/volX/@appmeta|@appconf|@appdata|@apphome/<name>` 全部匹配 `@app[^/]+` 正则，第二段被直接当 username 传给 `userdel -r`，最坏可删掉用户全部数据或导致断网。修复为三层判据：**uid ∈ [900,1000) + gid == 901（fnOS 应用账号组）+ 核心组件黑名单**（应用商店/权限/包管理/运行时/网络等）
