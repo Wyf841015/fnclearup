@@ -820,7 +820,18 @@ async function doDeleteTemp() {
 // ════════════════════════════════
 // Duplicate File Scanning
 // ════════════════════════════════
-const DupState = { music: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0, paths: ['/vol1/1000/music'] }, files: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0, paths: ['/vol1/1000'] } };
+// 路径容器: 6 个扫描 tab 共用同一套「添加目录 / 标签列表 / 单个移除」组件。
+// renderDupPaths / removeDupPath / browseSelect 都只依赖 `tab + 'PathList'` 这个
+// DOM id 与 DupState[tab].paths, 因此新增 tab 只需在此登记, 无需改动组件代码。
+const DupState = {
+  music: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0, paths: ['/vol1/1000/music'] },
+  files: { jobId: null, duplicates: [], checking: false, pagination: null, start: 0, paths: ['/vol1/1000'] },
+  // ↓ 2026-10-01: 相似/异常/重名/大文件 四项统一为去重风格的多目录选择
+  simdup:  { paths: ['/vol1/1000'] },
+  broken:  { paths: ['/vol1/1000'] },
+  name:    { paths: ['/vol1/1000'] },
+  bigfiles:{ paths: [] },
+};
 
 function getDupIds(tab) {
   return { pathInput: tab+'Path', scanBtn: tab+'ScanBtn', stopBtn: tab+'StopBtn', deleteBtn: tab+'DeleteBtn', exportBtn: tab+'ExportBtn', progress: tab+'Progress', progressBar: tab+'ProgressBar', progressText: tab+'ProgressText', progressCount: tab+'ProgressCount', currentFile: tab+'CurrentFile', status: tab+'Status', results: tab+'Results', stats: tab+'Stats', dupList: tab+'DupList', actions: tab+'Actions', selectedCount: tab+'SelectedCount', selectedSize: tab+'SelectedSize', empty: tab+'Empty' };
@@ -1122,10 +1133,13 @@ async function doBigFilesScan() {
   if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描中，可点击「停止」提前结束'; }
   if (list) list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🐘</div><h3>扫描中…</h3><p>正在遍历所选卷目录寻找大文件，请稍候</p></div>';
 
-  const path = $('bigfiles-path')?.value || '/vol*';
+  const paths = DupState.bigfiles.paths.slice();   // 多目录(2026-10-01 统一为去重风格)
+  if (paths.length === 0) { _bigFilesScanning = false; showToast('请先点击「添加目录」选择至少一个目录（可添加 /vol* 表示所有卷）', 'error'); if (scanBtn) scanBtn.disabled = false; return; }
   const minSize = parseInt($('bigfiles-minsize')?.value || '0', 10) || 0;
   const topN = parseInt($('bigfiles-topn')?.value || '100', 10) || 100;
-  const params = new URLSearchParams({ path, topN: String(topN), depth: '6' });
+  const params = new URLSearchParams({ topN: String(topN), depth: '6' });
+  // 多个根目录 -> 重复的 path 查询参数(后端用 getAll 读取)
+  for (const p of paths) params.append('path', p);
   if (minSize > 0) params.set('minSize', String(minSize));
 
   try {
@@ -1307,8 +1321,8 @@ let _simJob = null;
 
 async function simDupScan() {
   if (_simScanning) return;
-  const path = ($('simdup-path')?.value || '').trim();
-  if (!path) { showToast('请输入扫描目录', 'error'); return; }
+  const paths = DupState.simdup.paths.slice();   // 多目录(2026-10-01 统一为去重风格)
+  if (paths.length === 0) { showToast('请先点击「添加目录」选择至少一个目录', 'error'); return; }
   const type = $('simdup-type')?.value || 'image';
   const threshold = parseInt($('simdup-threshold')?.value || '10', 10) || 10;
 
@@ -1316,11 +1330,11 @@ async function simDupScan() {
   const btn = $('simdupBtn'); const stopBtn = $('simdupStopBtn'); const status = $('simdup-status'); const list = $('simdup-list');
   if (btn) btn.disabled = true;
   if (stopBtn) stopBtn.style.display = '';
-  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描 ' + path + ' …'; }
+  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描 ' + paths.length + ' 个目录 …'; }
   if (list) list.innerHTML = '';
 
   try {
-    const r = await API.post('api/simdup/scan', { type, paths: [path], threshold });
+    const r = await API.post('api/simdup/scan', { type, paths, threshold });
     if (!r.success) throw new Error(r.error || 'scan failed');
     _simJob = r.jobId;
     // poll
@@ -1494,22 +1508,22 @@ let _brokState = null;
 
 async function brokScan() {
   if (_brokScanning) return;
-  const path = ($('broken-path')?.value || '').trim();
-  if (!path) { showToast('请输入扫描目录', 'error'); return; }
+  const paths = DupState.broken.paths.slice();   // 多目录(2026-10-01 统一为去重风格)
+  if (paths.length === 0) { showToast('请先点击「添加目录」选择至少一个目录', 'error'); return; }
   const checkBroken = ($('broken-checkmedia')?.checked) === true;
 
   _brokScanning = true;
   const btn = $('brokenBtn'); const stopBtn = $('brokenStopBtn'); const status = $('broken-status'); const list = $('broken-list');
   if (btn) btn.disabled = true;
   if (stopBtn) stopBtn.style.display = '';
-  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描 ' + path + ' …'; }
+  if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描 ' + paths.length + ' 个目录 …'; }
   if (list) list.innerHTML = '';
   $('broken-total')&&($('broken-total').textContent='-'); $('broken-empty')&&($('broken-empty').textContent='-');
   $('broken-links')&&($('broken-links').textContent='-'); $('broken-files')&&($('broken-files').textContent='-');
   $('broken-dl')&&($('broken-dl').textContent='-');
 
   try {
-    const r = await API.post('api/broken/scan', { paths: [path], checkBroken });
+    const r = await API.post('api/broken/scan', { paths, checkBroken });
     if (!r.success) throw new Error(r.error || 'scan failed');
     _brokJob = r.jobId;
     while (_brokScanning) {
@@ -1588,19 +1602,19 @@ let _nmJob = null;
 
 async function nmScan() {
   if (_nmScanning) return;
-  const path = ($('name-path')?.value || '').trim();
-  if (!path) { showToast('请输入扫描目录', 'error'); return; }
+  const paths = DupState.name.paths.slice();     // 多目录(2026-10-01 统一为去重风格)
+  if (paths.length === 0) { showToast('请先点击「添加目录」选择至少一个目录', 'error'); return; }
 
   _nmScanning = true;
   const btn = $('nmBtn'); const stopBtn = $('nmStopBtn'); const status = $('nm-status'); const list = $('nm-list');
   if (btn) btn.disabled = true;
   if (stopBtn) stopBtn.style.display = '';
-  if (status) status.textContent = '⏳ 正在扫描 ' + path + ' …';
+  if (status) status.textContent = '⏳ 正在扫描 ' + paths.length + ' 个目录 …';
   if (list) list.innerHTML = '';
   $('name-groups')&&($('name-groups').textContent='-'); $('name-files')&&($('name-files').textContent='-');
 
   try {
-    const r = await API.post('api/namematch/scan', { paths: [path] });
+    const r = await API.post('api/namematch/scan', { paths });
     if (!r.success) throw new Error(r.error || 'scan failed');
     _nmJob = r.jobId;
     while (_nmScanning) {
@@ -3213,6 +3227,8 @@ function init() {
   // Render initial dup path lists
   renderDupPaths('music');
   renderDupPaths('files');
+    // 2026-10-01: 相似/异常/重名/大文件 与去重共用同一套路径列表组件
+    ['simdup','broken','name','bigfiles'].forEach(t => renderDupPaths(t));
 
   // Export all functions to window for inline onclick and event delegation
   const exports = {

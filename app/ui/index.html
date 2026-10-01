@@ -312,8 +312,7 @@
               <option value="10" selected>标准 (≤10)</option>
               <option value="16">宽松 (≤16)</option>
             </select>
-            <input id="simdup-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1/photos)" style="width:220px">
-            <button type="button" class="btn btn-ghost" onclick="showBrowseModal('simdup-path')" title="浏览目录"><span>🔍</span></button>
+               <div class="dup-path-list" id="simdupPathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('simdup')">📁 添加目录</button>
             <button type="button" class="btn btn-primary" onclick="simDupScan()" id="simdupBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="simDupStop()" id="simdupStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
           </div>
@@ -348,8 +347,7 @@
         <div class="section-header">
           <h2><span><i data-lucide="file-x"></i></span><span>异常文件检测</span></h2>
           <div class="section-actions">
-            <input id="broken-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1)" style="width:220px">
-            <button type="button" class="btn btn-ghost" onclick="showBrowseModal('broken-path')" title="浏览目录"><span>🔍</span></button>
+               <div class="dup-path-list" id="brokenPathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('broken')">📁 添加目录</button>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-secondary)"><input type="checkbox" id="broken-checkmedia"> 检损坏媒体</label>
             <button type="button" class="btn btn-primary" onclick="brokScan()" id="brokenBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="brokStop()" id="brokenStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
@@ -378,8 +376,7 @@
         <div class="section-header">
           <h2><span><i data-lucide="copy-x"></i></span><span>重名冲突检测</span></h2>
           <div class="section-actions">
-            <input id="name-path" type="text" class="form-input" placeholder="扫描目录 (如 /vol1)" style="width:220px">
-            <button type="button" class="btn btn-ghost" onclick="showBrowseModal('name-path')" title="浏览目录"><span>🔍</span></button>
+               <div class="dup-path-list" id="namePathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('name')">📁 添加目录</button>
             <button type="button" class="btn btn-primary" onclick="nmScan()" id="nmBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="nmStop()" id="nmStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
           </div>
@@ -634,12 +631,7 @@
         <div class="section-header">
           <h2><span><i data-lucide="hard-drive"></i></span><span>大文件查找器</span></h2>
           <div class="section-actions">
-            <select id="bigfiles-path" class="form-select" style="width:auto;min-width:120px">
-              <option value="/vol*" selected>所有 /vol 卷</option>
-              <option value="/vol1">/vol1</option>
-              <option value="/vol2">/vol2</option>
-              <option value="/vol3">/vol3</option>
-            </select>
+               <div class="dup-path-list" id="bigfilesPathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('bigfiles')">📁 添加目录</button>
             <select id="bigfiles-minsize" class="form-select" style="width:auto;min-width:120px">
               <option value="0">无最小值</option>
               <option value="104857600" selected>≥ 100 MB</option>
