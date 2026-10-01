@@ -48,7 +48,10 @@ export function cancelBigFilesJob() { if (activeJob) activeJob.stopped = true; }
 // Returns: { files: [{path, name, size, size_str, mtime, depth}], total_candidates, scanned_paths, elapsed_ms, truncated }
 export async function handleBigFilesScan(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const path = url.searchParams.get('path') || '/vol*';
+  // 多目录支持(2026-10-01): 与去重/相似/异常/重名统一, 前端可一次提交多个根目录。
+  // 用 getAll 读重复的 path 参数; 保留单 path 与不传(= /vol*) 的旧行为, 兼容旧调用方。
+  const pathParams = url.searchParams.getAll('path').map(s => s.trim()).filter(Boolean);
+  const requested = pathParams.length ? pathParams : ['/vol*'];
   const minSize = parseInt(url.searchParams.get('minSize') || '0', 10) || DEFAULT_MINSIZE;
   const topN = Math.min(parseInt(url.searchParams.get('topN') || String(DEFAULT_TOPN), 10) || DEFAULT_TOPN, 500);
   const depth = Math.min(parseInt(url.searchParams.get('depth') || String(DEFAULT_DEPTH), 10) || DEFAULT_DEPTH, 12);
@@ -62,22 +65,30 @@ export async function handleBigFilesScan(req, res) {
   // so unit tests don't have to scan a real /volN with millions of inodes.
   const extraRoots = (process.env.TRM_BIGFILES_EXTRA_ROOTS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
-  let roots;
-  if (path === '/vol*' || path === '/vol*/') {
-    roots = VOL_GLOBS.filter(r => existsSync(r) && !r.startsWith('/vol0'));
-    // By default also include /vol2 (the most common media mount on fnOS)
-    // — skip /vol02 (netdisk fuse) which can be huge and slow.
-    roots = roots.filter(r => r !== '/vol02');
-    if (extraRoots.length) roots.push(...extraRoots.filter(r => existsSync(r)));
-  } else if (SAFE_PREFIXES.has(path + '/') || VOL_GLOBS.includes(path) || extraRoots.includes(path)) {
-    if (!existsSync(path)) {
-      sendJSON(res, 400, { error: `path not found: ${path}` });
+  const roots = [];
+  for (const path of requested) {
+    if (roots.includes(path)) continue;
+    if (path === '/vol*' || path === '/vol*/') {
+      // By default also include /vol2 (the most common media mount on fnOS)
+      // — skip /vol02 (netdisk fuse) which can be huge and slow.
+      for (const r of VOL_GLOBS.filter(x => existsSync(x) && !x.startsWith('/vol0'))) {
+        if (r !== '/vol02' && !roots.includes(r)) roots.push(r);
+      }
+      if (extraRoots.length) {
+        for (const r of extraRoots.filter(x => existsSync(x))) {
+          if (!roots.includes(r)) roots.push(r);
+        }
+      }
+    } else if (SAFE_PREFIXES.has(path + '/') || VOL_GLOBS.includes(path) || extraRoots.includes(path)) {
+      if (!existsSync(path)) {
+        sendJSON(res, 400, { error: `path not found: ${path}` });
+        return;
+      }
+      roots.push(path);
+    } else {
+      sendJSON(res, 403, { error: 'path must be under /vol*' });
       return;
     }
-    roots = [path];
-  } else {
-    sendJSON(res, 403, { error: 'path must be under /vol*' });
-    return;
   }
   if (roots.length === 0) {
     sendJSON(res, 200, { files: [], total_candidates: 0, scanned_paths: 0, elapsed_ms: 0 });
@@ -151,7 +162,7 @@ export async function handleBigFilesScan(req, res) {
     scanned_paths: scanned,
     elapsed_ms: elapsed,
     truncated: candidates.length > topN,
-    root: path,
+    root: roots.join(','),
     min_size: minSize,
     top_n: topN,
     depth,
