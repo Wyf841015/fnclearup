@@ -62,6 +62,16 @@ function showToast(msg, type='info') {
   if (!c) { const nc=document.createElement('div'); nc.id='toastContainer'; document.body.appendChild(nc); nc.appendChild(t); }
   else c.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},3000);
+
+// P0 安全(2026-09-30): 删除端点会拦截 fnOS 系统目录(@appcenter/@appdata/...)
+// 与卷内回收站(.@#local)。前端必须把拦截原因透出, 否则用户会以为程序出错。
+function blockedNotice(d){
+  const n = (d && d.blockedCount) || 0;
+  if(!n) return '';
+  const first = (d && d.blocked && d.blocked[0]) || null;
+  const why = first && first.reason ? (first.reason) : '位于系统目录或回收站';
+  return n === 1 ? ` · 1 个受保护未删除（${why}）` : ` · ${n} 个受保护未删除（${why} 等）`;
+}
 }
 
 // ── Cleanup summary ──
@@ -1624,6 +1634,7 @@ async function doBigFilesDelete() {
     let msg = `✅ ${modeLabel}完成：${deleted}/${paths.length} 个 (${fmtSize})`;
     if (skipped) msg += ` · 跳过 ${skipped}`;
     if (failures) msg += ` · 失败 ${failures}`;
+    msg += blockedNotice(data);
     $('bigfiles-status').textContent = msg;
     showToast(msg, failures ? 'error' : 'success');
     // Re-scan to refresh the list (deleted files are gone)
@@ -1873,6 +1884,7 @@ async function confirmDupDelete(){
       r=await API.post('api/dup/delete',{files:paths,mode});
     }
     const msg=mode==='hardlink' ? `硬链接 ${r.linked||0} 个文件` : `已删除 ${r.deleted||0} 个文件`;
+    if(r.blockedCount) showToast(msg+blockedNotice(r),'warning');
     if(r.failed&&r.failed.length) showToast(msg+'，失败 '+r.failed.length+' 个: '+r.failed.map(f=>f.reason).join('; '),'warning');
     else showToast(msg,'success');
     if(r.emptyDirs&&r.emptyDirs.length){
@@ -2170,7 +2182,8 @@ async function confirmEmptyDelete() {
   const mode = document.querySelector('input[name="emptyDeleteMode"]:checked')?.value || 'trash';
   try {
     const r = await API.post('api/empty_dir/delete', { paths, mode });
-    const msg = '已删除 ' + (r.deleted || 0) + ' 个空目录';
+    let msg = '已删除 ' + (r.deleted || 0) + ' 个空目录';
+    msg += blockedNotice(r);
     if (r.failed && r.failed.length) showToast(msg + '，失败 ' + r.failed.length + ' 个', 'warning');
     else showToast(msg, 'success');
     // Remove deleted from list
