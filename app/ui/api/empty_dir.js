@@ -1,7 +1,7 @@
 import { readdirSync, lstatSync, rmSync, existsSync, mkdirSync, renameSync, cpSync, unlinkSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { sendJSON, isSafePath, parseQuery } from '../lib/util.js';
+import { sendJSON, isSafePath, partitionDeletable, parseQuery } from '../lib/util.js';
 
 export const emptyDirJobs = new Map();
 let EMPTY_STATE_DIR = '';
@@ -282,7 +282,9 @@ export async function handleEmptyDirDelete(req, res) {
   let data = {};
   try { data = JSON.parse(Buffer.concat(bufs).toString()); } catch { console.error('[empty_dir.js]'); }
   const rawPaths = Array.isArray(data.paths) ? data.paths : [];
-  const paths = rawPaths.filter(p => isSafePath(p));
+  // P0 安全: 空目录删除看似无害, 但把 /volN/@appcenter/<app>/ 删空等同于
+  // 卸载应用, 把 @appdata/<app>/ 删空会丢运行数据, 同样必须拦截。
+  const { ok: paths, blocked } = partitionDeletable(rawPaths);
   const skipped = rawPaths.length - paths.length;
   const mode = data.mode || 'trash';
   let deleted = 0, failed = [];
@@ -315,5 +317,6 @@ export async function handleEmptyDirDelete(req, res) {
       deleted++;
     } catch (e) { failed.push({ path: fp, reason: e.message }); }
   }
-  sendJSON(res, 200, { deleted, failed, skipped, total: paths.length, failures: failed.length, success: true });
+  sendJSON(res, 200, { deleted, failed, skipped, total: paths.length, failures: failed.length,
+    blockedCount: blocked.length, blocked: blocked.slice(0, 50), success: true });
 }

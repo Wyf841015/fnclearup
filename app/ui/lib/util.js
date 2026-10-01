@@ -64,6 +64,75 @@ export function isSafePath(p) {
   return false;
 }
 
+// ── fnOS 系统保留目录(P0 安全, 2026-09-30) ────────────────────────────────
+//
+// 问题: isSafePath 的白名单只到 "/vol*" 粒度, 而 fnOS 的系统与应用目录
+//       全部位于 /volN/@xxx 之下, 全部通过校验:
+//         /vol3/@appcenter  所有应用的安装目录(代码+二进制) —— 删掉应用就起不来
+//         /vol3/@appdata    应用运行数据(SQLite/配置)      —— 删掉数据就丢
+//         /vol3/@appmeta    应用元信息
+//         /vol3/@apphome /@appconf /@appshare /@apptemp /@sysappmeta
+//         /volN/<uid>/.@#local  卷内回收站 —— 删掉绕过二次恢复
+//       重复文件扫描常在这些目录间发现相同文件(各应用的 LICENSE、图标、依赖),
+//       用户勾选删除即会误删其他应用的文件。
+//
+// 为什么用精确名单而不是 /@[^/]+/ 正则:
+//       用户自己的目录也可能以 @ 开头(如 /vol1/1000/@我的照片),
+//       通配会误伤。这里只认 fnOS 实际使用的 8 个系统目录名。
+const FNOS_SYSTEM_DIRS = new Set([
+  '@appcenter', '@appconf', '@appdata', '@apphome',
+  '@appmeta', '@appshare', '@apptemp', '@sysappmeta',
+]);
+
+/** 应用自身数据目录(TRM_PKGVAR) —— 哈希缓存/manifest/导出都在这里, 豁免保护 */
+function pkgvarRoot() {
+  return resolve(process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup');
+}
+
+/**
+ * 判断路径是否落在受保护范围内。
+ * @param {string} p
+ * @param {{exemptSelf?: boolean}} [opts] exemptSelf=true 时豁免应用自身数据目录,
+ *        供"能否写入/读取"类场景使用; 删除类场景必须传 false 或用默认值,
+ *        否则清理工具会把自己的哈希缓存/manifest 一并删掉。
+ * @returns {string|null} 受保护时返回可展示给用户的原因, 否则 null
+ */
+export function protectedReason(p, opts = {}) {
+  if (!p) return '路径为空';
+  const n = resolve(p);
+  if (opts.exemptSelf !== false) {
+    const own = pkgvarRoot();
+    if (n === own || n.startsWith(own + '/')) return null;   // 自身数据目录豁免
+  }
+  for (const seg of n.split('/')) {
+    if (FNOS_SYSTEM_DIRS.has(seg)) {
+      return `fnOS 系统目录受保护（${seg}）：内含应用安装文件与运行数据，删除会导致应用无法启动`;
+    }
+    if (seg.startsWith('.@#')) {
+      return `回收站目录受保护（${seg}）：直接删除将绕过回收站，无法二次恢复`;
+    }
+  }
+  return null;
+}
+
+export function isProtectedPath(p, opts = {}) { return protectedReason(p, opts) !== null; }
+
+/** 可删除路径: 既要在 /vol* 白名单内, 又不能落在受保护目录。
+ *  注意: 删除场景不豁免应用自身数据目录。 */
+export function isDeletablePath(p) { return isSafePath(p) && !isProtectedPath(p, { exemptSelf: false }); }
+
+/** 按受保护原因把路径分组, 便于 API 一次性回执跳过原因 */
+export function partitionDeletable(paths) {
+  const ok = [], blocked = [];
+  for (const p of paths) {
+    const why = protectedReason(p, { exemptSelf: false });
+    if (why) blocked.push({ path: p, reason: why });
+    else if (isSafePath(p)) ok.push(p);
+    else blocked.push({ path: p, reason: '路径越界：仅允许 /vol* 下的目录' });
+  }
+  return { ok, blocked };
+}
+
 // Return the directory where audit manifests (sysclean pre-clean snapshots) are stored.
 // Manifests are app-level audit artifacts, NOT user-deleted files. They live in the same
 // parent directory as the system log (info.log), under a dedicated data/manifests/ subdir.

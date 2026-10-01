@@ -19,7 +19,7 @@
 
 import { existsSync, statSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { sendJSON, formatBytes, isSafePath, parseBody } from '../lib/util.js';
+import { sendJSON, formatBytes, isSafePath, partitionDeletable, parseBody } from '../lib/util.js';
 import { moveToTrash } from './trash.js';
 import { VOL_GLOBS, SAFE_PREFIXES } from '../lib/config.js';
 
@@ -197,7 +197,8 @@ export async function handleBigFilesDelete(req, res) {
     sendJSON(res, 200, { success: true, deleted: [], failed: [], skipped: 0, total: 0, failures: 0 });
     return;
   }
-  const valid = paths.filter(p => typeof p === 'string' && isSafePath(p));
+  // P0 安全: 大文件删除同样不得触及 fnOS 系统目录与卷内回收站
+  const { ok: valid, blocked } = partitionDeletable(paths.filter(p => typeof p === 'string'));
   const skipped = paths.length - valid.length;
   if (!valid.length) {
     sendJSON(res, 200, {
@@ -271,5 +272,8 @@ export async function handleBigFilesDelete(req, res) {
     total: deleted.length,
     failures: failed.length,
     mode,
+    // P0: 回传被拦截的路径与原因
+    blockedCount: blocked.length,
+    blocked: blocked.slice(0, 50),
   });
 }

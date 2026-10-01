@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, parseQuery, safeReadJSON } from '../lib/util.js';
+import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, isDeletablePath, partitionDeletable, protectedReason, parseQuery, safeReadJSON } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
 import { getHashPool } from '../../dup_hash_pool.js';
 
@@ -296,7 +296,10 @@ export function handleDupJobs(req, res) {
 // POST /api/dup/delete
 export async function handleDupDelete(req, res) {
   const data = await parseBody(req);
-  const files = (data.files || []).filter(p => isSafePath(p));
+  // P0 安全: 重复文件删除不得触及 fnOS 系统目录(@appcenter/@appdata/...)与
+  // 卷内回收站(.@#local)。这些目录常与其他应用共享同名文件(各应用的 LICENSE、
+  // 图标、依赖), 误删会导致对应应用无法启动。
+  const { ok: files, blocked } = partitionDeletable(data.files || []);
   const skipped = (data.files || []).length - files.length;
   const mode = data.mode || 'trash';   // trash | permanent | hardlink
   const keep = data.keep || '';        // for hardlink mode: the file to KEEP (others become hard links to it)
@@ -320,7 +323,7 @@ export async function handleDupDelete(req, res) {
         // below (keep vanished) → the duplicate is unrecoverable. Also verify they
         // share a filesystem so linkSync won't throw EXDEV after unlink.
         if (!existsSync(keep)) throw new Error('原始文件不存在: ' + keep);
-        if (!isSafePath(keep)) throw new Error('原始文件路径越界');
+        if (!isDeletablePath(keep)) throw new Error('原始文件路径不可操作：' + (protectedReason(keep) || '路径越界'));
         if (fp === keep) continue;
         // Same-filesystem guard: linkSync throws EXDEV across devices, but that
         // happens AFTER unlinkSync destroyed the duplicate. Check st_dev up front.
@@ -361,6 +364,8 @@ export async function handleDupDelete(req, res) {
   sendJSON(res, 200, {
     deleted, linked, failed, skipped,
     total: deleted + linked.length, failures: failed.length,
+    // P0: 回传被拦截的路径与原因, 前端可提示「这 N 个因位于系统目录/回收站而跳过」
+    blockedCount: blocked.length, blocked: blocked.slice(0, 50),
     emptyDirs: [...new Set(emptyDirs)].slice(0, 100),   // dedupe, cap
     success: true,
   });

@@ -335,13 +335,38 @@
   头尾 64KiB 水平。**只加大单段读取、保持 seek 次数恒为 2** —— 机械盘上多一次
   seek 的成本(数毫秒)远高于多读几十 KB,因此不加中段采样点。
 
+**保护 fnOS 系统目录与卷内回收站(删除安全)**
+
+- 问题: 删除白名单 `isSafePath` 只到 `/vol*` 粒度,而 fnOS 的系统与应用目录
+  全部位于 `/volN/@xxx` 之下,**全部通过校验**:
+  `@appcenter`(所有应用的安装目录,含代码与二进制)、`@appdata`(运行数据)、
+  `@appmeta`、`@apphome`、`@appconf`、`@appshare`、`@apptemp`、`@sysappmeta`,
+  以及 `/volN/<uid>/.@#local`(卷内回收站,删掉会绕过二次恢复)。
+  各应用之间常存在同名文件(各家的 LICENSE、图标、依赖),重复文件扫描极易命中,
+  用户勾选删除即会**误删其他应用的文件,导致对应应用无法启动**。
+- 修复: `util.js` 新增 `FNOS_SYSTEM_DIRS` 精确名单 + `protectedReason()` /
+  `isDeletablePath()` / `partitionDeletable()`;`dup` / `bigfiles` / `empty_dir`
+  三个**文件清理**端点接入,响应新增 `blockedCount` 与逐条 `blocked` 明细,
+  前端 `blockedNotice()` 把原因显示到 toast 与状态栏。
+- 采用**精确名单**而非 `/@[^/]+/` 正则: 用户自己的 `/vol1/1000/@我的照片`
+  这类目录不会被误伤。
+- 刻意**不**接入的两类端点:
+  - `app.js` 是应用卸载器(删除目标本就是 `@appcenter`/`@appshare`),套用会废掉卸载能力;
+  - `simdup` / `broken` / `namematch` / `diskanalysis` 是只读端点,仍可"看到"
+    系统目录里的重复文件,只是删不掉。
+- 应用自身数据目录(`TRM_PKGVAR`)采用差异化豁免: 读写场景豁免(要能写哈希缓存、
+  manifest、导出),**删除场景不豁免**(否则清理工具会把自己的缓存和审计清单一起删掉)。
+- 验证: 真实 server + 真实删除请求,混合提交"正常文件 + @appcenter 诱饵 + 回收站路径",
+  结果 `实际删除=1  blockedCount=2`,诱饵文件确认未被删除。
+- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 189 passed / 0 failed。
+
 **修复介质判定的一个隐蔽错误**
 
 - `statSync(path).toString()` 得到的是 `fs.Stats` 对象的字符串(恒为
   `"[object Object]"`),不是文件内容,导致所有介质都被误判为固态盘。
   已改用 `readFileSync`,并有回归测试锁死(`test_storage_profile.js`)。
 
-- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 180 passed / 0 failed。
+- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 189 passed / 0 failed。
 
 ### v0.11.1 (2026-09-26)
 - 🔴 **P0 修复「应用清理删除用户」守护失效** — 旧守护只判 `uid < 900`，但实测 fnOS 上 `admin` uid=1000、`polkitd` 995、`systemd-network` 998 全部 ≥900，守护形同虚设；且路径 `/volX/@appmeta|@appconf|@appdata|@apphome/<name>` 全部匹配 `@app[^/]+` 正则，第二段被直接当 username 传给 `userdel -r`，最坏可删掉用户全部数据或导致断网。修复为三层判据：**uid ∈ [900,1000) + gid == 901（fnOS 应用账号组）+ 核心组件黑名单**（应用商店/权限/包管理/运行时/网络等）
