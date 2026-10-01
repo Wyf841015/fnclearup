@@ -443,13 +443,42 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .tab-panel[data-panel="trash"] .section-header{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   .tab-panel[data-panel="trash"] .section-header .btn{padding:7px 6px;font-size:11px;gap:4px}
   .tab-panel[data-panel="trash"] .section-header .btn#trashScanBtn{grid-column:span 2}
-  #trash-list .data-table{display:none}
-  #trash-list .trash-mobile-card{display:flex;flex-direction:column;gap:8px}
-  .trash-card{background:var(--color-card-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
-  .trash-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-  .trash-card-path{font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);word-break:break-all;line-height:1.4}
-  .trash-card-stats{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--color-text-secondary)}
-  .trash-card-stats strong{color:var(--color-text);font-weight:600}
+#trash-list .data-table{display:none}
+/* 回收站卡片 —— 布局不依赖媒体查询: fnOS 移动 WebView 常不触发 max-width 断点,
+   若把样式只写在 480px 里, 真机上就退化成无样式的裸 div(表现为挤作一团)。
+   这里用 grid auto-fit, 宽屏自动多列、窄屏自然退化为单列。 */
+#trash-list .trash-mobile-card{
+  display:grid;gap:12px;align-items:start;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));
+}
+.trash-card{
+  background:var(--color-card-bg);border:1px solid var(--color-border);
+  border-radius:var(--radius-sm);padding:10px 12px;
+  display:flex;flex-direction:column;gap:6px;
+  /* 作为 grid 项必须允许收缩, 否则长内容会撑破同行, 视觉上就"叠"在一起 */
+  min-width:0;overflow:hidden;
+  box-shadow:0 1px 2px rgba(0,0,0,.04);transition:border-color .15s,box-shadow .15s;
+}
+.trash-card:hover{border-color:var(--color-primary);box-shadow:0 2px 8px rgba(0,0,0,.09)}
+/* 不换行: 卷名/UID 过长时自身截断, 大小固定贴右, 避免换行造成的错位堆叠 */
+.trash-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:nowrap;min-width:0}
+.trash-card-head>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trash-card-head>span:last-child{flex:0 0 auto;white-space:nowrap}
+/* 原为 word-break:break-all —— 长路径被逐字符折成竖条, 正是"叠在一起"观感的来源。
+   改为按语义换行并限 3 行(-webkit-line-clamp), 完整路径用 title 悬浮显示。 */
+.trash-card-path{
+  font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);line-height:1.5;
+  overflow-wrap:anywhere;word-break:normal;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+}
+/* 三项均分 grid: 原 flex+wrap 在窄屏会挤成两行且间距不均 */
+.trash-card-stats{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 8px;
+  font-size:12px;color:var(--color-text-secondary);
+  padding-top:6px;border-top:1px solid var(--color-border);
+}
+.trash-card-stats>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trash-card-stats strong{color:var(--color-text);font-weight:600}
   #trashBrowseModal .modal,#trashDeleteModal .modal{max-width:100%;max-height:100%;width:100%;height:100%;border-radius:0;padding:16px;display:flex;flex-direction:column}
   #trashBrowseModal .modal h3,#trashDeleteModal .modal h3{flex-shrink:0}
   #trashBrowseTree,#trashDeletePaths{flex:1;min-height:0}

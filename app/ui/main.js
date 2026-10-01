@@ -2751,10 +2751,10 @@ async function trashScan() {
         const mtime = t.mtime ? new Date(t.mtime).toLocaleString('zh-CN') : '?';
         html += `<div class="trash-card">
           <div class="trash-card-head">
-            <span style="font-weight:600">${escHtml(t.vol)} · UID ${escHtml(t.uid)}</span>
+            <span style="font-weight:600" title="${escHtml(t.vol)} · UID ${escHtml(t.uid)}">${escHtml(t.vol)} · UID ${escHtml(t.uid)}</span>
             <span style="color:var(--color-danger);font-weight:600">${formatBytes(t.size)}</span>
           </div>
-          <div class="trash-card-path">${escHtml(t.path)}</div>
+          <div class="trash-card-path" title="${escHtml(t.path)}">${escHtml(t.path)}</div>
           <div class="trash-card-stats">
             <span>📄 <strong>${t.files}</strong> 文件</span>
             <span>📁 <strong>${t.dirs}</strong> 目录</span>
