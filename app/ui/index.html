@@ -248,6 +248,24 @@
                 </label>
               </div>
               <div class="dup-scan-btns" id="filesScanBtns">
+      <details id="dupExcludeBox" style="margin-top:10px;font-size:12px">
+        <summary style="cursor:pointer;color:var(--color-text-secondary);user-select:none">⚙️ 扫描排除规则（跳过不参与重复检测的目录）</summary>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+          <textarea id="dupExcludePatterns" rows="6" spellcheck="false"
+            style="font-family:var(--font-mono);font-size:12px;padding:8px;border-radius:6px;border:1px solid var(--border-color,#e2e8f0);background:var(--bg-subtle,#f8fafc);color:var(--color-text,#333);resize:vertical"
+            placeholder="每行一条规则"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-primary btn-sm" onclick="saveDupExcludeRules()">💾 保存</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="resetDupExcludeRules()">↺ 恢复默认</button>
+            <span id="dupExcludeStatus" style="color:var(--color-text-secondary)"></span>
+          </div>
+          <div style="color:var(--color-text-secondary);line-height:1.6">
+            不含 <code>/</code> 的规则按<b>路径段</b>匹配（任意层级，支持 <code>*</code> <code>?</code>），如 <code>node_modules</code>；
+            含 <code>/</code> 的按<b>路径模式</b>匹配，<code>**</code> 表示任意层，如 <code>缓存/**</code>；
+            以 <code>/</code> 开头为绝对路径前缀。留空则不排除任何内容。
+          </div>
+        </div>
+      </details>
                 <button type="button" class="btn btn-primary" id="filesScanBtn" onclick="startDupScan('files')">🔍 开始扫描</button>
                 <button type="button" class="btn btn-danger" id="filesStopBtn" onclick="stopDupScan('files')" style="display:none">⏹ 停止</button>
               </div>

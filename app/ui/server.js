@@ -17,6 +17,7 @@ import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js'
 import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
 import { handleBigFilesScan, handleBigFilesStop, handleBigFilesDelete } from './api/bigfiles.js';
 import { handleDiskVolumes, handleDiskTree, handleDiskStop } from './api/diskanalysis.js';
+import { handleGetExcludeRules, handleSaveExcludeRules } from './api/dup.js';
 import { handleSimDupScan, handleSimDupStatus, handleSimDupStop, handleSimDupThumb, setSimDupPaths } from './api/simdup.js';
 import { handleBrokenScan, handleBrokenStatus, handleBrokenStop, setBrokenPaths } from './api/broken.js';
 import { handleNamematchScan, handleNamematchStatus, handleNamematchStop, setNamematchPaths } from './api/namematch.js';
@@ -153,7 +154,9 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/images/delete') { await handleImagesDelete(req, res); return; }
       if (method === 'POST' && path === '/api/temp/delete') { await handleTempDelete(req, res); return; }
       if (method === 'POST' && path === '/api/dup/scan') { await handleDupScan(req, res); return; }
-      if (method === 'POST' && path === '/api/dup/delete') { await handleDupDelete(req, res); return; }
+      if (method === 'GET' && path === '/api/dup/exclude-rules') { handleGetExcludeRules(req, res); return; }
+  if (method === 'POST' && path === '/api/dup/exclude-rules') { await handleSaveExcludeRules(req, res); return; }
+  if (method === 'POST' && path === '/api/dup/delete') { await handleDupDelete(req, res); return; }
       if (method === 'POST' && path === '/api/dup/export') { await handleDupExport(req, res); return; }
       if (method === 'POST' && path === '/api/dup/stop') { await handleDupStop(req, res); return; }
       if (method === 'POST' && path === '/api/dup/pause') { await handleDupPause(req, res); return; }

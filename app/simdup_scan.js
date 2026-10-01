@@ -20,6 +20,12 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSy
 import { join, extname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { dHashOfFile, videoDHashes, hamming } from './simhash.js';
+import { buildMatcher } from './exclude_rules.js';
+
+// P1-1: 扫描排除规则。声明必须在使用之前 —— 赋值发生在 IIFE 开头,
+// 若用 let 声明在文件后部会触发 TDZ (Cannot access before initialization)。
+let isExcluded = () => false;
+let _excluded = 0;
 
 const POLL_MS = 1000;
 const IMG_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.heif', '.tiff'];
@@ -28,6 +34,7 @@ const MAX_FILES = 4000;      // safety cap — hashing is per-file ffmpeg
 const YIELD = 200;
 
 const [type, scanPathsRaw, jobId, stateDir, thresholdRaw] = process.argv.slice(2);
+  isExcluded = buildMatcher(stateDir);
 const threshold = parseInt(thresholdRaw || '10', 10) || 10;
 const scanPaths = scanPathsRaw.split(',').map(s => s.trim()).filter(Boolean);
 
@@ -69,6 +76,8 @@ function collect(dir, out) {
   for (const e of entries) {
     if (out.length >= MAX_FILES) return true;
     const full = join(dir, e.name);
+    // P1-1: 排除规则(目录整棵剪掉)
+    if (isExcluded(full, e.isDirectory())) { _excluded++; continue; }
     try {
       if (e.isDirectory()) {
         if (collect(full, out)) return true;
@@ -234,6 +243,7 @@ writeState(state);
     wastedBytes: wasted,
     threshold,
     // P1-2: 全部组里最相似的一对距离
+    excluded: _excluded,
     bestDist: state.groups.reduce((m, g) => (g.minDist != null && (m === null || g.minDist < m)) ? g.minDist : m, null),
   };
   writeState(state);

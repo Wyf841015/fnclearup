@@ -11,6 +11,7 @@ import { join, extname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { getHashPool } from './dup_hash_pool.js';
 import { profileFor } from './storage_profile.js';
+import { buildMatcher } from './exclude_rules.js';
 
 const MUSIC_EXTS = new Set(['.mp3','.flac','.wav','.aac','.ogg','.m4a','.wma','.alac','.ape','.dsf']);
 const POLL_MS = 1000;
@@ -99,13 +100,18 @@ async function main() {
   if (scanPaths.length === 0) { process.stderr.write('No paths provided\\n'); process.exit(1); }
   mkdirSync(stateDir, { recursive: true });
 
+  // P1-1: 排除规则。@appcenter/@appdata/node_modules/.git 等目录既拖慢扫描,
+  // 发现的"重复文件"又多半是各应用共用的 LICENSE/图标, 对用户没有清理价值。
+  const isExcluded = buildMatcher(stateDir);
+  let excludedCount = 0;
+
   let state = {
     id: jobId, scanType, rootPaths: scanPaths,
     storageProfile,
     status: 'counting',
     progress: { total: 0, processed: 0, currentFile: '' },
     files: [], duplicates: [],
-    stats: { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0, cacheHits: 0, hashed: 0, cacheHitRate: 0, partialSkipped: 0, sizeSkipped: 0 },
+    stats: { totalFiles: 0, duplicateGroups: 0, duplicateFiles: 0, wastedBytes: 0, cacheHits: 0, hashed: 0, cacheHitRate: 0, partialSkipped: 0, sizeSkipped: 0, excluded: 0 },
     error: null, startTime: Date.now(),
     _aborted: false, _paused: false, _prev_status: 'counting',
   };
@@ -129,6 +135,8 @@ async function main() {
       try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
       for (const e of entries) {
         const fp = join(dir, e.name);
+        // P1-1: 命中排除规则直接跳过(目录整棵剪掉, 省掉后续 stat 开销)
+        if (isExcluded(fp, e.isDirectory())) { excludedCount++; continue; }
         if (e.isDirectory()) walk(fp);
         else if (e.isFile()) {
           if (scanType === 'music' && !MUSIC_EXTS.has(extname(e.name).toLowerCase())) continue;
@@ -166,6 +174,9 @@ async function main() {
   }
   const skippedCount = allFiles.length - candidates.length;
   if (skippedCount > 0) state.stats.sizeSkipped = skippedCount;
+  // P1-1: 记录被排除规则跳过的条目数与实际收集到的文件数
+  state.stats.excluded = excludedCount;
+  state.stats.scanned = allFiles.length;
   state.progress.currentFile = `大小预分组完成: ${allFiles.length}→${candidates.length} 个候选 (${skippedCount} 个唯一大小已跳过)`;
   writeState(stateDir, jobId, state);
 
