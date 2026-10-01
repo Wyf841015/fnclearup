@@ -358,7 +358,31 @@
   manifest、导出),**删除场景不豁免**(否则清理工具会把自己的缓存和审计清单一起删掉)。
 - 验证: 真实 server + 真实删除请求,混合提交"正常文件 + @appcenter 诱饵 + 回收站路径",
   结果 `实际删除=1  blockedCount=2`,诱饵文件确认未被删除。
-- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 218 passed / 0 failed。
+- 测试: 新增 `tests/test_protected_paths.js` (9 项),全量 229 passed / 0 failed。
+
+**扫描排除规则(可自定义)**
+
+- 背景: 原先扫描除最小体积外没有任何路径排除, 每次扫 `/vol1` 都要把 `@appdata`
+  的 SQLite、`node_modules`、`.git`、Docker overlay 全走一遍; 哈希缓存虽能跳过
+  重复计算, 但 `walk + statSync` 的元数据开销跑不掉, 而且系统目录里发现的
+  "重复文件"多半是各应用共用的 LICENSE/图标, 对清理没有价值。
+  对标 fclones 的 `.hashignore` / dupeGuru 的 exclude 列表。
+- 修复: 新增零依赖的 `app/exclude_rules.js`,`dup_scan.js` 与 `simdup_scan.js`
+  在 **readdir 之后、stat 之前**剪枝(目录整棵跳过), 省掉后续元数据开销;
+  规则落盘于 `<TRM_PKGVAR>/data/scan_exclude.json`,`GET/POST /api/dup/exclude-rules`
+  读写,重复文件面板提供折叠式规则编辑区(展开时才懒加载)。
+- 匹配语义: 不含 `/` 的规则按**路径段**匹配(任意层级,支持 `*` `?`);
+  含 `/` 的按路径模式匹配(`**` 任意层、`*` 单层);`/` 开头为绝对路径前缀。
+  空规则 = 不排除任何内容;文件缺失或损坏时回落到默认规则,绝不中断扫描。
+- 默认规则: `@app*` / `@sysapp*`(覆盖 fnOS 全部 8 个系统目录)、
+  `node_modules`、`.git`、`__pycache__`、`lost+found`、`overlay2` 等 18 条。
+  刻意**不用** `@*` —— 那会误伤用户自建的 `/vol1/1000/@我的相册`。
+  注意这是"跳过扫描"(性能),与 `isDeletablePath` 的删除保护(安全)是两回事,
+  后者用精确名单、从严。
+- 结果可观测: 统计卡新增「排除跳过」,`stats.excluded` / `stats.scanned` 上报。
+- 测试: 新增 `tests/test_exclude_rules.js` (12 项),含一条**全项目相对 import
+  可解析性**检查(曾因 `../../../exclude_rules.js` 多写一级导致 server 启动即崩,
+  而 `node --check` 不校验 import 路径)。全量 229 passed / 0 failed。
 
 **相似文件并排对比(眼见为实)**
 
@@ -417,7 +441,7 @@
   `"[object Object]"`),不是文件内容,导致所有介质都被误判为固态盘。
   已改用 `readFileSync`,并有回归测试锁死(`test_storage_profile.js`)。
 
-- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 218 passed / 0 failed。
+- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 229 passed / 0 failed。
 
 ### v0.11.1 (2026-09-26)
 - 🔴 **P0 修复「应用清理删除用户」守护失效** — 旧守护只判 `uid < 900`，但实测 fnOS 上 `admin` uid=1000、`polkitd` 995、`systemd-network` 998 全部 ≥900，守护形同虚设；且路径 `/volX/@appmeta|@appconf|@appdata|@apphome/<name>` 全部匹配 `@app[^/]+` 正则，第二段被直接当 username 传给 `userdel -r`，最坏可删掉用户全部数据或导致断网。修复为三层判据：**uid ∈ [900,1000) + gid == 901（fnOS 应用账号组）+ 核心组件黑名单**（应用商店/权限/包管理/运行时/网络等）

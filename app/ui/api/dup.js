@@ -5,6 +5,7 @@ import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, isDeletablePath, partitionDeletable, protectedReason, parseQuery, safeReadJSON } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
+import { loadPatterns, DEFAULT_PATTERNS } from '../../exclude_rules.js';
 import { getHashPool } from '../../dup_hash_pool.js';
 
 export const dupJobs = new Map();
@@ -495,4 +496,48 @@ export async function handleDupResume(req, res) {
     renameSync(tmpR, stateFile);
     sendJSON(res, 200, { success: true, resumed: true });
   } catch { sendJSON(res, 200, { success: false, resumed: false }); }
+}
+
+
+// ── 扫描排除规则 (P1-1) ───────────────────────────────────────────────────
+// GET  /api/dup/exclude-rules → { patterns, isDefault, defaultPatterns }
+// POST /api/dup/exclude-rules { patterns: string[] } → 保存
+// 规则文件落在 <TRM_PKGVAR>/data/scan_exclude.json, 扫描子进程通过 TRM_PKGVAR 自读。
+function rulesFile() {
+  const base = process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup';
+  return join(base, 'data', 'scan_exclude.json');
+}
+
+export function handleGetExcludeRules(req, res) {
+  const cur = loadPatterns();
+  const isDefault = cur.length === DEFAULT_PATTERNS.length
+    && cur.every((x, i) => x === DEFAULT_PATTERNS[i]);
+  return sendJSON(res, 200, {
+    success: true,
+    patterns: cur,
+    isDefault,
+    defaultPatterns: DEFAULT_PATTERNS,
+    file: rulesFile(),
+  });
+}
+
+export async function handleSaveExcludeRules(req, res) {
+  const data = await parseBody(req);
+  if (!Array.isArray(data.patterns)) {
+    return sendJSON(res, 400, { success: false, error: 'patterns 必须是字符串数组' });
+  }
+  const pats = data.patterns
+    .map(x => String(x).trim())
+    .filter(x => x && x.length <= 200)
+    .slice(0, 200);
+  const f = rulesFile();
+  try {
+    mkdirSync(join(f, '..'), { recursive: true });
+    const tmp = f + '.tmp';
+    writeFileSync(tmp, JSON.stringify({ version: 1, patterns: pats }, null, 2), 'utf8');
+    renameSync(tmp, f);
+  } catch (e) {
+    return sendJSON(res, 500, { success: false, error: '保存失败: ' + e.message });
+  }
+  return sendJSON(res, 200, { success: true, patterns: pats, count: pats.length, file: f });
 }

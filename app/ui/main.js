@@ -65,6 +65,51 @@ function showToast(msg, type='info') {
 
 // P0 安全(2026-09-30): 删除端点会拦截 fnOS 系统目录(@appcenter/@appdata/...)
 // 与卷内回收站(.@#local)。前端必须把拦截原因透出, 否则用户会以为程序出错。
+// ── 扫描排除规则 (P1-1) ──────────────────────────────────────────────────
+async function loadDupExcludeRules(){
+  const box = $('dupExcludeBox');
+  try {
+    const r = await API.get('api/dup/exclude-rules');
+    const ta = $('dupExcludePatterns');
+    if (ta) ta.value = (r.patterns || []).join('\n');
+    const st = $('dupExcludeStatus');
+    if (st) st.textContent = r.isDefault ? '当前使用默认规则（' + (r.patterns||[]).length + ' 条）'
+                                          : '自定义规则（' + (r.patterns||[]).length + ' 条）· ' + (r.file || '');
+  } catch(e) { /* 面板未打开时忽略 */ }
+}
+async function saveDupExcludeRules(){
+  const ta = $('dupExcludePatterns');
+  if (!ta) return;
+  const patterns = ta.value.split('\n').map(x => x.trim()).filter(Boolean);
+  try {
+    const r = await API.post('api/dup/exclude-rules', { patterns });
+    const st = $('dupExcludeStatus');
+    if (st) st.textContent = '✓ 已保存 ' + r.count + ' 条规则，下次扫描生效';
+    showToast('排除规则已保存（' + r.count + ' 条）', 'success');
+  } catch(e){ showToast('保存失败: ' + e.message, 'error'); }
+}
+async function resetDupExcludeRules(){
+  try {
+    const r = await API.get('api/dup/exclude-rules');
+    const ta = $('dupExcludePatterns');
+    if (ta) ta.value = (r.defaultPatterns || []).join('\n');
+    const st = $('dupExcludeStatus');
+    if (st) st.textContent = '已填入默认规则，点「保存」生效';
+  } catch(e){ showToast('读取默认规则失败: ' + e.message, 'error'); }
+}
+// 首次打开折叠区时懒加载
+(function(){
+  function bind(){
+    const box = document.getElementById('dupExcludeBox');
+    if (box && !box._exclBound){
+      box._exclBound = true;
+      box.addEventListener('toggle', function(){ if (box.open) loadDupExcludeRules(); });
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+  else bind();
+})();
+
 function blockedNotice(d){
   const n = (d && d.blockedCount) || 0;
   if(!n) return '';
@@ -3218,6 +3263,7 @@ function init() {
     dsLoadVolumes, dsDrillDown, dsStop,
     dcCheckAvailable, dcScan, renderDcStoppedList, dcSelectAll, dcUpdateSelectInfo, dcRemoveSelected, dcPruneCache,
     copyQQNumber,
+        saveDupExcludeRules, resetDupExcludeRules,
   };
   Object.assign(window, exports);
 
