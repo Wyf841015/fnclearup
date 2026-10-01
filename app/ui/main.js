@@ -1316,27 +1316,52 @@ function simDupRenderProgress(s) {
   }
 }
 
+// P1-2: dHash 是 64 位感知哈希, 汉明距离越小越像(0=完全一致)。
+// 换算成百分比便于直观判断: 相似度 = (1 - 距离/64)。
+const SIMDASH_BITS = 64;
+function simSimilarityPct(dist){
+  if (dist == null || dist < 0) return null;
+  return Math.max(0, Math.round((1 - dist / SIMDASH_BITS) * 100));
+}
+function simSimilarityCell(dist){
+  const pct = simSimilarityPct(dist);
+  if (pct == null) return '<td style="color:var(--color-text-secondary);font-size:12px">—</td>';
+  // >=95% 基本一致(绿), 80~95% 很相似(主色), <80% 勉强匹配(橙)
+  const col = pct >= 95 ? 'var(--color-success,#22c55e)' : (pct >= 80 ? 'var(--color-primary)' : 'var(--color-warning,#f59e0b)');
+  return '<td style="font-family:var(--font-mono);color:'+col+';font-size:12px" title="dHash 汉明距离 '+dist+' / 64">'+pct+'%</td>';
+}
+
 function simDupRenderResult(s) {
   const list = $('simdup-list'); if (!list) return;
   if ($('simdup-total')) $('simdup-total').textContent = s.stats?.totalFiles ?? 0;
   if ($('simdup-groups')) $('simdup-groups').textContent = s.stats?.groups ?? 0;
   if ($('simdup-files')) $('simdup-files').textContent = s.stats?.files ?? 0;
+  // P1-2: 概览里点明"最像的一对有多像"
+  const _bp = simSimilarityPct(s.stats?.bestDist);
+  const _best = $('simdup-best');
+  if (_best) {
+    if (_bp == null) { _best.textContent = ''; }
+    else _best.innerHTML = '最相似的一对 <b style="color:var(--color-primary)">'+_bp+'%</b>'
+      + '<span style="font-size:11px;color:var(--color-text-secondary)"> (dHash 距离 '+s.stats.bestDist+'/'+SIMDASH_BITS+')</span>';
+  }
   if (!s.groups || !s.groups.length) {
     list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现相似文件</h3><p>当前阈值下没有匹配项，可换「宽松」策略重试</p></div>';
     return;
   }
   let clusters = [];
   s.groups.forEach(g => {
-    g.files.forEach(f => clusters.push({ group: g.group, path: f.path, name: f.name, size: f.size, size_str: f.size_str }));
+    g.files.forEach(f => clusters.push({ group: g.group, path: f.path, name: f.name, size: f.size, size_str: f.size_str, minDist: f.minDist, groupMinDist: g.minDist }));
   });
   let html = '<div class="list-scroll"><table class="data-table"><thead><tr>' +
-    '<th style="width:50px">组</th><th>文件名</th><th style="width:13%">大小</th><th style="width:38%">位置</th></tr></thead><tbody>';
+    '<th style="width:50px">组</th><th>文件名</th><th style="width:13%">大小</th>'
+    + '<th style="width:88px">相似度</th><th style="width:38%">位置</th></tr></thead><tbody>';
   clusters.forEach(c => {
     const dir = c.path.slice(0, c.path.lastIndexOf('/')) || '/';
     html += `<tr>
       <td style="text-align:center"><span style="background:var(--color-primary);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">${c.group}</span></td>
       <td><span title="${escHtml(c.path)}">${escHtml(c.name)}</span></td>
       <td style="font-family:var(--font-mono);color:var(--color-primary)">${escHtml(c.size_str)}</td>
+      ${simSimilarityCell(c.minDist)}
       <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dir)}">${escHtml(dir)}</td>
     </tr>`;
   });

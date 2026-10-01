@@ -85,6 +85,39 @@ function collect(dir, out) {
 
 // Union-find cluster based on hamming distance. O(n²) worst; for ≤4000 with
 // early cutoff it's acceptable (~caps, greedy pairwise compare).
+// P1-2: 计算两个条目的感知距离。与 cluster() 内的判定保持完全一致:
+//   image -> dHash 汉明距离; video -> 各抽帧组合的最小距离。
+// 之前这个值只在聚类内部用完就丢, 导致界面上"这两张图相似"却看不出有多相似。
+function pairDist(a, b) {
+  if (type === 'image') {
+    if (a.hash == null || b.hash == null) return null;
+    return hamming(a.hash, b.hash);
+  }
+  const av = a.hashes || [], bv = b.hashes || [];
+  if (!av.length || !bv.length) return null;
+  let best = Infinity;
+  for (const x of av) for (const y of bv) {
+    if (x == null || y == null) continue;
+    const d = hamming(x, y);
+    if (d < best) best = d;
+  }
+  return best === Infinity ? null : best;
+}
+
+// 取组内最相似的若干对, 供界面展示"哪两个最像"
+const MAX_PAIRS = 5;
+function topPairs(g) {
+  const pairs = [];
+  for (let i = 0; i < g.length; i++) {
+    for (let j = i + 1; j < g.length; j++) {
+      const d = pairDist(g[i], g[j]);
+      if (d != null) pairs.push({ a: g[i].path, b: g[j].path, dist: d });
+    }
+  }
+  pairs.sort((x, y) => x.dist - y.dist);
+  return { pairs: pairs.slice(0, MAX_PAIRS), minDist: pairs.length ? pairs[0].dist : null };
+}
+
 function cluster(items) {
   const n = items.length;
   const parent = Array.from({ length: n }, (_, i) => i);
@@ -165,17 +198,43 @@ writeState(state);
   const wasted = groups.reduce((s, g) => s + g.reduce((a, f) => a + (f.size || 0), 0) - Math.max(...g.map(f => f.size || 0)), 0);
 
   state.status = 'done';
-  state.groups = groups.map((g, i) => ({
-    group: i + 1,
-    size: g.reduce((a, f) => a + (f.size || 0), 0),
-    files: g.map(f => ({ path: f.path, name: f.path.split('/').pop(), size: f.size, size_str: (f.size / 1048576).toFixed(1) + ' MB', hash: f.hash?.toString() || null })),
-  }));
+  state.groups = groups.map((g, i) => {
+    const tp = topPairs(g);
+    return {
+      group: i + 1,
+      size: g.reduce((a, f) => a + (f.size || 0), 0),
+      // P1-2: 组内最相似的一对距离 + 最近若干对明细
+      minDist: tp.minDist,
+      pairs: tp.pairs,
+      files: g.map((f, fi) => {
+        // 该文件与组内其他文件的最小距离(越小越像)
+        let md = null;
+        for (let j = 0; j < g.length; j++) {
+          if (j === fi) continue;
+          const d = pairDist(f, g[j]);
+          if (d != null && (md === null || d < md)) md = d;
+        }
+        return { path: f.path, name: f.path.split('/').pop(), size: f.size,
+                 size_str: (f.size / 1048576).toFixed(1) + ' MB',
+                 hash: f.hash?.toString() || null, minDist: md };
+      }),
+    };
+  });
+  // P1-2: 最像的组排前面(距离越小越像); 无距离数据的组按原序排在末尾
+  state.groups.sort((a, b) => {
+    if (a.minDist == null && b.minDist == null) return a.group - b.group;
+    if (a.minDist == null) return 1;
+    if (b.minDist == null) return -1;
+    return a.minDist - b.minDist || a.group - b.group;
+  });
   state.stats = {
     totalFiles: totalCandidates,
     groups: groups.length,
     files: keptFiles,
     wastedBytes: wasted,
     threshold,
+    // P1-2: 全部组里最相似的一对距离
+    bestDist: state.groups.reduce((m, g) => (g.minDist != null && (m === null || g.minDist < m)) ? g.minDist : m, null),
   };
   writeState(state);
   process.exit(0);
