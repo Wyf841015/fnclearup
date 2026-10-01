@@ -63,6 +63,7 @@ function showToast(msg, type='info') {
   else c.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},3000);
 
+}
 // P0 安全(2026-09-30): 删除端点会拦截 fnOS 系统目录(@appcenter/@appdata/...)
 // 与卷内回收站(.@#local)。前端必须把拦截原因透出, 否则用户会以为程序出错。
 // ── 扫描排除规则 (P1-1) ──────────────────────────────────────────────────
@@ -116,7 +117,6 @@ function blockedNotice(d){
   const first = (d && d.blocked && d.blocked[0]) || null;
   const why = first && first.reason ? (first.reason) : '位于系统目录或回收站';
   return n === 1 ? ` · 1 个受保护未删除（${why}）` : ` · ${n} 个受保护未删除（${why} 等）`;
-}
 }
 
 // ── Cleanup summary ──
