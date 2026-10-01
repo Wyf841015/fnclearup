@@ -313,6 +313,36 @@
 
 ## 版本历史
 
+### v0.11.2
+
+**哈希并发按介质自适应(不再固定 4 worker)**
+
+- 问题: 哈希 worker 原硬编码为 4 个。本机是 Intel Celeron J3355 **双核** +
+  `sda`/`sdb` **机械盘 RAID1**(WD43PURZ) + `sdc` 固态盘,固定 4 既是 2 倍 CPU
+  超订,又让机械盘多线程随机读产生寻道竞争。fclones 官方文档明确建议机械盘用
+  `--threads 1`,并报告过 2x~10x 的性能差异。
+- 修复: 新增 `app/storage_profile.js`,读 `/sys/block/<dev>/queue/rotational`
+  判定扫描目标所在卷的介质类型(自动穿透 LVM / device-mapper),
+  机械盘降为单线程、固态盘取 `min(4, CPU 核数)`、介质无法确定时保守按机械盘处理、
+  多路径混合时取更保守的一侧。推导结果写入任务状态 `storageProfile` 并输出日志:
+  `[dup_scan] 哈希并发度=1 · 机械盘(/vol2) — 单线程避免寻道竞争`
+
+**partial 预筛采样量 4KB → 32KB(头尾各一段)**
+
+- 问题: 每段仅取 4KB,区分度不足,MP4/MOV/ISO/压缩包这类文件头高度雷同,
+  大量文件被迫进入全量 SHA-256。
+- 修复: 每段 4KB → 32KB(头尾合计 8KB → 64KB),对齐 file-deduplicator 的
+  头尾 64KiB 水平。**只加大单段读取、保持 seek 次数恒为 2** —— 机械盘上多一次
+  seek 的成本(数毫秒)远高于多读几十 KB,因此不加中段采样点。
+
+**修复介质判定的一个隐蔽错误**
+
+- `statSync(path).toString()` 得到的是 `fs.Stats` 对象的字符串(恒为
+  `"[object Object]"`),不是文件内容,导致所有介质都被误判为固态盘。
+  已改用 `readFileSync`,并有回归测试锁死(`test_storage_profile.js`)。
+
+- 测试: 新增 `tests/test_storage_profile.js` (9 项),全量 180 passed / 0 failed。
+
 ### v0.11.1 (2026-09-26)
 - 🔴 **P0 修复「应用清理删除用户」守护失效** — 旧守护只判 `uid < 900`，但实测 fnOS 上 `admin` uid=1000、`polkitd` 995、`systemd-network` 998 全部 ≥900，守护形同虚设；且路径 `/volX/@appmeta|@appconf|@appdata|@apphome/<name>` 全部匹配 `@app[^/]+` 正则，第二段被直接当 username 传给 `userdel -r`，最坏可删掉用户全部数据或导致断网。修复为三层判据：**uid ∈ [900,1000) + gid == 901（fnOS 应用账号组）+ 核心组件黑名单**（应用商店/权限/包管理/运行时/网络等）
 - 🐛 **修复「QQ群号复制按钮点了没反应」** — 两层根因：① `copyQQNumber` 未 export 到 window，IIFE 闭包导致 inline onclick 静默 ReferenceError；② fnOS WebView 走 http（非安全上下文）时 `navigator.clipboard` 为 `undefined`，旧 fallback 的 `ta.select()` 未先 `focus()` 导致 CEF 下 select 失败，且失败时无任何 UI 反馈。修复：补 export + 三级降级链（clipboard → execCommand 带 focus → 手动选中文本）+ 成功/失败双路可见反馈

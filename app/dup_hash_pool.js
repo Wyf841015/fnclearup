@@ -9,12 +9,15 @@
  */
 import { Worker } from 'node:worker_threads';
 import { join, dirname } from 'node:path';
+import { cpus } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_SCRIPT = join(__dirname, 'dup_hash_worker.js');
 
-const DEFAULT_POOL_SIZE = 4;
+// 兜底值: 调用方未显式指定 poolSize 时使用。
+// 已探测介质为机械盘且调用方未传参时退回单线程(与 storage_profile 一致)。
+const DEFAULT_POOL_SIZE = 1;
 const DEFAULT_BATCH_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes per batch
 
 export class HashPool {
