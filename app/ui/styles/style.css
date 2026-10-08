@@ -115,7 +115,7 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 /* KPI */
 .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
 .tab-panel[data-panel="schedule"] .kpi-row,
-.tab-panel[data-panel="bigfiles"] .kpi-row{grid-template-columns:repeat(2,1fr)}
+.inner-panel[data-inner-panel="largefiles"] .kpi-row{grid-template-columns:repeat(2,1fr)}
 /* 回收站 5 个 KPI: 原为硬编码 repeat(5,1fr), 移动端也强制 5 列 → 数值被截成
    "3._" 这样只剩一两个字符、标签完全消失、第 3 卡还被屏幕边缘裁掉。
    改用 auto-fit 自适应: 宽屏一行排开, 窄屏自动降到 3/2 列, 不依赖媒体查询
@@ -132,18 +132,18 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
    数值加大加粗、缩小内边距, 让卡片高度贴合内容而不是空荡。
    全部写在基础规则里 —— fnOS 移动 WebView 常以桌面 UA 渲染,
    max-width 断点不触发, 写进媒体查询等于没写。 */
-.tab-panel[data-panel="trash"] .kpi-row{
+.inner-panel[data-inner-panel="recycle"] .kpi-row{
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:8px;margin-bottom:14px;
 }
 /* 第 5 张跨两列铺满作收尾。用 grid 拆分标签与数值两端对齐,
    避免内容只堆在左侧、右侧 2/3 留白(截图里最明显的空间浪费)。 */
-.tab-panel[data-panel="trash"] .kpi-card:nth-child(5){
+.inner-panel[data-inner-panel="recycle"] .kpi-card:nth-child(5){
   grid-column:1/-1;
   display:grid;grid-template-columns:auto 1fr;align-items:center;
   column-gap:10px;
 }
-.tab-panel[data-panel="trash"] .kpi-card:nth-child(5) .kpi-body{
+.inner-panel[data-inner-panel="recycle"] .kpi-card:nth-child(5) .kpi-body{
   /* 标签贴左、数值贴右(space-between), 中间空隙自然填满;
      保持与前 4 张"标签在数值上方"的堆叠关系, 只是横向拉开距离 */
   display:grid;grid-template-columns:1fr auto;align-items:baseline;
@@ -151,17 +151,17 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 }
 /* 卡片内改成上下堆叠: 图标+数值一行, 标签在下一行 —— 横向排布在窄列里
    图标会把文字区挤到不足, 导致标签被 ellipsis 吃掉 */
-.tab-panel[data-panel="trash"] .kpi-card{
+.inner-panel[data-inner-panel="recycle"] .kpi-card{
   padding:9px 10px;gap:4px;min-width:0;align-items:stretch;
 }
-.tab-panel[data-panel="trash"] .kpi-icon{
+.inner-panel[data-inner-panel="recycle"] .kpi-icon{
   width:24px;height:24px;flex-shrink:0;border-radius:7px;font-size:13px;
 }
-.tab-panel[data-panel="trash"] .kpi-label{
+.inner-panel[data-inner-panel="recycle"] .kpi-label{
   font-size:11px;line-height:1.3;color:var(--color-text-secondary);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.tab-panel[data-panel="trash"] .kpi-value{
+.inner-panel[data-inner-panel="recycle"] .kpi-value{
   font-size:20px;font-weight:800;line-height:1.15;letter-spacing:-.3px;
   font-variant-numeric:tabular-nums;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -185,9 +185,9 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 .tab-panel[data-panel="docker"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
 .tab-panel[data-panel="docker"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
 .tab-panel[data-panel="docker"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
-.tab-panel[data-panel="temp"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
-.tab-panel[data-panel="temp"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
-.tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
+.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
+.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
+.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
 
 /* Dark KPI icons */
 html.dark .tab-panel[data-panel="app"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(22% 0.04 265);color:oklch(70% 0.12 265)}
@@ -199,9 +199,9 @@ html.dark .tab-panel[data-panel="disk"] .kpi-card:nth-child(3) .kpi-icon{backgro
 html.dark .tab-panel[data-panel="docker"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(22% 0.04 265);color:oklch(70% 0.12 265)}
 html.dark .tab-panel[data-panel="docker"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(22% 0.04 145);color:oklch(70% 0.10 145)}
 html.dark .tab-panel[data-panel="docker"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(22% 0.04 80);color:oklch(70% 0.12 80)}
-html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(22% 0.04 265);color:oklch(70% 0.12 265)}
-html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(22% 0.04 80);color:oklch(70% 0.12 80)}
-html.dark .tab-panel[data-panel="temp"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(22% 0.04 145);color:oklch(70% 0.10 145)}
+html.dark .inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(22% 0.04 265);color:oklch(70% 0.12 265)}
+html.dark .inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(22% 0.04 80);color:oklch(70% 0.12 80)}
+html.dark .inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(22% 0.04 145);color:oklch(70% 0.10 145)}
 /* Schedule tab KPI colors */
 .tab-panel[data-panel="schedule"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
 .tab-panel[data-panel="schedule"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
@@ -465,18 +465,18 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
    导致「浏览内容」半宽左对齐、与上方全宽和 2 列网格宽度不一致。
    统一成 2 列网格: 扫描与浏览内容各占满一行, 4 个清理按钮 2x2 排列。
    同样不依赖媒体查询 —— 窄屏本来就是这个形态, 宽屏保持 3 列更合适。 */
-.tab-panel[data-panel="trash"] .section-header{
+.inner-panel[data-inner-panel="recycle"] .section-header{
   display:grid;gap:6px;
   grid-template-columns:repeat(auto-fit,minmax(min(100%,132px),1fr));
 }
-.tab-panel[data-panel="trash"] .section-header #trashScanBtn,
-.tab-panel[data-panel="trash"] .section-header #trashBrowseBtn{grid-column:1/-1}
+.inner-panel[data-inner-panel="recycle"] .section-header #trashScanBtn,
+.inner-panel[data-inner-panel="recycle"] .section-header #trashBrowseBtn{grid-column:1/-1}
 /* 高危操作(全部清空)与分级清理拉开视觉层级 */
-.tab-panel[data-panel="trash"] .section-header #trashCleanAllBtn{
+.inner-panel[data-inner-panel="recycle"] .section-header #trashCleanAllBtn{
   grid-column:1/-1;border-color:var(--color-danger);
 }
-  .tab-panel[data-panel="trash"] .section-header .btn{flex:1 1 auto;min-width:0;justify-content:center;padding:8px 10px;font-size:12px}
-  .tab-panel[data-panel="trash"] .section-header .btn span:last-child{overflow:hidden;text-overflow:ellipsis}
+  .inner-panel[data-inner-panel="recycle"] .section-header .btn{flex:1 1 auto;min-width:0;justify-content:center;padding:8px 10px;font-size:12px}
+  .inner-panel[data-inner-panel="recycle"] .section-header .btn span:last-child{overflow:hidden;text-overflow:ellipsis}
   .tab-panel[data-panel="schedule"] .kpi-row{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:480px){
