@@ -3415,6 +3415,10 @@ function init() {
   const backupCb = document.getElementById('syscleanBackupCb');
   if (backupCb) backupCb.checked = getSysCleanBackupEnabled();
 
+  // 动效编排层: 面板切换入场 / 结果逐条进场 / KPI 数字滚动 / 进度流光。
+  // 由 MutationObserver 驱动, 不改动任何既有渲染函数。
+  if (window.Motion) window.Motion.init();
+
   // Show startup warning modal on every app open (force user to acknowledge risk)
   showStartupWarning();
 }

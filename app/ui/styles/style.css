@@ -1,30 +1,68 @@
 :root {
-  --color-bg: oklch(96% 0.006 250);
-  --color-card-bg: oklch(99% 0.004 250);
+  /* ── 配色: 飞书 Passport 冷色系 ──
+     之前的 #6366f1 / #06b6d4 是 Tailwind 调色板原值(indigo-500 / cyan-500),
+     是最典型的"AI 生成"配色来源。改用 Passport 的亮蓝 + 青绿 + 暖金:
+     纯蓝比靛紫更冷, 更像专业仪表盘; 暖金提供冷色里缺失的语义点缀。 */
+  --color-bg: oklch(94.5% 0.005 250);
+  --color-card-bg: oklch(100% 0 0);
   --color-text: oklch(18% 0.008 250);
-  --color-text-secondary: oklch(50% 0.008 250);
-  --color-text-tertiary: oklch(67% 0.006 250);
-  --color-border: oklch(88% 0.006 250);
-  --color-primary: #6366f1;
-  --color-primary-bg: oklch(94% 0.035 265);
-  --color-cyan: #06b6d4;
-  --color-danger: oklch(55% 0.20 30);
-  --color-warning: oklch(70% 0.18 80);
-  --color-success: oklch(55% 0.15 145);
-  --color-hover-bg: oklch(95% 0.005 250);
-  --color-input-bg: oklch(99% 0.004 250);
+  --color-text-secondary: oklch(48% 0.008 250);
+  --color-text-tertiary: oklch(64% 0.006 250);
+  --color-text-muted: oklch(58% 0.006 250);
+  --color-text-primary: oklch(18% 0.008 250);
+  --color-border: oklch(91% 0.006 250);
+  --color-bg-secondary: oklch(92% 0.006 250);
+  --color-hover-bg: oklch(96% 0.005 250);
+  --color-input-bg: oklch(100% 0 0);
+  --color-primary: #3370FF;
+  --color-primary-bg: oklch(94% 0.032 255);
+  --color-primary-hover: #2A5FE0;
+  --color-accent: #00D6B9;
+  --color-gold: #FFC000;
+  --color-cyan: #00D6B9;              /* 历史别名, 保留给进度条/旋转指示 */
+  --color-danger: oklch(54% 0.20 25);
+  --color-warning: oklch(68% 0.17 78);
+  --color-success: oklch(54% 0.14 155);
+
+  /* ── 圆角: 收敛到 3 档 ──
+     原来定义了 8/12/20px 三档, 但 20px 几乎没用, 另有 3/4/6/10px 硬编码散落,
+     视觉上等于"圆角随机"。删掉 20px 档, 全部走 4/8/12。 */
+  --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 20px;
-  --radius-full: 9999px;
-  --shadow: 0 1px 3px oklch(18% 0.008 250 / 0.08);
-  --shadow-md: 0 4px 12px oklch(18% 0.008 250 / 0.1);
-  --transition: background-color .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease, transform .2s ease;
-  --color-text-muted: oklch(60% 0.006 250);
-  --color-text-primary: oklch(18% 0.008 250);
-  --color-bg-secondary: oklch(94% 0.006 250);
-  --font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "Geist Mono", "SF Mono", SFMono-Regular, ui-monospace, monospace;
+  --radius-sm-legacy: 8px;
+  --radius-full: 9999px;            /* 历史别名 */
+
+  /* ── 阴影: 中性黑分层 ──
+     原来的阴影带蓝紫色相(如 oklch(45% 0.15 265 / .15)), 彩色阴影是渲染式
+     LLM 的常见套路。改为中性黑三档, 靠透明度和模糊半径区分层级。 */
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.04);
+  --shadow-2: 0 2px 6px oklch(0% 0 0 / 0.07), 0 4px 12px oklch(0% 0 0 / 0.05);
+  --shadow-3: 0 8px 24px oklch(0% 0 0 / 0.10), 0 2px 8px oklch(0% 0 0 / 0.05);
+  --shadow: var(--shadow-1);        /* 历史别名 */
+  --shadow-md: var(--shadow-2);     /* 历史别名 */
+
+  /* ── 动效 ──
+     只动 transform / opacity / background-position, 不触发布局重排。 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --transition: background-color var(--dur-base) ease, color var(--dur-base) ease,
+                border-color var(--dur-base) ease, box-shadow var(--dur-base) ease,
+                transform var(--dur-base) ease;
+
+  /* ── 字体 ──
+     原来声明 "Geist" 但项目里没有任何 woff2/ttf 文件, 实际渲染的一直是
+     -apple-system 回退 —— 声明了一个从未生效的字体。改为诚实的系统栈:
+     中文落到 PingFang SC / 微软雅黑, 比回退到 sans-serif 的默认字形干净得多。 */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
+          "Noto Sans CJK SC", Roboto, sans-serif;
+  --font-mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+               "Liberation Mono", monospace;
+
   --z-base: 1;
   --z-raised: 10;
   --z-sticky: 200;
@@ -34,22 +72,33 @@
   --z-tooltip: 600;
 }
 :root.dark {
-  --color-bg: oklch(9% 0.012 260);
-  --color-card-bg: oklch(14% 0.014 258);
+  --color-bg: oklch(8% 0.010 260);
+  --color-card-bg: oklch(13% 0.012 258);
+  --color-bg-secondary: oklch(17% 0.012 258);
+  --color-hover-bg: oklch(19% 0.014 258);
+  --color-input-bg: oklch(13% 0.012 258);
   --color-text: oklch(94% 0.006 250);
-  --color-text-secondary: oklch(68% 0.008 250);
-  --color-text-tertiary: oklch(50% 0.008 250);
-  --color-border: oklch(24% 0.020 258);
-  --color-primary: #6366f1;
-  --color-primary-bg: oklch(18% 0.060 270);
-  --color-cyan: #22d3ee;
-  --color-hover-bg: oklch(20% 0.016 258);
-  --color-input-bg: oklch(14% 0.014 258);
-  --color-text-muted: oklch(50% 0.008 250);
+  --color-text-secondary: oklch(70% 0.008 250);
+  --color-text-tertiary: oklch(54% 0.008 250);
+  --color-text-muted: oklch(56% 0.008 250);
   --color-text-primary: oklch(94% 0.006 250);
-  --color-bg-secondary: oklch(18% 0.014 258);
-  --shadow: 0 1px 3px oklch(0% 0 0 / 0.4);
-  --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.5);
+  --color-border: oklch(23% 0.016 258);
+  /* 暗背景上主色要提亮, 否则 #3370FF 的对比度不够 */
+  --color-primary: #5B8DFF;
+  --color-primary-bg: oklch(20% 0.055 255);
+  --color-primary-hover: #7BA5FF;
+  --color-accent: #14E3C6;
+  --color-gold: #FFC83D;
+  --color-cyan: #14E3C6;
+  /* 这三个之前完全没覆盖, 暗色下沿用亮色值会导致警告/危险色对比度不足 */
+  --color-danger: oklch(66% 0.19 25);
+  --color-warning: oklch(76% 0.16 78);
+  --color-success: oklch(68% 0.15 155);
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.30);
+  --shadow-2: 0 2px 6px oklch(0% 0 0 / 0.38), 0 4px 12px oklch(0% 0 0 / 0.28);
+  --shadow-3: 0 8px 24px oklch(0% 0 0 / 0.50), 0 2px 8px oklch(0% 0 0 / 0.32);
+  --shadow: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -62,7 +111,7 @@ i[data-lucide]{width:1em;height:1em;flex-shrink:0;display:inline-block;vertical-
 .btn i[data-lucide],.tab-btn i[data-lucide],.inner-tab-btn i[data-lucide],.dup-inner-tab-btn i[data-lucide]{width:1.1em;height:1.1em}
 .kpi-icon i[data-lucide]{width:24px;height:24px}
 button i[data-lucide]{pointer-events:none}
-.container{max-width:1200px;margin:0 auto;padding:16px}
+.container{max-width:1200px;margin:0 auto;padding:16px;min-width:0}
 
 /* Header */
 .header{display:flex;justify-content:space-between;align-items:center;padding:24px 28px;margin-bottom:24px;background:var(--color-card-bg);border-radius:var(--radius-md);border:1px solid var(--color-border);position:relative;overflow:hidden;flex-wrap:wrap;gap:12px}
@@ -82,7 +131,7 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 .theme-toggle:focus-visible,.sponsor-btn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 .version-badge{font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary);padding:2px 6px;border-radius:var(--radius-sm);border:1px solid var(--color-border);white-space:nowrap;font-weight:500;letter-spacing:0}
 .version-badge.new-version{color:oklch(55% 0.20 30);border-color:oklch(55% 0.20 30);animation:pulse-glow 2s ease-in-out infinite;cursor:pointer}
-@keyframes pulse-glow{0%,100%{box-shadow:0 0 0 oklch(55% 0.20 30 / 0)}50%{box-shadow:0 0 8px oklch(55% 0.20 30 / 0.4)}}
+@keyframes pulse-glow{0%,100%{box-shadow:var(--shadow-1)}50%{box-shadow:var(--shadow-1)}}
 
 /* Tabs */
 /* ── 导航分组 ──
@@ -90,12 +139,18 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
    响应式要点: 组按钮排在基础规则里用 flex-wrap, 不用 max-width 媒体查询 ——
    fnOS 移动 WebView 常以桌面 UA 渲染, max-width 断点根本不触发。 */
 .tab-groups{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
-.group-btn{display:inline-flex;align-items:center;padding:7px 14px;border:1px solid var(--color-border);
-  border-radius:999px;background:var(--color-card-bg);color:var(--color-text-secondary);
+.group-btn{display:inline-flex;align-items:center;padding:7px 14px 7px 12px;
+  border:1px solid var(--color-border);border-radius:var(--radius-xs);
+  background:var(--color-card-bg);color:var(--color-text-secondary);
   font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;line-height:1.2;
-  -webkit-tap-highlight-color:transparent;transition:background .15s,color .15s,border-color .15s}
+  -webkit-tap-highlight-color:transparent;
+  transition:background var(--dur-fast) ease,color var(--dur-fast) ease,
+             border-color var(--dur-fast) ease,box-shadow var(--dur-fast) ease}
 .group-btn:hover{border-color:var(--color-primary);color:var(--color-text)}
-.group-btn.active{background:var(--color-primary);border-color:var(--color-primary);color:#fff}
+.group-btn.active{background:var(--color-primary-bg);
+  border-color:color-mix(in oklch,var(--color-primary) 45%,var(--color-border));
+  color:var(--color-primary);
+  box-shadow:inset 2px 0 0 var(--color-primary)}
 .group-btn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 
 /* 只有当前组的 tab 列表可见 */
@@ -113,7 +168,7 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 .tab-panel.active{display:block;padding-top:16px}
 
 /* KPI */
-.kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
 .tab-panel[data-panel="schedule"] .kpi-row,
 .inner-panel[data-inner-panel="largefiles"] .kpi-row{grid-template-columns:repeat(2,1fr)}
 /* 回收站 5 个 KPI: 原为硬编码 repeat(5,1fr), 移动端也强制 5 列 → 数值被截成
@@ -155,7 +210,7 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
   padding:9px 10px;gap:4px;min-width:0;align-items:stretch;
 }
 .inner-panel[data-inner-panel="recycle"] .kpi-icon{
-  width:24px;height:24px;flex-shrink:0;border-radius:7px;font-size:13px;
+  width:24px;height:24px;flex-shrink:0;border-radius:var(--radius-sm);font-size:13px;
 }
 .inner-panel[data-inner-panel="recycle"] .kpi-label{
   font-size:11px;line-height:1.3;color:var(--color-text-secondary);
@@ -167,7 +222,7 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .kpi-card{background:var(--color-card-bg);border-radius:var(--radius-md);padding:20px 24px;border:1px solid var(--color-border);display:flex;align-items:center;gap:16px;transition:transform .2s ease, box-shadow .2s ease, border-color .2s ease;position:relative;overflow:hidden;cursor:default;box-shadow:var(--shadow)}
-.kpi-card:hover{transform:translateY(-2px);box-shadow:0 0 16px oklch(45% 0.15 265 / 0.15),var(--shadow-md);border-color:var(--color-primary)}
+.kpi-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-3);border-color:var(--color-primary)}
 .kpi-card:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 .kpi-icon{width:52px;height:52px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;transition:transform .2s ease, box-shadow .2s ease;position:relative}
 .kpi-card:hover .kpi-icon{transform:scale(1.08)}
@@ -176,18 +231,18 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 .kpi-value{font-size:32px;font-weight:800;color:var(--color-text);line-height:1.1;letter-spacing:-1px;font-variant-numeric:tabular-nums;font-family:var(--font-mono)}
 
 /* KPI icon backgrounds per panel — solid colors */
-.tab-panel[data-panel="app"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
-.tab-panel[data-panel="app"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
-.tab-panel[data-panel="app"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
-.tab-panel[data-panel="disk"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
-.tab-panel[data-panel="disk"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
-.tab-panel[data-panel="disk"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
-.tab-panel[data-panel="docker"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
-.tab-panel[data-panel="docker"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
-.tab-panel[data-panel="docker"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
-.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
-.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
-.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
+.tab-panel[data-panel="app"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="app"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="app"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="disk"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="disk"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="disk"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="docker"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="docker"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="docker"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:var(--shadow-1)}
+.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:var(--shadow-1)}
+.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:var(--shadow-1)}
+.inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:var(--shadow-1)}
 
 /* Dark KPI icons */
 html.dark .tab-panel[data-panel="app"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(22% 0.04 265);color:oklch(70% 0.12 265)}
@@ -203,10 +258,10 @@ html.dark .inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(1) .kpi-
 html.dark .inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(22% 0.04 80);color:oklch(70% 0.12 80)}
 html.dark .inner-panel[data-inner-panel="tmpfiles"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(22% 0.04 145);color:oklch(70% 0.10 145)}
 /* Schedule tab KPI colors */
-.tab-panel[data-panel="schedule"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.15)}
-.tab-panel[data-panel="schedule"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:0 2px 8px oklch(45% 0.15 145 / 0.15)}
-.tab-panel[data-panel="schedule"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 30);color:oklch(55% 0.20 30);box-shadow:0 2px 8px oklch(55% 0.20 30 / 0.15)}
-.tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:0 2px 8px oklch(60% 0.18 80 / 0.15)}
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(94% 0.035 265);color:var(--color-primary);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(94% 0.06 145);color:oklch(45% 0.15 145);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(94% 0.06 30);color:oklch(55% 0.20 30);box-shadow:var(--shadow-1)}
+.tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{background:oklch(94% 0.08 80);color:oklch(60% 0.18 80);box-shadow:var(--shadow-1)}
 html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(1) .kpi-icon{background:oklch(22% 0.04 265);color:oklch(70% 0.12 265)}
 html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(2) .kpi-icon{background:oklch(22% 0.04 145);color:oklch(70% 0.10 145)}
 html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(3) .kpi-icon{background:oklch(22% 0.04 30);color:oklch(70% 0.12 30)}
@@ -221,19 +276,19 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .section-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .select-info{font-size:13px;color:var(--color-text-secondary);margin-top:6px}
 .filter-bar{margin:10px 0 4px}
-.search-input{width:100%;padding:9px 14px;border:1px solid var(--color-border);border-radius:10px;background:var(--color-card-bg);color:var(--color-text);font-size:13px;outline:none;transition:border-color .2s ease, box-shadow .2s ease}
-.search-input:focus{border-color:var(--color-primary);box-shadow:0 0 0 3px oklch(45% 0.15 265 / 0.15)}
+.search-input{width:100%;padding:9px 14px;border:1px solid var(--color-border);border-radius:var(--radius-sm);background:var(--color-card-bg);color:var(--color-text);font-size:13px;outline:none;transition:border-color .2s ease, box-shadow .2s ease}
+.search-input:focus{border-color:var(--color-primary);box-shadow:var(--shadow-1)}
 .search-input:focus-visible{outline:2px solid var(--color-primary);outline-offset:1px}
 .search-input::placeholder{color:var(--color-text-tertiary)}
 
 /* Buttons */
-.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:1px solid transparent;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;transition:background-color .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease, transform .15s ease;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:1px solid transparent;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-weight:500;transition:background-color .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease, transform .15s ease;white-space:nowrap}
 .btn:active{transform:scale(.97)}
-.btn-primary{background:var(--color-primary);color:#fff;border-color:var(--color-primary);box-shadow:0 2px 8px oklch(45% 0.15 265 / 0.25)}
-.btn-primary:hover{background:linear-gradient(135deg,var(--color-primary),var(--color-cyan));border-color:var(--color-primary);box-shadow:0 4px 14px oklch(45% 0.15 265 / 0.35)}
+.btn-primary{background:var(--color-primary);color:#fff;border-color:var(--color-primary);box-shadow:var(--shadow-1)}
+.btn-primary:hover{background:linear-gradient(135deg,var(--color-primary),var(--color-cyan));border-color:var(--color-primary);box-shadow:var(--shadow-2)}
 .btn-primary:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
-.btn-danger{background:var(--color-danger);color:#fff;border-color:var(--color-danger);box-shadow:0 2px 8px oklch(55% 0.20 30 / 0.25)}
-.btn-danger:hover{background:oklch(45% 0.20 30);border-color:oklch(45% 0.20 30);box-shadow:0 4px 14px oklch(55% 0.20 30 / 0.35)}
+.btn-danger{background:var(--color-danger);color:#fff;border-color:var(--color-danger);box-shadow:var(--shadow-1)}
+.btn-danger:hover{background:oklch(45% 0.20 30);border-color:oklch(45% 0.20 30);box-shadow:var(--shadow-2)}
 .btn-danger:focus-visible{outline:2px solid var(--color-danger);outline-offset:2px}
 .btn-secondary{background:var(--color-card-bg);color:var(--color-text);border-color:var(--color-border)}
 .btn-secondary:hover{background:var(--color-hover-bg);border-color:var(--color-primary)}
@@ -241,10 +296,10 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .btn-outline{background:transparent;color:var(--color-text-secondary);border-color:var(--color-border)}
 .btn-outline:hover{background:var(--color-hover-bg);color:var(--color-text);border-color:var(--color-primary)}
 .btn-outline:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
-.btn-warning{background:var(--color-warning);color:#fff;border-color:var(--color-warning);box-shadow:0 2px 8px oklch(70% 0.18 80 / 0.25)}
+.btn-warning{background:var(--color-warning);color:#fff;border-color:var(--color-warning);box-shadow:var(--shadow-1)}
 .btn-warning:hover{background:oklch(60% 0.18 80);border-color:oklch(60% 0.18 80)}
 .btn-warning:focus-visible{outline:2px solid var(--color-warning);outline-offset:2px}
-.btn-sm{padding:5px 12px;font-size:12px;border-radius:8px}
+.btn-sm{padding:5px 12px;font-size:12px;border-radius:var(--radius-sm)}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
 
 /* File row */
@@ -254,7 +309,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .file-header{background:var(--color-bg);font-size:12px;font-weight:600;color:var(--color-text-secondary);border-bottom:2px solid var(--color-border);padding:6px 10px;cursor:default}
 .file-header:hover{background:var(--color-bg)}
 .file-checkbox{width:16px;height:16px;cursor:pointer;flex-shrink:0}
-.file-badge{font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--color-primary-bg);color:var(--color-primary);flex-shrink:0}
+.file-badge{font-size:11px;font-weight:600;padding:2px 6px;border-radius:var(--radius-xs);background:var(--color-primary-bg);color:var(--color-primary);flex-shrink:0}
 .file-path{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .file-vol,.file-size,.file-tag{font-size:12px;color:var(--color-text-secondary);flex-shrink:0}
 .list-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
@@ -276,17 +331,17 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 /* Modal */
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:oklch(0% 0 0 / 0.5);z-index:var(--z-modal-backdrop);align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 .modal-overlay.visible{display:flex}
-.modal-content{background:var(--color-card-bg);border-radius:var(--radius-md);padding:24px;max-width:90%;width:480px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 16px 48px oklch(0% 0 0 / 0.25);animation:modalIn .2s ease-out}
+.modal-content{background:var(--color-card-bg);border-radius:var(--radius-md);padding:24px;max-width:90%;width:480px;max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-3);animation:modalIn .2s ease-out}
 @keyframes modalIn{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 .modal-content.modal-md{width:560px}
 .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--color-border)}
 .modal-title{font-size:16px;font-weight:600;margin:0}
-.modal-close{border:none;background:transparent;font-size:20px;cursor:pointer;color:var(--color-text-secondary);padding:6px;border-radius:6px;transition:background-color .15s ease}
+.modal-close{border:none;background:transparent;font-size:20px;cursor:pointer;color:var(--color-text-secondary);padding:6px;border-radius:var(--radius-xs);transition:background-color .15s ease}
 .modal-close:hover{background:var(--color-hover-bg)}
 .modal-close:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 .modal-body{flex:1;overflow-y:auto;min-height:0}
 .modal-footer{padding-top:12px;border-top:1px solid var(--color-border);margin-top:12px}
-.modal{background:var(--color-card-bg);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 10px 40px oklch(0% 0 0 / 0.2)}
+.modal{background:var(--color-card-bg);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow-1)}
 .modal h3{font-size:16px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
 .modal p{font-size:14px;color:var(--color-text-secondary);margin-bottom:12px}
 .paths-preview{max-height:180px;overflow-y:auto;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:10px;font-size:13px;margin-bottom:12px;font-family:var(--font-mono)}
@@ -297,7 +352,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 
 /* Toast */
 #toastContainer{position:fixed;top:16px;right:16px;z-index:var(--z-toast);display:flex;flex-direction:column;gap:8px;pointer-events:none}
-.toast{padding:14px 22px;border-radius:12px;font-size:14px;background:var(--color-card-bg);border:1px solid var(--color-border);box-shadow:0 8px 24px oklch(0% 0 0 / 0.18);max-width:380px;animation:toastIn .25s ease-out;pointer-events:auto}
+.toast{padding:14px 22px;border-radius:var(--radius-md);font-size:14px;background:var(--color-card-bg);border:1px solid var(--color-border);box-shadow:var(--shadow-2);max-width:380px;animation:toastIn .25s ease-out;pointer-events:auto}
 @keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
 .toast.error{border-left:4px solid var(--color-danger)}
 .toast.success{border-left:4px solid var(--color-success)}
@@ -311,7 +366,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 *{scrollbar-width:thin;scrollbar-color:var(--color-border) transparent}
 *::-webkit-scrollbar{width:6px;height:6px}
 *::-webkit-scrollbar-track{background:transparent}
-*::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:3px;border:1px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:var(--radius-xs);border:1px solid transparent;background-clip:padding-box}
 *::-webkit-scrollbar-thumb:hover{background:var(--color-text-tertiary)}
 
 /* Directory Browser */
@@ -334,10 +389,10 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .sponsor-qr-row{display:flex;gap:20px;justify-content:center;margin-top:16px}
 .sponsor-qr-item{text-align:center}
 .sponsor-qr-item p{font-size:14px;font-weight:600;margin-bottom:8px}
-.sponsor-qr-item img{width:140px;height:140px;border-radius:8px;cursor:pointer;border:1px solid var(--color-border)}
+.sponsor-qr-item img{width:140px;height:140px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--color-border)}
 .sponsor-img-full-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:oklch(0% 0 0 / 0.8);z-index:calc(var(--z-modal) + 1);align-items:center;justify-content:center}
 .sponsor-img-full-overlay.show{display:flex}
-.sponsor-img-full-overlay img{max-width:90%;max-height:90%;border-radius:12px}
+.sponsor-img-full-overlay img{max-width:90%;max-height:90%;border-radius:var(--radius-md)}
 
 /* Inner Tabs */
 .inner-tabs{margin-top:0}
@@ -380,19 +435,19 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .dup-scan-btns{display:flex;gap:6px;flex-shrink:0;align-items:flex-start}
 .dup-scan-btns .btn{white-space:nowrap}
 .dup-path-input{flex:1;padding:10px 14px;border:1px solid var(--color-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-text);font-size:13px;outline:none;transition:border-color .2s ease, box-shadow .2s ease}
-.dup-path-input:focus{border-color:var(--color-primary);box-shadow:0 0 0 2px oklch(45% 0.15 265 / 0.15)}
+.dup-path-input:focus{border-color:var(--color-primary);box-shadow:var(--shadow-1)}
 .dup-path-input:focus-visible{outline:2px solid var(--color-primary);outline-offset:1px}
 .dup-progress-section{display:none;margin-top:14px}
 .dup-progress-section.visible{display:block}
-.dup-progress-track{width:100%;height:6px;background:var(--color-border);border-radius:3px;overflow:hidden;margin-bottom:8px}
-.dup-progress-fill{height:100%;background:var(--color-primary);border-radius:3px;transition:width .3s ease}
+.dup-progress-track{width:100%;height:6px;background:var(--color-border);border-radius:var(--radius-xs);overflow:hidden;margin-bottom:8px}
+.dup-progress-fill{height:100%;background:var(--color-primary);border-radius:var(--radius-xs);transition:width .3s ease}
 .dup-progress-info{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--color-text-secondary);margin-bottom:4px}
 .dup-progress-current{font-size:11px;color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;margin-bottom:6px}
 .dup-progress-status{font-size:13px;color:var(--color-text-secondary);display:flex;align-items:center;gap:6px}
 .dup-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:dup-spin .6s linear infinite}
 @keyframes dup-spin{to{transform:rotate(360deg)}}
 
-.dup-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.dup-stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
 .dup-stat-card{background:var(--color-card-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:14px;text-align:center}
 .dup-stat-value{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .dup-stat-label{font-size:12px;color:var(--color-text-secondary);margin-top:4px}
@@ -417,7 +472,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .dup-file-name{font-weight:600;font-size:13px;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;flex-shrink:1;min-width:0}
 .dup-wasted{font-size:12px;color:var(--color-danger);font-weight:500}
 .dup-toggle{font-size:12px;color:var(--color-text-secondary)}
-.dup-group-delete-btn{border:none;background:none;cursor:pointer;font-size:14px;padding:4px 8px;border-radius:6px;color:var(--color-text-secondary);flex-shrink:0;margin:0 4px;transition:background-color .2s ease, color .2s ease}
+.dup-group-delete-btn{border:none;background:none;cursor:pointer;font-size:14px;padding:4px 8px;border-radius:var(--radius-xs);color:var(--color-text-secondary);flex-shrink:0;margin:0 4px;transition:background-color .2s ease, color .2s ease}
 .dup-group-delete-btn:hover{background:rgba(239,68,68,.15);color:var(--color-danger)}
 .dup-group-body{display:none}
 .dup-group-body.open{display:block}
@@ -426,11 +481,11 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .dup-file-item{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--color-border);transition:background-color .2s ease}
 .dup-file-item:last-child{border-bottom:none}
 .dup-file-item:hover{background:var(--color-hover-bg)}
-.file-original-badge,.file-duplicate-badge{font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.file-original-badge,.file-duplicate-badge{font-size:11px;font-weight:600;padding:2px 6px;border-radius:var(--radius-xs);flex-shrink:0}
 .file-original-badge{background:var(--color-primary-bg);color:var(--color-primary)}
 .file-duplicate-badge{background:rgba(239,68,68,.1);color:var(--color-danger)}
 .file-tags{display:flex;gap:4px;flex-shrink:0}
-.tag{font-size:11px;padding:1px 6px;border-radius:3px;background:var(--color-primary-bg);color:var(--color-primary);white-space:nowrap}
+.tag{font-size:11px;padding:1px 6px;border-radius:var(--radius-xs);background:var(--color-primary-bg);color:var(--color-primary);white-space:nowrap}
 
 /* Delete mode radio */
 .delete-mode-select{margin:12px 0}
@@ -449,11 +504,11 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .container{padding:16px 12px}
   .header{flex-direction:column;align-items:flex-start;gap:16px;padding:20px}
   .header-controls{width:100%;justify-content:flex-start}
-  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi-row
   .kpi-card{padding:16px;gap:12px}
-  .kpi-icon{width:44px;height:44px;font-size:20px;border-radius:12px}
+  .kpi-icon{width:44px;height:44px;font-size:20px;border-radius:var(--radius-md)}
   .kpi-value{font-size:24px}
-  .dup-stats-row{grid-template-columns:repeat(2,1fr)}
+  .dup-stats-row
   .tab-btn{padding:10px 16px;font-size:13px}
   .dup-scan-input-row{flex-direction:column}
   .dup-scan-btns{flex-direction:row;flex-wrap:wrap}
@@ -477,7 +532,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 }
   .inner-panel[data-inner-panel="recycle"] .section-header .btn{flex:1 1 auto;min-width:0;justify-content:center;padding:8px 10px;font-size:12px}
   .inner-panel[data-inner-panel="recycle"] .section-header .btn span:last-child{overflow:hidden;text-overflow:ellipsis}
-  .tab-panel[data-panel="schedule"] .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .tab-panel[data-panel="schedule"] .kpi-row
 }
 @media(max-width:480px){
   h1{font-size:18px}
@@ -488,11 +543,11 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .tab-list{padding:8px 8px 0;gap:2px;overflow-x:auto}
   .tab-btn{padding:8px 10px;font-size:12px;gap:4px}
   .tab-panel{padding:12px}
-  .kpi-row{grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
-  .kpi-card{padding:10px 6px;gap:6px;border-radius:10px}
-  .kpi-icon{width:32px;height:32px;font-size:16px;border-radius:8px;flex-shrink:0}
+  .kpi-row{gap:6px;margin-bottom:12px}
+  .kpi-card{padding:10px 6px;gap:6px;border-radius:var(--radius-sm)}
+  .kpi-icon{width:32px;height:32px;font-size:16px;border-radius:var(--radius-sm);flex-shrink:0}
   .kpi-card:hover{transform:none}
-  .tab-panel[data-panel="schedule"] .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .tab-panel[data-panel="schedule"] .kpi-row
   .tab-panel[data-panel="schedule"] .kpi-card{padding:10px 6px;gap:6px}
   .tab-panel[data-panel="schedule"] .kpi-value{font-size:14px}
   .kpi-value{font-size:18px;font-weight:700;letter-spacing:-0.5px}
@@ -503,7 +558,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .dup-scan-input-row{flex-direction:column}
   .dup-scan-btns{flex-direction:row;flex-wrap:wrap}
   .dup-path-input{font-size:13px;padding:8px 10px}
-  .dup-stats-row{grid-template-columns:repeat(2,1fr)}
+  .dup-stats-row
   .dup-stat-card{padding:10px}
   .dup-stat-value{font-size:18px}
   .modal{padding:16px;max-width:98%}
@@ -534,9 +589,9 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   display:flex;flex-direction:column;gap:6px;
   /* 作为 grid 项必须允许收缩, 否则长内容会撑破同行, 视觉上就"叠"在一起 */
   min-width:0;overflow:hidden;
-  box-shadow:0 1px 2px rgba(0,0,0,.04);transition:border-color .15s,box-shadow .15s;
+  box-shadow:var(--shadow-1);transition:border-color .15s,box-shadow .15s;
 }
-.trash-card:hover{border-color:var(--color-primary);box-shadow:0 2px 8px rgba(0,0,0,.09)}
+.trash-card:hover{border-color:var(--color-primary);box-shadow:var(--shadow-1)}
 /* 不换行: 卷名/UID 过长时自身截断, 大小固定贴右, 避免换行造成的错位堆叠 */
 .trash-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:nowrap;min-width:0}
 .trash-card-head>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -575,7 +630,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .schedule-toggle{display:flex;align-items:center;gap:12px;cursor:pointer}
 .schedule-toggle input[type="checkbox"]{display:none}
 .toggle-track{width:44px;height:24px;background:var(--color-border);border-radius:var(--radius-full);position:relative;transition:background-color var(--transition)}
-.toggle-knob{width:20px;height:20px;background:white;border-radius:50%;position:absolute;top:2px;left:2px;transition:left .2s ease;box-shadow:0 1px 3px oklch(0% 0 0 / 0.2)}
+.toggle-knob{width:20px;height:20px;background:white;border-radius:50%;position:absolute;top:2px;left:2px;transition:left .2s ease;box-shadow:var(--shadow-1)}
 .schedule-toggle input:checked+.toggle-track{background:var(--color-primary)}
 .schedule-toggle input:checked+.toggle-track .toggle-knob{left:22px}
 .toggle-label{font-size:15px;font-weight:600;color:var(--color-text)}
@@ -587,7 +642,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .schedule-type-opts{padding:8px 14px 10px;display:flex;flex-direction:column;gap:6px}
 .schedule-opt{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-secondary);cursor:pointer}
 .schedule-opt input[type="checkbox"]{width:14px;height:14px;accent-color:var(--color-primary)}
-.schedule-opt input[type="number"]{padding:2px 6px;border:1px solid var(--color-border);border-radius:4px;background:var(--color-input-bg);color:var(--color-text);font-size:13px;text-align:center}
+.schedule-opt input[type="number"]{padding:2px 6px;border:1px solid var(--color-border);border-radius:var(--radius-xs);background:var(--color-input-bg);color:var(--color-text);font-size:13px;text-align:center}
 .schedule-type-item{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--color-card-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);cursor:pointer;transition:border-color .2s ease, background-color .2s ease;font-size:14px}
 .schedule-type-item:hover{border-color:var(--color-primary);background:var(--color-primary-bg)}
 .schedule-type-item input[type="checkbox"]{width:18px;height:18px;accent-color:var(--color-primary)}
@@ -608,7 +663,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
    用原生 <dialog> 而非自定义 modal —— fnOS WebView/CEF 下自定义 overlay
    常出现 getComputedStyle 显示正常但视觉层不渲染的问题。 */
 .simdup-cmp-btn, .simdup-cmp-btn{
-  background: var(--color-primary); color: #fff; border: none; border-radius: 10px;
+  background: var(--color-primary); color: #fff; border: none; border-radius:var(--radius-sm);
   padding: 1px 8px; font-size: 12px; cursor: pointer; font-family: inherit;
   min-width: 24px; line-height: 1.5;
   transition: filter .15s, transform .15s;
@@ -618,3 +673,159 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 #simdupCompareDlg{ border: none; padding: 0; }
 #simdupCompareDlg::backdrop{ background: rgba(0,0,0,.45); }
 #simdupCompareBody{ display: block; }
+
+/* ═══════════════════════════════════════════════════════════
+   动效降级兜底
+   之前全项目 0 处 prefers-reduced-motion —— 有关键帧动画与大量
+   transition, 却没给前庭功能障碍用户提供关闭开关。统一在这里兜底:
+   动画归零、过渡压到近乎瞬时, 但不隐藏任何内容(不写 display:none,
+   否则内容会直接消失)。transform 相关的入场效果必须显式复位,
+   否则元素会停在动画起始帧(透明/偏移)导致"看不见"。
+   ═══════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 入场类动画的元素必须显式复位, 否则停在 from 帧 = 透明/位移 */
+  .tab-panel.active, .inner-panel.active, .modal, .toast,
+  .stagger-item, .skeleton, .kpi-card, .dup-empty-state {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   窄屏兜底(不依赖媒体查询)
+   .data-table 有 min-width:500px, 窄屏下必须由外层容器横向滚动,
+   否则整页会被表格撑出横向滚动条。给所有可能装表格的卡片统一兜底。
+   ═══════════════════════════════════════════════════════════ */
+.card:has(> .data-table),
+.card:has(> div > .data-table),
+[id$="-list"]{min-width:0;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* 表格自身的斑马纹底色用了相对色语法, 老内核不支持时降级为透明 */
+@supports not (background: oklch(from red l c h / 0.5)) {
+  .data-table tbody tr:nth-child(even){background:transparent}
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   动效编排层
+   之前全项目只有 4 个 keyframes(pulse-glow/modalIn/toastIn/dup-spin) 且
+   仅 4 处 animation —— 全部是"元素自己怎么变", 没有"什么时候发生"。
+   本层补上场景编排: 面板切换、结果进场、数字滚动、流光进度、骨架屏。
+
+   约束: 只动 transform / opacity / background-position, 不触发布局重排。
+   prefers-reduced-motion 的全局兜底见文件末尾, 会把这里全部压成 0.01ms。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 1. 面板切换: 之前是瞬切 display:none→block, 补一个轻量入场 ── */
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.tab-panel.active { animation: panelIn var(--dur-fast) var(--ease-out) both; }
+.inner-panel.active { animation: panelIn var(--dur-fast) var(--ease-out) both; }
+
+/* 二级分区比一级 tab 稍慢一点, 形成层次而不是齐刷刷 */
+.inner-panel.active { animation-duration: var(--dur-base); }
+
+/* ── 2. 结果列表逐条进场(stagger) ──
+   JS 端给结果项加 .stagger-item 并按索引设 --i, 这里只负责表现。 */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.stagger-item {
+  animation: staggerIn var(--dur-base) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+/* 上限 20 项: JS 侧对超过 20 的项不再累加延迟, 避免长列表末尾等太久 */
+
+/* ── 3. 骨架屏: 扫描加载态的占位, 替代"空白 + 扫描中文字" ── */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .45; }
+}
+.skeleton {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  animation: skeletonPulse 1.4s var(--ease-in-out) infinite;
+}
+.skeleton-row {
+  height: 14px;
+  margin-bottom: 10px;
+}
+.skeleton-row.is-title { width: 42%; height: 18px; }
+.skeleton-row.is-meta  { width: 64%; }
+.skeleton-block {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  margin-bottom: 14px;
+}
+
+/* ── 4. 流光进度条: 扫描进行中给进度条加一层扫过的高光 ── */
+@keyframes progressShimmer {
+  from { background-position: -180% 0; }
+  to   { background-position: 280% 0; }
+}
+.progress-bar.is-running,
+.progress.is-running > .progress-bar {
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    oklch(100% 0 0 / 0.42) 50%,
+    transparent 80%);
+  background-size: 180% 100%;
+  background-repeat: no-repeat;
+  animation: progressShimmer 1.5s linear infinite;
+}
+:root.dark .progress-bar.is-running,
+:root.dark .progress.is-running > .progress-bar {
+  /* 暗色下白色高光会刺眼, 改用青色低透明 */
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    oklch(100% 0 0 / 0.16) 50%,
+    transparent 80%);
+}
+
+/* ── 5. KPI 数值: 滚动期间给一个极轻的高亮, 让"数字在动"被感知 ── */
+@keyframes valuePulse {
+  0%   { color: var(--color-primary); }
+  100% { color: inherit; }
+}
+.kpi-value.is-counting {
+  animation: valuePulse var(--dur-slow) var(--ease-out);
+}
+
+/* ── 6. 按钮按下反馈: 之前只有 hover, 点击时没有触感 ── */
+.btn:active,
+.group-btn:active,
+.tab-btn:active,
+.inner-tab-btn:active {
+  transform: translateY(1px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .group-btn, .tab-btn, .inner-tab-btn {
+    transition:
+      background-color var(--dur-base) ease,
+      color var(--dur-base) ease,
+      border-color var(--dur-base) ease,
+      box-shadow var(--dur-base) ease,
+      transform var(--dur-fast) ease;
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   结果列表容器间距(由 12 处内联 style 抽取而来)
+   注: 其余内联 style 刻意保留 —— 43 处颜色虽已用 CSS 变量(暗色可切换),
+   但 22 处 display:none 是 JS 里 61 处 .style.display 赋值的目标,
+   抽到 CSS 会被 JS 覆盖或直接失效。
+   ═══════════════════════════════════════════════════════════ */
+/* 结果列表容器: 上边距原本是 12 处内联 style, 抽到这里统一管 */
+#app-list,#disk-list,#images-list,#docker-volumes-list,#networks-list,#nm-list,#empty-list,#sysclean-list,#temp-list,#trash-status,#trash-list{margin-top:12px}
+#trash-other{margin-top:16px}
