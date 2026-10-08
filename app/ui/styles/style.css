@@ -85,7 +85,23 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 @keyframes pulse-glow{0%,100%{box-shadow:0 0 0 oklch(55% 0.20 30 / 0)}50%{box-shadow:0 0 8px oklch(55% 0.20 30 / 0.4)}}
 
 /* Tabs */
-.tab-list{display:flex;gap:2px;margin-bottom:0;overflow-x:auto;scrollbar-width:thin;padding-bottom:2px;border-bottom:1px solid var(--color-border)}
+/* ── 导航分组 ──
+   15 个 tab 按使用场景归为 4 组(清理回收/查找问题/空间分析/自动化)。
+   响应式要点: 组按钮排在基础规则里用 flex-wrap, 不用 max-width 媒体查询 ——
+   fnOS 移动 WebView 常以桌面 UA 渲染, max-width 断点根本不触发。 */
+.tab-groups{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.group-btn{display:inline-flex;align-items:center;padding:7px 14px;border:1px solid var(--color-border);
+  border-radius:999px;background:var(--color-card-bg);color:var(--color-text-secondary);
+  font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;line-height:1.2;
+  -webkit-tap-highlight-color:transparent;transition:background .15s,color .15s,border-color .15s}
+.group-btn:hover{border-color:var(--color-primary);color:var(--color-text)}
+.group-btn.active{background:var(--color-primary);border-color:var(--color-primary);color:#fff}
+.group-btn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+
+/* 只有当前组的 tab 列表可见 */
+.tab-list{display:none;gap:2px;margin-bottom:0;overflow-x:auto;scrollbar-width:thin;
+  padding-bottom:2px;border-bottom:1px solid var(--color-border);-webkit-overflow-scrolling:touch}
+.tab-list.active{display:flex}
 .tab-list::-webkit-scrollbar{height:4px}
 .tab-list::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:2px}
 .tab-btn{display:flex;align-items:center;gap:6px;padding:10px 18px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;font-size:14px;font-weight:500;white-space:nowrap;position:relative;transition:color .2s ease, background-color .2s ease;border-radius:var(--radius-sm) var(--radius-sm) 0 0}
