@@ -47,17 +47,12 @@
 
     <!-- 分组: 查找问题 -->
     <div class="tab-list" data-group-list="find" role="tablist">
-      <button type="button" class="tab-btn active" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="true"><i data-lucide="clipboard-list"></i> 去重</button>
-      <button type="button" class="tab-btn" data-tab="simdup" onclick="switchTab('simdup')" role="tab" aria-selected="false"><i data-lucide="images"></i> 相似</button>
-      <button type="button" class="tab-btn" data-tab="broken" onclick="switchTab('broken')" role="tab" aria-selected="false"><i data-lucide="file-x"></i> 异常</button>
-      <button type="button" class="tab-btn" data-tab="namematch" onclick="switchTab('namematch')" role="tab" aria-selected="false"><i data-lucide="copy-x"></i> 重名</button>
+      <button type="button" class="tab-btn" data-tab="scan" onclick="switchTab('scan')" role="tab" aria-selected="false"><i data-lucide="clipboard-list"></i> 文件体检</button>
     </div>
 
     <!-- 分组: 空间分析 -->
     <div class="tab-list" data-group-list="space" role="tablist">
       <button type="button" class="tab-btn active" data-tab="diskanalysis" onclick="switchTab('diskanalysis')" role="tab" aria-selected="true"><i data-lucide="pie-chart"></i> 空间</button>
-      <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false"><i data-lucide="hard-drive"></i> 大文件</button>
-      <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false"><i data-lucide="inbox"></i> 去空</button>
     </div>
 
     <!-- 分组: 自动化 -->
@@ -234,8 +229,19 @@
         </div>
       </div><!-- Panel: tmp -->
     <!-- Panel: 重复文件 -->
-    <div class="tab-panel" data-panel="dup">
-      <div class="dup-inner-tabs">
+    <div class="tab-panel" data-panel="scan">
+      <div class="inner-tabs">
+        <div class="inner-tab-list">
+          <button type="button" class="inner-tab-btn active" data-inner-tab="duplicates" onclick="switchInnerTab('duplicates')" title="完全相同的文件(可按哈希或大小比对)"><span><i data-lucide="octagon-x"></i></span><span>去重</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="similar" onclick="switchInnerTab('similar')" title="图片/视频的相似内容(缩略图并排对比)"><span><i data-lucide="images"></i></span><span>相似</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="broken" onclick="switchInnerTab('broken')" title="空文件 / 无效链接 / 损坏文件 / 下载残留"><span><i data-lucide="file-x"></i></span><span>异常</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="samename" onclick="switchInnerTab('samename')" title="不同目录下的同名文件"><span><i data-lucide="copy-x"></i></span><span>重名</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="emptydirs" onclick="switchInnerTab('emptydirs')" title="空文件夹, 可递归清理"><span><i data-lucide="inbox"></i></span><span>空目录</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="largefiles" onclick="switchInnerTab('largefiles')" title="按大小/阈值找出占空间的大文件"><span><i data-lucide="hard-drive"></i></span><span>大文件</span></button>
+        </div>
+
+        <div class="inner-panel active" data-inner-panel="duplicates">
+<div class="dup-inner-tabs">
         <div class="dup-inner-tab-list">
           <button type="button" class="dup-inner-tab-btn active" data-dup-tab="music" onclick="switchDupInnerTab('music')">🎵 音乐</button>
           <button type="button" class="dup-inner-tab-btn" data-dup-tab="files" onclick="switchDupInnerTab('files')">📄 文件</button>
@@ -343,11 +349,9 @@
           <div class="dup-empty-state" id="filesEmpty"><div class="dup-empty-icon">📂</div><h3>尚未开始扫描</h3><p>输入目录路径，点击开始扫描查找重复文件。</p></div>
         </div>
       </div>
-    </div>
-
-    <!-- Tab: 相似图片/视频检测 (P0-2) -->
-    <div class="tab-panel" data-panel="simdup">
-      <div class="kpi-row">
+        </div>
+        <div class="inner-panel" data-inner-panel="similar">
+<div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="images"></i></div><div class="kpi-body"><div class="kpi-label">待检文件</div><div class="kpi-value" id="simdup-total">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="layers"></i></div><div class="kpi-body"><div class="kpi-label">相似组</div><div class="kpi-value" id="simdup-groups">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="files"></i></div><div class="kpi-body"><div class="kpi-label">疑似文件</div><div class="kpi-value" id="simdup-files">-</div></div></div>
@@ -377,20 +381,9 @@
         <div id="simdup-best" style="font-size:12px;color:var(--color-text-secondary);margin:6px 0 2px"></div>
         <div id="simdup-list"></div>
       </div>
-    </div>
-
-    <!-- P1-4: 相似文件并排对比 (原生 <dialog>, CEF/WebView 下比自定义 modal 可靠) -->
-    <dialog id="simdupCompareDlg" style="border:none;padding:0;border-radius:12px;max-width:min(94vw,1100px);max-height:88vh;background:var(--bg-card,#fff);color:var(--color-text,#333);box-shadow:0 12px 48px rgba(0,0,0,.35)">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-color,#e2e8f0)">
-        <h3 style="margin:0;font-size:15px" id="simdupCmpTitle">相似文件对比</h3>
-        <button type="button" id="simdupCmpClose" class="btn btn-ghost btn-sm" title="关闭">✕</button>
-      </div>
-      <div id="simdupCmpBody" style="padding:16px;overflow:auto;max-height:calc(88vh - 56px)"></div>
-    </dialog>
-
-    <!-- Tab: 异常文件检测 (P0-3) -->
-    <div class="tab-panel" data-panel="broken">
-      <div class="kpi-row">
+        </div>
+        <div class="inner-panel" data-inner-panel="broken">
+<div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-x"></i></div><div class="kpi-body"><div class="kpi-label">异常文件</div><div class="kpi-value" id="broken-total">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-circle"></i></div><div class="kpi-body"><div class="kpi-label">空文件</div><div class="kpi-value" id="broken-empty">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="link-2-off"></i></div><div class="kpi-body"><div class="kpi-label">无效链接</div><div class="kpi-value" id="broken-links">-</div></div></div>
@@ -418,11 +411,9 @@
         </div>
         <div id="broken-list"></div>
       </div>
-    </div>
-
-    <!-- Tab: 重名冲突检测 (P2-2) -->
-    <div class="tab-panel" data-panel="namematch">
-      <div class="kpi-row">
+        </div>
+        <div class="inner-panel" data-inner-panel="samename">
+<div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="copy-x"></i></div><div class="kpi-body"><div class="kpi-label">重名组</div><div class="kpi-value" id="name-groups">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-text"></i></div><div class="kpi-body"><div class="kpi-label">涉及文件</div><div class="kpi-value" id="name-files">-</div></div></div>
       </div>
@@ -441,11 +432,9 @@
         </div>
         <div id="nm-list" style="margin-top:12px"></div>
       </div>
-    </div>
-
-    <!-- Panel: 空目录清理 -->
-    <div class="tab-panel" data-panel="empty">
-      <div class="kpi-row">
+        </div>
+        <div class="inner-panel" data-inner-panel="emptydirs">
+<div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder"></i></div><div class="kpi-body"><div class="kpi-label">空目录数</div><div class="kpi-value" id="empty-count">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">待清理</div><div class="kpi-value" id="empty-pending">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">扫描耗时</div><div class="kpi-value" id="empty-elapsed">-</div></div></div>
@@ -478,7 +467,63 @@
           </div>
         </div>
       </div>
+        </div>
+        <div class="inner-panel" data-inner-panel="largefiles">
+<div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="bar-chart-3"></i></div><div class="kpi-body"><div class="kpi-label">扫描候选</div><div class="kpi-value" id="bigfiles-candidates">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="clipboard-list"></i></div><div class="kpi-body"><div class="kpi-label">返回结果</div><div class="kpi-value" id="bigfiles-results">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">候选总占用</div><div class="kpi-value" id="bigfiles-total-size">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">耗时</div><div class="kpi-value" id="bigfiles-elapsed">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span><i data-lucide="hard-drive"></i></span><span>大文件查找器</span></h2>
+          <div class="section-actions">
+               <div class="dup-path-list" id="bigfilesPathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('bigfiles')">📁 添加目录</button>
+            <select id="bigfiles-minsize" class="form-select" style="width:auto;min-width:120px">
+              <option value="0">无最小值</option>
+              <option value="104857600" selected>≥ 100 MB</option>
+              <option value="524288000">≥ 500 MB</option>
+              <option value="1073741824">≥ 1 GB</option>
+              <option value="5368709120">≥ 5 GB</option>
+            </select>
+            <select id="bigfiles-topn" class="form-select" style="width:auto;min-width:120px">
+              <option value="50">Top 50</option>
+              <option value="100" selected>Top 100</option>
+              <option value="200">Top 200</option>
+            </select>
+            <button type="button" class="btn btn-primary" onclick="doBigFilesScan()" id="bigfilesBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
+            <button type="button" class="btn btn-ghost" onclick="stopBigFiles()" id="bigfilesStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmBigFilesDelete()" id="bigfilesDeleteBtn" disabled><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
+          </div>
+        </div>
+        <div id="bigfiles-status"></div>
+        <div id="bigfiles-list"></div>
+      </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Tab: 相似图片/视频检测 (P0-2) -->
+    
+
+    <!-- P1-4: 相似文件并排对比 (原生 <dialog>, CEF/WebView 下比自定义 modal 可靠) -->
+    <dialog id="simdupCompareDlg" style="border:none;padding:0;border-radius:12px;max-width:min(94vw,1100px);max-height:88vh;background:var(--bg-card,#fff);color:var(--color-text,#333);box-shadow:0 12px 48px rgba(0,0,0,.35)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-color,#e2e8f0)">
+        <h3 style="margin:0;font-size:15px" id="simdupCmpTitle">相似文件对比</h3>
+        <button type="button" id="simdupCmpClose" class="btn btn-ghost btn-sm" title="关闭">✕</button>
+      </div>
+      <div id="simdupCmpBody" style="padding:16px;overflow:auto;max-height:calc(88vh - 56px)"></div>
+    </dialog>
+
+    <!-- Tab: 异常文件检测 (P0-3) -->
+    
+
+    <!-- Tab: 重名冲突检测 (P2-2) -->
+    
+
+    <!-- Panel: 空目录清理 -->
+    
 
     <!-- Panel: 系统缓存清理 -->
     <div class="tab-panel" data-panel="sysjunk">
@@ -708,39 +753,7 @@
     </div>
 
     <!-- Panel: 大文件查找器 -->
-    <div class="tab-panel" data-panel="bigfiles">
-      <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="bar-chart-3"></i></div><div class="kpi-body"><div class="kpi-label">扫描候选</div><div class="kpi-value" id="bigfiles-candidates">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="clipboard-list"></i></div><div class="kpi-body"><div class="kpi-label">返回结果</div><div class="kpi-value" id="bigfiles-results">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">候选总占用</div><div class="kpi-value" id="bigfiles-total-size">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon">⏱️</div><div class="kpi-body"><div class="kpi-label">耗时</div><div class="kpi-value" id="bigfiles-elapsed">-</div></div></div>
-      </div>
-      <div class="card">
-        <div class="section-header">
-          <h2><span><i data-lucide="hard-drive"></i></span><span>大文件查找器</span></h2>
-          <div class="section-actions">
-               <div class="dup-path-list" id="bigfilesPathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('bigfiles')">📁 添加目录</button>
-            <select id="bigfiles-minsize" class="form-select" style="width:auto;min-width:120px">
-              <option value="0">无最小值</option>
-              <option value="104857600" selected>≥ 100 MB</option>
-              <option value="524288000">≥ 500 MB</option>
-              <option value="1073741824">≥ 1 GB</option>
-              <option value="5368709120">≥ 5 GB</option>
-            </select>
-            <select id="bigfiles-topn" class="form-select" style="width:auto;min-width:120px">
-              <option value="50">Top 50</option>
-              <option value="100" selected>Top 100</option>
-              <option value="200">Top 200</option>
-            </select>
-            <button type="button" class="btn btn-primary" onclick="doBigFilesScan()" id="bigfilesBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
-            <button type="button" class="btn btn-ghost" onclick="stopBigFiles()" id="bigfilesStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
-            <button type="button" class="btn btn-danger" onclick="confirmBigFilesDelete()" id="bigfilesDeleteBtn" disabled><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
-          </div>
-        </div>
-        <div id="bigfiles-status"></div>
-        <div id="bigfiles-list"></div>
-      </div>
-    </div>
+    
 
     <!-- Panel: Docker 清理 (stopped containers + build cache) -->
     

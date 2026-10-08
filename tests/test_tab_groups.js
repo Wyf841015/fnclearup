@@ -26,8 +26,8 @@ const main = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'main.js'), 'utf8');
 //   B-2: sysclean + temp + trash 并入「系统垃圾」单 tab      -2
 const EXPECTED = {
   clean: ['app', 'disk', 'docker', 'sysjunk'],
-  find:  ['dup', 'simdup', 'broken', 'namematch'],
-  space: ['diskanalysis', 'bigfiles', 'empty'],
+  find:  ['scan'],
+  space: ['diskanalysis'],
   auto:  ['schedule'],
 };
 
@@ -54,15 +54,15 @@ test('导航分组: 4 组容器存在, 且 tab 归属与设计一致', () => {
   }
 });
 
-test('导航分组: 12 个 tab 无遗漏无重复(原 15, 经方案 B 两轮合并)', () => {
+test('导航分组: 7 个 tab 无遗漏无重复(原 15, 经方案 B 三轮合并)', () => {
   const all = Object.values(parseGroupTabs()).flat();
-  assert.strictEqual(all.length, 12, `应恰好 15 个 tab, 实际 ${all.length}: ${all}`);
-  assert.strictEqual(new Set(all).size, 12, `tab 有重复: ${all}`);
+  assert.strictEqual(all.length, 7, `应恰好 15 个 tab, 实际 ${all.length}: ${all}`);
+  assert.strictEqual(new Set(all).size, 7, `tab 有重复: ${all}`);
   // 每个 tab 都有对应 panel
   const panels = [...html.matchAll(/data-panel="(\w+)"/g)].map(x => x[1]);
   const missing = all.filter(t => !panels.includes(t));
   assert.strictEqual(missing.length, 0, `这些 tab 没有对应 panel: ${missing}`);
-  assert.strictEqual(panels.length, 12, `panel 应为 15 个, 实际 ${panels.length}`);
+  assert.strictEqual(panels.length, 7, `panel 应为 15 个, 实际 ${panels.length}`);
 });
 
 test('导航分组: 每组只默认展开一个, 且恰好一个组有 active', () => {
@@ -91,8 +91,8 @@ test('导航分组: main.js 的 TAB_GROUPS 与 HTML 分组一致', () => {
   }
   // 每个 tab 必须恰好属于一个组(漏一个 → 点不到; 重复 → 记忆会串)
   const all = [...body.matchAll(/'(\w+)'/g)].map(x => x[1]);
-  assert.strictEqual(all.length, 12, `TAB_GROUPS 应含 15 个 tab, 实际 ${all.length}`);
-  assert.strictEqual(new Set(all).size, 12, `TAB_GROUPS 有重复 tab`);
+  assert.strictEqual(all.length, 7, `TAB_GROUPS 应含 15 个 tab, 实际 ${all.length}`);
+  assert.strictEqual(new Set(all).size, 7, `TAB_GROUPS 有重复 tab`);
 });
 
 test('导航分组: switchGroup 已导出(否则 inline onclick 静默失效)', () => {
@@ -122,7 +122,7 @@ test('导航分组: 组按钮都绑定了 onclick', () => {
       `组按钮 ${gid} 未绑定 onclick`);
   }
   const tabs = [...html.matchAll(/<button[^>]*data-tab="(\w+)"([^>]*)>/g)];
-  assert.strictEqual(tabs.length, 12);
+  assert.strictEqual(tabs.length, 7);
   for (const [_, tid, attrs] of tabs) {
     assert.ok(/onclick="switchTab\('/.test(attrs), `tab 按钮 ${tid} 未绑定 onclick`);
   }
@@ -169,10 +169,14 @@ test('两组 inner-tab 各自完整且互不重叠', () => {
   const sysjunk = innerTabsOf('sysjunk');
   assert.deepStrictEqual(sysjunk, ['syscache', 'tmpfiles', 'recycle'],
     `系统垃圾二级分区不符: ${sysjunk}`);
-  const overlap = docker.filter(x => sysjunk.includes(x));
+  const scan = innerTabsOf('scan');
+  assert.deepStrictEqual(scan, ['duplicates', 'similar', 'broken', 'samename', 'emptydirs', 'largefiles'],
+    `文件体检二级分区不符: ${scan}`);
+  const all = [...docker, ...sysjunk, ...scan];
+  const overlap = all.filter((x, i) => all.indexOf(x) !== i);
   assert.strictEqual(overlap.length, 0,
-    `两组 inner-tab 出现同名分区, switchInnerTab 的作用域修复会失效: ${overlap}`);
-  assert.strictEqual(new Set([...docker, ...sysjunk]).size, 8, '二级分区名应有 8 个且互不相同');
+    `多组 inner-tab 出现同名分区, switchInnerTab 的作用域修复会失效: ${overlap}`);
+  assert.strictEqual(new Set(all).size, 14, '二级分区名应有 14 个且互不相同');
 });
 
 test('Docker 合并: dockercleanup tab 与 panel 已彻底移除', () => {
@@ -273,4 +277,123 @@ test('系统垃圾合并: main.js 保留旧 tab 名的兼容别名', () => {
   const sw = main.slice(k, k + 1400);
   assert.ok(/tabName==='tmpfiles'/.test(sw) && /App\.tempScanned/.test(sw),
     "临时文件的懒加载扫描未挂到 switchInnerTab('tmpfiles')");
+});
+
+// ── 方案 B-3: 六个扫描型合并为「文件体检」 ──
+test('文件体检合并: 单 tab 内含 六个扫描分区', () => {
+  assert.ok(html.includes('data-panel="scan"'), '缺少 scan panel');
+  assert.ok(html.includes('data-tab="scan"'), '导航缺少 scan');
+  for (const inner of ['duplicates', 'similar', 'broken', 'samename', 'emptydirs', 'largefiles']) {
+    assert.ok(html.includes(`data-inner-tab="${inner}"`), `缺少二级按钮 ${inner}`);
+    assert.ok(html.includes(`data-inner-panel="${inner}"`), `缺少 inner-panel ${inner}`);
+  }
+  for (const gone of ['dup', 'simdup', 'broken', 'namematch', 'empty', 'bigfiles']) {
+    assert.ok(!html.includes(`data-panel="${gone}"`), `旧 panel ${gone} 未移除`);
+    assert.ok(!html.includes(`data-tab="${gone}"`), `旧导航 ${gone} 未移除`);
+  }
+});
+
+test('文件体检合并: 六个分区的功能元素全部保留且唯一', () => {
+  const must = {
+    duplicates: ['musicScanBtn', 'filesScanBtn', 'musicPathList', 'filesPathList'],
+    similar:    ['simdupBtn', 'simdupPathList', 'simdup-total', 'simdup-threshold'],
+    broken:     ['brokenBtn', 'brokenPathList', 'broken-total', 'broken-links'],
+    samename:   ['nmBtn', 'namePathList', 'name-groups', 'name-files'],
+    emptydirs:  ['emptyScanBtn', 'emptyPath', 'empty-count', 'empty-list'],
+    largefiles: ['bigfilesBtn', 'bigfilesPathList', 'bigfiles-candidates', 'bigfiles-topn'],
+  };
+  for (const [inner, ids] of Object.entries(must)) {
+    for (const id of ids) {
+      assert.strictEqual(html.split(`id="${id}"`).length - 1, 1,
+        `${inner} 分区的 ${id} 缺失或重复(合并后应恰好一处)`);
+    }
+  }
+});
+
+test('文件体检合并: 全局 modal 未被卷入或丢失', () => {
+  // 最后一个扫描分区(bigfiles)后面挂着全站 modal, div 深度配对容易把它们吞进 panel。
+  // 注意: 只有部分 modal 用 class="modal-overlay"(browseModal/sponsorModal 等
+  // 用别的容器写法), 所以按 id 存在性判断, 不能只查 modal-overlay。
+  for (const must of ['bigfilesDeleteModal', 'dupDeleteModal', 'emptyDeleteModal',
+                      'syscleanDeleteModal', 'trashDeleteModal', 'browseModal',
+                      'sponsorModal', 'contactModal', 'cleanupSummaryModal']) {
+    assert.ok(html.includes(`id="${must}"`), `全局 modal ${must} 丢失`);
+  }
+  // 最后一个 tab-panel 的 data-panel 应排在所有 modal 之前
+  const lastPanel = html.lastIndexOf('data-panel="');
+  const firstModal = html.indexOf('id="bigfilesDeleteModal"');
+  assert.ok(lastPanel < firstModal, '有 modal 被卷进了 tab-panel 内部');
+});
+
+test('文件体检合并: 旧 tab 名全部映射到对应二级分区', () => {
+  const map = { dup: 'duplicates', simdup: 'similar', broken: 'broken',
+                namematch: 'samename', empty: 'emptydirs', bigfiles: 'largefiles' };
+  for (const [tab, inner] of Object.entries(map)) {
+    const re = new RegExp(`${tab}:\\s*'${inner}'`);
+    assert.ok(re.test(main), `SCAN_TAB_TO_INNER 缺少 ${tab} → ${inner} 映射`);
+  }
+  const i = main.indexOf('async function switchTab');
+  const body = main.slice(i, main.indexOf('\n// ═', i));
+  assert.ok(body.includes("switchTab('scan')"), '旧 tab 名未重定向到 scan');
+  assert.ok(body.includes('SCAN_TAB_TO_INNER[tabName]'), 'switchTab 未走 SCAN_TAB_TO_INNER 映射');
+});
+
+test('SCAN_TAB_TO_INNER 定义在使用点之前(避免 TDZ)', () => {
+  const def = main.indexOf('const SCAN_TAB_TO_INNER');
+  const use = main.indexOf('async function switchTab');
+  assert.ok(def > 0 && use > 0, '缺少定义或使用点');
+  assert.ok(def < use, `SCAN_TAB_TO_INNER 定义(${def})晚于 switchTab(${use})`);
+});
+
+// ── 二级分区的位置记忆 ──
+// 这个 bug 是浏览器实测抓出来的, 结构测试看不出来:
+// switchTab('scan') 里写死 switchInnerTab('duplicates'), 导致用户在大文件分区
+// 翻页时切去别的 tab 再切回来, 位置被弹回第一个分区。
+test('二级分区记忆: panelInnerLastTab 已接入 switchTab / switchInnerTab', () => {
+  assert.ok(/const panelInnerLastTab = \{/.test(main), '缺少 panelInnerLastTab 声明');
+  for (const [panel, fallback] of [['docker', 'images'], ['sysjunk', 'syscache'], ['scan', 'duplicates']]) {
+    assert.ok(new RegExp(`switchInnerTab\\(panelInnerLastTab\\.${panel}\\|\\|\x27${fallback}\x27\\)`).test(main),
+      `switchTab 的 ${panel} 入口未读取分区记忆`);
+  }
+  // switchInnerTab 必须在切换时写回记忆
+  const i = main.indexOf('function switchInnerTab');
+  const body = main.slice(i, main.indexOf('\n}', i));
+  assert.ok(/panelInnerLastTab\[activePanel\.dataset\.panel\] = tabName/.test(body),
+    'switchInnerTab 未写回 panelInnerLastTab');
+  // 不得再有写死默认分区的入口
+  assert.ok(!/tabName===\x27scan\x27\) \{ switchInnerTab\(\x27duplicates\x27\)/.test(main),
+    "switchTab('scan') 仍写死默认分区, 会丢掉用户选中的二级分区");
+});
+
+// ── 合并时最容易漏的一环: CSS 选择器指向已删除的 panel ──
+// 方案 B-2/B-3 合并时只搬了 HTML, 一度有 19 条 CSS 规则仍指向已删除的
+// data-panel="trash"/"temp"/"bigfiles"。这类失效不会报错, 只是样式静默消失 ——
+// 回收站整套移动端 KPI 布局(2 列 + 第 5 张跨列)就是这样差点没的,
+// 结构测试发现不了, 是 test_trash_panel_mobile 先报出来的。
+test('CSS: 不得存在指向已删除 panel 的选择器', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'styles', 'style.css'), 'utf8');
+  const live = new Set([...html.matchAll(/data-panel="(\w+)"/g)].map(x => x[1]));
+  const stale = [];
+  for (const m of css.matchAll(/\[\s*data-panel\s*=\s*"([\w-]+)"[^{}]*\{/g)) {
+    if (!live.has(m[1])) stale.push(m[1]);
+  }
+  assert.strictEqual(stale.length, 0,
+    `CSS 里有 ${stale.length} 处选择器指向已不存在的 panel: ${[...new Set(stale)]} —— ` +
+    '合并时只搬了 HTML 没搬 CSS, 这些规则会静默失效');
+});
+
+test('CSS: 原 tab 有专属样式的分区, 样式必须跟着搬过来', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'styles', 'style.css'), 'utf8');
+  // recycle/tmpfiles/largefiles 原本各有专属规则(移动端 KPI 布局、图标配色),
+  // 合并时必须一起改到 inner-panel 选择器上。
+  // containers/cache 则相反 —— 原 dockercleanup tab 本就没有专属规则, 走通用
+  // .card/.kpi-card/.section-header 样式, 这里不该凭空要求它们有专属规则。
+  for (const inner of ['recycle', 'tmpfiles', 'largefiles']) {
+    const n = css.split(`data-inner-panel="${inner}"]`).length - 1;
+    assert.ok(n > 0, `分区 ${inner} 在 CSS 里没有任何规则(原 tab 的样式没有跟着搬过来)`);
+  }
+  // 回收站那套移动端 KPI 布局必须完整保留: 固定 2 列 + 第 5 张跨列
+  const kpiRow = css.slice(css.indexOf('.inner-panel[data-inner-panel="recycle"] .kpi-row{'));
+  assert.ok(/repeat\(\s*2\s*,\s*minmax\(0,\s*1fr\)\s*\)/.test(kpiRow.slice(0, 200)),
+    '回收站移动端「固定 2 列」布局丢失');
 });

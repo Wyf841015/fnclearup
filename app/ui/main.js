@@ -283,12 +283,22 @@ function selectAllHandler(tableId, checkboxClass) {
 // 15 个 tab 按使用场景归为 4 组。这里只改导航层的呈现, tab / panel / 业务逻辑一律未动。
 const TAB_GROUPS = {
   clean: ['app', 'disk', 'docker', 'sysjunk'],
-  find:  ['dup', 'simdup', 'broken', 'namematch'],
-  space: ['diskanalysis', 'bigfiles', 'empty'],
+  find:  ['scan'],
+  space: ['diskanalysis'],
   auto:  ['schedule'],
 };
 // 记忆每组上次停留的 tab, 切组时回到原位而不是跳回组内第一个
-const groupLastTab = { clean: 'app', find: 'dup', space: 'diskanalysis', auto: 'schedule' };
+const groupLastTab = { clean: 'app', find: 'scan', space: 'diskanalysis', auto: 'schedule' };
+// 每个带二级分区的 panel 上次停在哪里。少这层记忆的话, switchTab('scan') 里
+// 写死 switchInnerTab('duplicates') 会让用户每次回到该 tab 都被弹回第一个分区,
+// 在「大文件」里翻页时切走再切回就丢了位置。
+const panelInnerLastTab = { docker: 'images', sysjunk: 'syscache', scan: 'duplicates' };
+
+// 旧 tab 名 → 「文件体检」下的二级分区。旧书签/历史调度任务仍写着这些名字。
+const SCAN_TAB_TO_INNER = {
+  dup: 'duplicates', simdup: 'similar', broken: 'broken',
+  namematch: 'samename', empty: 'emptydirs', bigfiles: 'largefiles',
+};
 function tabGroupOf(tabName) {
   for (const g in TAB_GROUPS) if (TAB_GROUPS[g].includes(tabName)) return g;
   return null;
@@ -318,11 +328,18 @@ async function switchTab(tabName) {
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.dataset.panel===tabName));
   if(tabName==='app') await doScan();
   else if(tabName==='disk') { App.diskMountsLoaded=false; await loadDiskMounts(true); }
-  else if(tabName==='docker') { App.dockerVolumesLoaded=false; await loadDockerVolumes(); switchInnerTab('images'); }
+  else if(tabName==='docker') { App.dockerVolumesLoaded=false; await loadDockerVolumes(); switchInnerTab(panelInnerLastTab.docker||'images'); }
   // 「Docker 清理」已并入 docker tab 的「容器 / 缓存」分区, 保留这个别名是为了
   // 旧书签 / 历史调度任务里仍写着 switchTab('dockercleanup') 时不至于失效。
   else if(tabName==='dockercleanup') { await switchTab('docker'); switchInnerTab('containers'); }
-  else if(tabName==='sysjunk') { switchInnerTab('syscache'); }
+  else if(tabName==='scan') { switchInnerTab(panelInnerLastTab.scan||'duplicates'); }
+  // 旧 tab 名别名: dup/simdup/broken/namematch/empty/bigfiles 已并入「文件体检」的六个分区。
+  // 保留是为了旧书签与历史调度任务 —— 它们至今仍写着这些名字。
+  else if(SCAN_TAB_TO_INNER[tabName]) {
+    await switchTab('scan');
+    switchInnerTab(SCAN_TAB_TO_INNER[tabName]);
+  }
+  else if(tabName==='sysjunk') { switchInnerTab(panelInnerLastTab.sysjunk||'syscache'); }
   // 旧 tab 名别名: 系统/临时文件/回收站 已并入「系统垃圾」的三个分区。
   // 保留这些分支是为了旧书签与历史调度任务 —— 它们至今仍写着这些名字。
   else if(tabName==='sysclean'||tabName==='trash'||tabName==='temp') {
@@ -330,10 +347,6 @@ async function switchTab(tabName) {
     await switchTab('sysjunk');
     switchInnerTab(map[tabName]);
   }
-  else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
-  else if(tabName==='simdup') { /* lazy — user clicks scan */ }
-  else if(tabName==='broken') { /* lazy */ }
-  else if(tabName==='namematch') { /* lazy */ }
   else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
   else if(tabName==='diskanalysis') { if(!App.dsLoaded) { App.dsLoaded=true; dsLoadVolumes(); } }
 }
@@ -577,7 +590,9 @@ function switchInnerTab(tabName) {
   // 作用域必须限定在当前激活的 tab-panel 内。现在有两个 panel 各带一组 inner-tab
   // (docker 的 5 个 + 系统垃圾的 3 个), 早先用全局 querySelectorAll 会把对方
   // 的按钮和面板一起切成 inactive —— 切一次 Docker 再切系统垃圾就会互相抹掉。
-  const scope = document.querySelector('.tab-panel.active') || document;
+  const activePanel = document.querySelector('.tab-panel.active');
+  const scope = activePanel || document;
+  if (activePanel && activePanel.dataset.panel) panelInnerLastTab[activePanel.dataset.panel] = tabName;
   scope.querySelectorAll('.inner-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.innerTab===tabName));
   scope.querySelectorAll('.inner-panel').forEach(p=>p.classList.toggle('active',p.dataset.innerPanel===tabName));
   if(tabName==='images'&&!App.dockerImagesLoaded){App.dockerImagesLoaded=true;doImagesScan();}
@@ -587,6 +602,8 @@ function switchInnerTab(tabName) {
   else if(tabName==='containers'||tabName==='cache'){ dcCheckAvailable(); }
   // 临时文件分区: 懒加载逻辑从原 switchTab('temp') 搬过来
   else if(tabName==='tmpfiles'&&!App.tempScanned){App.tempScanned=true;doTempScan();}
+  // 空目录分区: 每次进入都重置到未扫描态(原 switchTab('empty') 的逻辑)
+  else if(tabName==='emptydirs'){ EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
 }
 
 // ── Docker Volumes ──
