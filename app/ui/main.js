@@ -282,7 +282,7 @@ function selectAllHandler(tableId, checkboxClass) {
 // ── 导航分组 ──
 // 15 个 tab 按使用场景归为 4 组。这里只改导航层的呈现, tab / panel / 业务逻辑一律未动。
 const TAB_GROUPS = {
-  clean: ['app', 'disk', 'docker', 'temp', 'sysclean', 'trash'],
+  clean: ['app', 'disk', 'docker', 'sysjunk'],
   find:  ['dup', 'simdup', 'broken', 'namematch'],
   space: ['diskanalysis', 'bigfiles', 'empty'],
   auto:  ['schedule'],
@@ -322,7 +322,14 @@ async function switchTab(tabName) {
   // 「Docker 清理」已并入 docker tab 的「容器 / 缓存」分区, 保留这个别名是为了
   // 旧书签 / 历史调度任务里仍写着 switchTab('dockercleanup') 时不至于失效。
   else if(tabName==='dockercleanup') { await switchTab('docker'); switchInnerTab('containers'); }
-  else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
+  else if(tabName==='sysjunk') { switchInnerTab('syscache'); }
+  // 旧 tab 名别名: 系统/临时文件/回收站 已并入「系统垃圾」的三个分区。
+  // 保留这些分支是为了旧书签与历史调度任务 —— 它们至今仍写着这些名字。
+  else if(tabName==='sysclean'||tabName==='trash'||tabName==='temp') {
+    const map = { sysclean:'syscache', trash:'recycle', temp:'tmpfiles' };
+    await switchTab('sysjunk');
+    switchInnerTab(map[tabName]);
+  }
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
   else if(tabName==='simdup') { /* lazy — user clicks scan */ }
   else if(tabName==='broken') { /* lazy */ }
@@ -567,13 +574,19 @@ async function doDeleteVol02() {
 // Docker Inner Tab
 // ════════════════════════════════
 function switchInnerTab(tabName) {
-  document.querySelectorAll('.inner-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.innerTab===tabName));
-  document.querySelectorAll('.inner-panel').forEach(p=>p.classList.toggle('active',p.dataset.innerPanel===tabName));
+  // 作用域必须限定在当前激活的 tab-panel 内。现在有两个 panel 各带一组 inner-tab
+  // (docker 的 5 个 + 系统垃圾的 3 个), 早先用全局 querySelectorAll 会把对方
+  // 的按钮和面板一起切成 inactive —— 切一次 Docker 再切系统垃圾就会互相抹掉。
+  const scope = document.querySelector('.tab-panel.active') || document;
+  scope.querySelectorAll('.inner-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.innerTab===tabName));
+  scope.querySelectorAll('.inner-panel').forEach(p=>p.classList.toggle('active',p.dataset.innerPanel===tabName));
   if(tabName==='images'&&!App.dockerImagesLoaded){App.dockerImagesLoaded=true;doImagesScan();}
   else if(tabName==='volumes'&&!App.dockerVolumesLoaded)loadDockerVolumes();
   else if(tabName==='networks'&&!App.dockerNetworksLoaded){App.dockerNetworksLoaded=true;doNetworksScan();}
   // 容器 / 缓存 分区来自原「Docker 清理」tab
   else if(tabName==='containers'||tabName==='cache'){ dcCheckAvailable(); }
+  // 临时文件分区: 懒加载逻辑从原 switchTab('temp') 搬过来
+  else if(tabName==='tmpfiles'&&!App.tempScanned){App.tempScanned=true;doTempScan();}
 }
 
 // ── Docker Volumes ──
