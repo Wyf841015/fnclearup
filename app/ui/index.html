@@ -29,25 +29,47 @@
   </header>
 
   <div class="tabs">
-    <div class="tab-list" role="tablist">
+    <!-- 导航分组: 15 个 tab 按使用场景归为 4 组, 功能与 tab 本身完全未动 -->
+    <div class="tab-groups" role="tablist" aria-label="功能分组">
+      <button type="button" class="group-btn active" data-group="clean" onclick="switchGroup('clean')" role="tab" aria-selected="true">清理回收</button>
+      <button type="button" class="group-btn" data-group="find" onclick="switchGroup('find')" role="tab" aria-selected="false">查找问题</button>
+      <button type="button" class="group-btn" data-group="space" onclick="switchGroup('space')" role="tab" aria-selected="false">空间分析</button>
+      <button type="button" class="group-btn" data-group="auto" onclick="switchGroup('auto')" role="tab" aria-selected="false">自动化</button>
+    </div>
+
+    <!-- 分组: 清理回收 -->
+    <div class="tab-list active" data-group-list="clean" role="tablist">
       <button type="button" class="tab-btn active" data-tab="app" onclick="switchTab('app')" role="tab" aria-selected="true"><i data-lucide="package"></i> 应用</button>
       <button type="button" class="tab-btn" data-tab="disk" onclick="switchTab('disk')" role="tab" aria-selected="false"><i data-lucide="disc-3"></i> 网盘</button>
       <button type="button" class="tab-btn" data-tab="docker" onclick="switchTab('docker')" role="tab" aria-selected="false"><i data-lucide="container"></i> Docker</button>
       <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false"><i data-lucide="clock"></i> tmp</button>
-      <button type="button" class="tab-btn" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="false"><i data-lucide="clipboard-list"></i> 去重</button>
+      <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
+      <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
+      <button type="button" class="tab-btn" data-tab="dockercleanup" onclick="switchTab('dockercleanup')" role="tab" aria-selected="false"><i data-lucide="container"></i> Docker 清理</button>
+    </div>
+
+    <!-- 分组: 查找问题 -->
+    <div class="tab-list" data-group-list="find" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="dup" onclick="switchTab('dup')" role="tab" aria-selected="true"><i data-lucide="clipboard-list"></i> 去重</button>
       <button type="button" class="tab-btn" data-tab="simdup" onclick="switchTab('simdup')" role="tab" aria-selected="false"><i data-lucide="images"></i> 相似</button>
       <button type="button" class="tab-btn" data-tab="broken" onclick="switchTab('broken')" role="tab" aria-selected="false"><i data-lucide="file-x"></i> 异常</button>
       <button type="button" class="tab-btn" data-tab="namematch" onclick="switchTab('namematch')" role="tab" aria-selected="false"><i data-lucide="copy-x"></i> 重名</button>
-      <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false"><i data-lucide="inbox"></i> 去空</button>
-      <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
-      <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
-      <button type="button" class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="false"><i data-lucide="clock"></i> 定时</button>
-      <button type="button" class="tab-btn" data-tab="diskanalysis" onclick="switchTab('diskanalysis')" role="tab" aria-selected="false"><i data-lucide="pie-chart"></i> 空间</button>
-      <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false"><i data-lucide="hard-drive"></i> 大文件</button>
-      <button type="button" class="tab-btn" data-tab="dockercleanup" onclick="switchTab('dockercleanup')" role="tab" aria-selected="false"><i data-lucide="container"></i> 清理</button>
     </div>
 
-    <!-- Tab 1: 应用残余 -->
+    <!-- 分组: 空间分析 -->
+    <div class="tab-list" data-group-list="space" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="diskanalysis" onclick="switchTab('diskanalysis')" role="tab" aria-selected="true"><i data-lucide="pie-chart"></i> 空间</button>
+      <button type="button" class="tab-btn" data-tab="bigfiles" onclick="switchTab('bigfiles')" role="tab" aria-selected="false"><i data-lucide="hard-drive"></i> 大文件</button>
+      <button type="button" class="tab-btn" data-tab="empty" onclick="switchTab('empty')" role="tab" aria-selected="false"><i data-lucide="inbox"></i> 去空</button>
+    </div>
+
+    <!-- 分组: 自动化 -->
+    <div class="tab-list" data-group-list="auto" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="true"><i data-lucide="clock"></i> 定时</button>
+    </div>
+
+
+    <!-- Panel: 应用残余 -->
     <div class="tab-panel active" data-panel="app">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="package"></i></div><div class="kpi-body"><div class="kpi-label">安装应用</div><div class="kpi-value" id="installed-count">-</div></div></div>
@@ -70,7 +92,7 @@
       </div>
     </div>
 
-    <!-- Tab 2: 网盘残余 -->
+    <!-- Panel: 网盘残余 -->
     <div class="tab-panel" data-panel="disk">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder-open"></i></div><div class="kpi-body"><div class="kpi-label">目录总数</div><div class="kpi-value" id="vol02-total-count">-</div></div></div>
@@ -91,7 +113,7 @@
       </div>
     </div>
 
-    <!-- Tab 3: Docker -->
+    <!-- Panel: Docker -->
     <div class="tab-panel" data-panel="docker">
       <div class="inner-tabs">
         <div class="inner-tab-list">
@@ -159,7 +181,7 @@
       </div>
     </div>
 
-    <!-- Tab 4: tmp -->
+    <!-- Panel: tmp -->
     <div class="tab-panel" data-panel="temp">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder"></i></div><div class="kpi-body"><div class="kpi-label">临时目录</div><div class="kpi-value" id="temp-dirs-count">-</div></div></div>
@@ -178,7 +200,7 @@
       </div>
     </div>
 
-    <!-- Tab 5: 重复文件 -->
+    <!-- Panel: 重复文件 -->
     <div class="tab-panel" data-panel="dup">
       <div class="dup-inner-tabs">
         <div class="dup-inner-tab-list">
@@ -388,7 +410,7 @@
       </div>
     </div>
 
-    <!-- Tab 6: 空目录清理 -->
+    <!-- Panel: 空目录清理 -->
     <div class="tab-panel" data-panel="empty">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder"></i></div><div class="kpi-body"><div class="kpi-label">空目录数</div><div class="kpi-value" id="empty-count">-</div></div></div>
@@ -425,7 +447,7 @@
       </div>
     </div>
 
-    <!-- Tab 7: 系统缓存清理 -->
+    <!-- Panel: 系统缓存清理 -->
     <div class="tab-panel" data-panel="sysclean">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="broom"></i></div><div class="kpi-body"><div class="kpi-label">可清理项</div><div class="kpi-value" id="sysclean-count">-</div></div></div>
@@ -470,7 +492,7 @@
       </div>
     </div>
 
-    <!-- Tab 8: 回收站清理 -->
+    <!-- Panel: 回收站清理 -->
     <div class="tab-panel" id="trashPanel" data-panel="trash" hidden>
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">30 天+</div><div class="kpi-value" id="trashKpi30">-</div></div></div>
@@ -493,7 +515,7 @@
       <div id="trash-empty" class="dup-empty-state"><div class="dup-empty-icon">🗑️</div><h3>尚未开始扫描</h3><p>扫描 /vol*/UID/.@#local/trash/ 下的过期文件，按 30/90/365 天分级清理。删除前自动写 manifest 备份到 <code>data/manifests/</code>。</p></div>
     </div>
 
-    <!-- Tab 9: 定时清理 -->
+    <!-- Panel: 定时清理 -->
     <div class="tab-panel" data-panel="schedule">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon">⏰</div><div class="kpi-body"><div class="kpi-label">状态</div><div class="kpi-value" id="scheduleStatus">-</div></div></div>
@@ -619,7 +641,7 @@
       </div>
     </div>
 
-    <!-- Tab 10: 大文件查找器 -->
+    <!-- Panel: 大文件查找器 -->
     <div class="tab-panel" data-panel="bigfiles">
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="bar-chart-3"></i></div><div class="kpi-body"><div class="kpi-label">扫描候选</div><div class="kpi-value" id="bigfiles-candidates">-</div></div></div>
@@ -654,7 +676,7 @@
       </div>
     </div>
 
-    <!-- Tab 11: Docker 清理 (stopped containers + build cache) -->
+    <!-- Panel: Docker 清理 (stopped containers + build cache) -->
     <div class="tab-panel" data-panel="dockercleanup">
       <div id="dockercleanup-unavailable" class="card" style="display:none">
         <div style="text-align:center;padding:24px;color:var(--color-text-muted)">

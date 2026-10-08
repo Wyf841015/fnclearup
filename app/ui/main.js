@@ -279,7 +279,41 @@ function selectAllHandler(tableId, checkboxClass) {
 // ════════════════════════════════
 // Tab switching
 // ════════════════════════════════
+// ── 导航分组 ──
+// 15 个 tab 按使用场景归为 4 组。这里只改导航层的呈现, tab / panel / 业务逻辑一律未动。
+const TAB_GROUPS = {
+  clean: ['app', 'disk', 'docker', 'temp', 'sysclean', 'trash', 'dockercleanup'],
+  find:  ['dup', 'simdup', 'broken', 'namematch'],
+  space: ['diskanalysis', 'bigfiles', 'empty'],
+  auto:  ['schedule'],
+};
+// 记忆每组上次停留的 tab, 切组时回到原位而不是跳回组内第一个
+const groupLastTab = { clean: 'app', find: 'dup', space: 'diskanalysis', auto: 'schedule' };
+function tabGroupOf(tabName) {
+  for (const g in TAB_GROUPS) if (TAB_GROUPS[g].includes(tabName)) return g;
+  return null;
+}
+// 只切换组按钮与组内 tab 列表的可见性, 不碰 panel —— 避免与 switchTab 相互递归
+function showGroup(g) {
+  document.querySelectorAll('.group-btn').forEach(b => {
+    const on = b.dataset.group === g;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.tab-list').forEach(l => {
+    l.classList.toggle('active', l.dataset.groupList === g);
+  });
+}
+function switchGroup(g) {
+  if (!TAB_GROUPS[g]) return;
+  showGroup(g);
+  switchTab(groupLastTab[g] || TAB_GROUPS[g][0]);
+}
+
 async function switchTab(tabName) {
+  // 若目标 tab 不在当前显示的组里, 顺手把组切过去(例如从「清理回收」直接跳到「定时」)
+  const g = tabGroupOf(tabName);
+  if (g) { showGroup(g); groupLastTab[g] = tabName; }
   document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.toggle('active',b.dataset.tab===tabName);b.setAttribute('aria-selected',b.dataset.tab===tabName?'true':'false');});
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.dataset.panel===tabName));
   if(tabName==='app') await doScan();
@@ -3234,6 +3268,7 @@ function init() {
   const exports = {
     toggleTheme, showSponsorModal, showSponsorImgFull, showContactModal,
     showCleanupSummary, refreshCleanupSummary, filterTable, exportTableToCSV,
+    switchGroup,
     switchTab,
     doScan, selectAllApp, updateSelectInfo,
     confirmDelete, doDelete, closeModal,
