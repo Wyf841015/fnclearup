@@ -282,7 +282,7 @@ function selectAllHandler(tableId, checkboxClass) {
 // ── 导航分组 ──
 // 15 个 tab 按使用场景归为 4 组。这里只改导航层的呈现, tab / panel / 业务逻辑一律未动。
 const TAB_GROUPS = {
-  clean: ['app', 'disk', 'docker', 'temp', 'sysclean', 'trash', 'dockercleanup'],
+  clean: ['app', 'disk', 'docker', 'temp', 'sysclean', 'trash'],
   find:  ['dup', 'simdup', 'broken', 'namematch'],
   space: ['diskanalysis', 'bigfiles', 'empty'],
   auto:  ['schedule'],
@@ -318,7 +318,10 @@ async function switchTab(tabName) {
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.dataset.panel===tabName));
   if(tabName==='app') await doScan();
   else if(tabName==='disk') { App.diskMountsLoaded=false; await loadDiskMounts(true); }
-  else if(tabName==='docker') { App.dockerVolumesLoaded=false; await loadDockerVolumes(); switchInnerTab('volumes'); }
+  else if(tabName==='docker') { App.dockerVolumesLoaded=false; await loadDockerVolumes(); switchInnerTab('images'); }
+  // 「Docker 清理」已并入 docker tab 的「容器 / 缓存」分区, 保留这个别名是为了
+  // 旧书签 / 历史调度任务里仍写着 switchTab('dockercleanup') 时不至于失效。
+  else if(tabName==='dockercleanup') { await switchTab('docker'); switchInnerTab('containers'); }
   else if(tabName==='temp'&&!App.tempScanned) { App.tempScanned=true; await doTempScan(); }
   else if(tabName==='empty') { EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
   else if(tabName==='simdup') { /* lazy — user clicks scan */ }
@@ -326,7 +329,6 @@ async function switchTab(tabName) {
   else if(tabName==='namematch') { /* lazy */ }
   else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
   else if(tabName==='diskanalysis') { if(!App.dsLoaded) { App.dsLoaded=true; dsLoadVolumes(); } }
-  else if(tabName==='dockercleanup') { dcCheckAvailable(); }
 }
 
 // ════════════════════════════════
@@ -570,6 +572,8 @@ function switchInnerTab(tabName) {
   if(tabName==='images'&&!App.dockerImagesLoaded){App.dockerImagesLoaded=true;doImagesScan();}
   else if(tabName==='volumes'&&!App.dockerVolumesLoaded)loadDockerVolumes();
   else if(tabName==='networks'&&!App.dockerNetworksLoaded){App.dockerNetworksLoaded=true;doNetworksScan();}
+  // 容器 / 缓存 分区来自原「Docker 清理」tab
+  else if(tabName==='containers'||tabName==='cache'){ dcCheckAvailable(); }
 }
 
 // ── Docker Volumes ──
@@ -1855,8 +1859,21 @@ async function dcCheckAvailable() {
   ]);
   const available = !!(stopped.available && cache.available);
   const daemon = !!(stopped.daemon && cache.daemon);
+  // Docker 不可用时: 顶部提示卡显示, 并把「容器 / 缓存」两个入口藏起来。
+  // 原来的 dockercleanup-main 包裹层已随 tab 合并删除 —— 这两个分区各自带
+  // 独立的 kpi-row, 不再需要共用一个开关容器。
   $('dockercleanup-unavailable').style.display = available ? 'none' : '';
-  $('dockercleanup-main').style.display = available ? '' : 'none';
+  document.querySelectorAll('[data-inner-tab="containers"],[data-inner-tab="cache"]')
+    .forEach(b => { b.style.display = available ? '' : 'none'; });
+  document.querySelectorAll('[data-inner-panel="containers"],[data-inner-panel="cache"]')
+    .forEach(p => { if (!available) p.classList.remove('active'); });
+  if (!available) {
+    // 当前若正停在容器/缓存, 退回镜像分区, 否则会空白一片
+    const cur = document.querySelector('.inner-tab-btn.active');
+    if (cur && (cur.dataset.innerTab === 'containers' || cur.dataset.innerTab === 'cache')) {
+      switchInnerTab('images');
+    }
+  }
   if (!available) return;
   // Auto-populate cache card even without explicit scan (cheap)
   if (cache.build_cache) {

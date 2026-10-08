@@ -19,8 +19,10 @@ const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'index.html'), 'utf8');
 const main = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'main.js'), 'utf8');
 
+// 方案 B 合并后: dockercleanup 已并入 docker tab 的「容器 / 缓存」两个分区,
+// tab 总数 15 → 14。这个数字变化是预期内的, 由本文件同步锁住。
 const EXPECTED = {
-  clean: ['app', 'disk', 'docker', 'temp', 'sysclean', 'trash', 'dockercleanup'],
+  clean: ['app', 'disk', 'docker', 'temp', 'sysclean', 'trash'],
   find:  ['dup', 'simdup', 'broken', 'namematch'],
   space: ['diskanalysis', 'bigfiles', 'empty'],
   auto:  ['schedule'],
@@ -49,15 +51,15 @@ test('导航分组: 4 组容器存在, 且 tab 归属与设计一致', () => {
   }
 });
 
-test('导航分组: 15 个 tab 无遗漏无重复', () => {
+test('导航分组: 14 个 tab 无遗漏无重复(原 15, dockercleanup 已并入 docker)', () => {
   const all = Object.values(parseGroupTabs()).flat();
-  assert.strictEqual(all.length, 15, `应恰好 15 个 tab, 实际 ${all.length}: ${all}`);
-  assert.strictEqual(new Set(all).size, 15, `tab 有重复: ${all}`);
+  assert.strictEqual(all.length, 14, `应恰好 15 个 tab, 实际 ${all.length}: ${all}`);
+  assert.strictEqual(new Set(all).size, 14, `tab 有重复: ${all}`);
   // 每个 tab 都有对应 panel
   const panels = [...html.matchAll(/data-panel="(\w+)"/g)].map(x => x[1]);
   const missing = all.filter(t => !panels.includes(t));
   assert.strictEqual(missing.length, 0, `这些 tab 没有对应 panel: ${missing}`);
-  assert.strictEqual(panels.length, 15, `panel 应为 15 个, 实际 ${panels.length}`);
+  assert.strictEqual(panels.length, 14, `panel 应为 15 个, 实际 ${panels.length}`);
 });
 
 test('导航分组: 每组只默认展开一个, 且恰好一个组有 active', () => {
@@ -86,8 +88,8 @@ test('导航分组: main.js 的 TAB_GROUPS 与 HTML 分组一致', () => {
   }
   // 每个 tab 必须恰好属于一个组(漏一个 → 点不到; 重复 → 记忆会串)
   const all = [...body.matchAll(/'(\w+)'/g)].map(x => x[1]);
-  assert.strictEqual(all.length, 15, `TAB_GROUPS 应含 15 个 tab, 实际 ${all.length}`);
-  assert.strictEqual(new Set(all).size, 15, `TAB_GROUPS 有重复 tab`);
+  assert.strictEqual(all.length, 14, `TAB_GROUPS 应含 15 个 tab, 实际 ${all.length}`);
+  assert.strictEqual(new Set(all).size, 14, `TAB_GROUPS 有重复 tab`);
 });
 
 test('导航分组: switchGroup 已导出(否则 inline onclick 静默失效)', () => {
@@ -117,7 +119,7 @@ test('导航分组: 组按钮都绑定了 onclick', () => {
       `组按钮 ${gid} 未绑定 onclick`);
   }
   const tabs = [...html.matchAll(/<button[^>]*data-tab="(\w+)"([^>]*)>/g)];
-  assert.strictEqual(tabs.length, 15);
+  assert.strictEqual(tabs.length, 14);
   for (const [_, tid, attrs] of tabs) {
     assert.ok(/onclick="switchTab\('/.test(attrs), `tab 按钮 ${tid} 未绑定 onclick`);
   }
@@ -133,4 +135,46 @@ test('响应式: 分组容器用 flex-wrap 而非 max-width 媒体查询', () =>
     '.tab-groups 必须用 flex-wrap:wrap, 不能靠媒体查询');
   assert.ok(/\.tab-list\{[^}]*display:none/.test(css) && /\.tab-list\.active\{display:flex\}/.test(css),
     '非当前组的 tab-list 必须隐藏, 当前组显示为 flex');
+});
+// ── 方案 B-1: Docker + Docker 清理 合并 ──
+test('Docker 合并: 单 tab 内含 镜像/容器/卷/网络/缓存 五个二级分区', () => {
+  const inners = [...html.matchAll(/data-inner-tab="(\w+)"/g)].map(x => x[1]);
+  assert.deepStrictEqual(inners, ['images', 'containers', 'volumes', 'networks', 'cache'],
+    `Docker 二级分区不符: ${inners}`);
+  // 每个分区按钮都要有对应的 panel, 否则切过去是空白
+  for (const it of inners) {
+    assert.ok(html.includes(`data-inner-panel="${it}"`),
+      `分区 ${it} 有按钮但没有对应 inner-panel`);
+  }
+});
+
+test('Docker 合并: dockercleanup tab 与 panel 已彻底移除', () => {
+  assert.ok(!html.includes('data-tab="dockercleanup"'), '导航里还残留 dockercleanup 按钮');
+  assert.ok(!html.includes('data-panel="dockercleanup"'), '还残留 dockercleanup panel');
+  assert.ok(!html.includes('id="dockercleanup-main"'), 'dockercleanup-main 包裹层未删除');
+  // 不可用提示卡保留(docker 不可达时仍要提示), 但归到 docker panel
+  assert.strictEqual(html.split('id="dockercleanup-unavailable"').length - 1, 1,
+    'Docker 不可用提示卡应保留且只有一处');
+  // dc-* 的功能 id 必须都在(只是换了位置)
+  for (const id of ['dc-stopped-count', 'dc-stopped-size', 'dc-stopped-list', 'dcScanBtn',
+                    'dcRemoveBtn', 'dcDryRun', 'dc-cache-total', 'dc-cache-reclaim',
+                    'dc-cache-status', 'dcPruneBtn']) {
+    assert.ok(html.includes(`id="${id}"`), `合并后丢了 ${id}`);
+  }
+});
+
+test('Docker 合并: main.js 侧 dockercleanup 仅保留兼容别名', () => {
+  // switchTab('dockercleanup') 必须重定向到 docker, 否则旧入口静默失效
+  assert.ok(/tabName===\x27dockercleanup\x27[\s\S]{0,120}switchTab\(\x27docker\x27\)/.test(main),
+    "switchTab('dockercleanup') 未重定向到 docker");
+  // dcCheckAvailable 不能再引用已删除的包裹层
+  const i = main.indexOf('async function dcCheckAvailable');
+  const body = main.slice(i, i + 1800);
+  assert.ok(!/\$\(\x27dockercleanup-main\x27\)/.test(body),
+    'dcCheckAvailable 仍在引用已删除的 dockercleanup-main');
+  // containers / cache 分区要能触发 Docker 可用性检查
+  const j = main.indexOf('function switchInnerTab');
+  const sw = main.slice(j, j + 700);
+  assert.ok(/tabName===\x27containers\x27/.test(sw) && /tabName===\x27cache\x27/.test(sw),
+    'switchInnerTab 未处理 containers / cache 分区');
 });
