@@ -32,9 +32,9 @@
     <!-- 导航分组: 15 个 tab 按使用场景归为 4 组, 功能与 tab 本身完全未动 -->
     <div class="tab-groups" role="tablist" aria-label="功能分组">
       <button type="button" class="group-btn active" data-group="clean" onclick="switchGroup('clean')" role="tab" aria-selected="true">清理回收</button>
-      <button type="button" class="group-btn" data-group="find" onclick="switchGroup('find')" role="tab" aria-selected="false">查找问题</button>
+      <button type="button" class="group-btn" data-group="find" onclick="switchGroup('find')" role="tab" aria-selected="false">文件清理</button>
       <button type="button" class="group-btn" data-group="space" onclick="switchGroup('space')" role="tab" aria-selected="false">空间分析</button>
-      <button type="button" class="group-btn" data-group="auto" onclick="switchGroup('auto')" role="tab" aria-selected="false">自动化</button>
+      <button type="button" class="group-btn" data-group="auto" onclick="switchGroup('auto')" role="tab" aria-selected="false">定时清理</button>
     </div>
 
     <!-- 分组: 清理回收 -->
@@ -45,7 +45,7 @@
       <button type="button" class="tab-btn" data-tab="sysjunk" onclick="switchTab('sysjunk')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统垃圾</button>
     </div>
 
-    <!-- 分组: 查找问题 -->
+    <!-- 分组: 文件清理 -->
     <div class="tab-list" data-group-list="find" role="tablist">
       <button type="button" class="tab-btn" data-tab="scan" onclick="switchTab('scan')" role="tab" aria-selected="false"><i data-lucide="clipboard-list"></i> 文件体检</button>
     </div>
@@ -55,7 +55,7 @@
       <button type="button" class="tab-btn active" data-tab="diskanalysis" onclick="switchTab('diskanalysis')" role="tab" aria-selected="true"><i data-lucide="pie-chart"></i> 空间</button>
     </div>
 
-    <!-- 分组: 自动化 -->
+    <!-- 分组: 定时清理 -->
     <div class="tab-list" data-group-list="auto" role="tablist">
       <button type="button" class="tab-btn active" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="true"><i data-lucide="clock"></i> 定时</button>
     </div>

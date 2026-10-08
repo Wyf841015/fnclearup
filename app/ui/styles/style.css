@@ -86,7 +86,7 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 
 /* Tabs */
 /* ── 导航分组 ──
-   15 个 tab 按使用场景归为 4 组(清理回收/查找问题/空间分析/自动化)。
+   15 个 tab 按使用场景归为 4 组(清理回收/文件清理/空间分析/定时清理)。
    响应式要点: 组按钮排在基础规则里用 flex-wrap, 不用 max-width 媒体查询 ——
    fnOS 移动 WebView 常以桌面 UA 渲染, max-width 断点根本不触发。 */
 .tab-groups{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
