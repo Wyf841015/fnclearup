@@ -42,9 +42,7 @@
       <button type="button" class="tab-btn active" data-tab="app" onclick="switchTab('app')" role="tab" aria-selected="true"><i data-lucide="package"></i> 应用</button>
       <button type="button" class="tab-btn" data-tab="disk" onclick="switchTab('disk')" role="tab" aria-selected="false"><i data-lucide="disc-3"></i> 网盘</button>
       <button type="button" class="tab-btn" data-tab="docker" onclick="switchTab('docker')" role="tab" aria-selected="false"><i data-lucide="container"></i> Docker</button>
-      <button type="button" class="tab-btn" data-tab="temp" onclick="switchTab('temp')" role="tab" aria-selected="false"><i data-lucide="clock"></i> tmp</button>
-      <button type="button" class="tab-btn" data-tab="sysclean" onclick="switchTab('sysclean')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统</button>
-      <button type="button" class="tab-btn" data-tab="trash" onclick="switchTab('trash')" role="tab" aria-selected="false"><i data-lucide="trash-2"></i> 回收站</button>
+      <button type="button" class="tab-btn" data-tab="sysjunk" onclick="switchTab('sysjunk')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统垃圾</button>
     </div>
 
     <!-- 分组: 查找问题 -->
@@ -235,24 +233,6 @@
     </div>
         </div>
       </div><!-- Panel: tmp -->
-    <div class="tab-panel" data-panel="temp">
-      <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder"></i></div><div class="kpi-body"><div class="kpi-label">临时目录</div><div class="kpi-value" id="temp-dirs-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-text"></i></div><div class="kpi-body"><div class="kpi-label">过期文件</div><div class="kpi-value" id="temp-files-count">-</div></div></div>
-        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">总大小</div><div class="kpi-value" id="temp-total-size">-</div></div></div>
-      </div>
-      <div class="card">
-        <div class="section-header"><h2><span><i data-lucide="clock"></i></span><span>临时文件</span></h2>
-          <div class="section-actions">
-            <button type="button" class="btn btn-primary" onclick="doTempScan()"><span><i data-lucide="search"></i></span><span>扫描目录</span></button>
-            <button type="button" class="btn btn-danger" onclick="confirmDeleteTemp()" disabled id="deleteTempBtn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
-          </div>
-          <div id="temp-select-info" class="select-info" style="display:none"></div>
-        </div>
-        <div id="temp-status"></div><div id="temp-list" style="margin-top:12px"></div>
-      </div>
-    </div>
-
     <!-- Panel: 重复文件 -->
     <div class="tab-panel" data-panel="dup">
       <div class="dup-inner-tabs">
@@ -501,8 +481,23 @@
     </div>
 
     <!-- Panel: 系统缓存清理 -->
-    <div class="tab-panel" data-panel="sysclean">
-      <div class="kpi-row">
+    <div class="tab-panel" data-panel="sysjunk">
+      <div id="sysjunk-unavailable" class="card" style="display:none">
+        <div style="text-align:center;padding:24px;color:var(--color-text-muted)">
+          <div style="font-size:48px;margin-bottom:12px">🧹</div>
+          <h3 style="margin:0 0 8px 0;color:var(--color-text-primary)">该分区暂不可用</h3>
+          <p style="margin:0" id="sysjunk-unavailable-msg"></p>
+        </div>
+      </div>
+      <div class="inner-tabs">
+        <div class="inner-tab-list">
+          <button type="button" class="inner-tab-btn active" data-inner-tab="syscache" onclick="switchInnerTab('syscache')" title="系统缓存与应用残留"><span><i data-lucide="broom"></i></span><span>系统缓存</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="tmpfiles" onclick="switchInnerTab('tmpfiles')" title="临时目录里的过期文件"><span><i data-lucide="clock"></i></span><span>临时文件</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="recycle" onclick="switchInnerTab('recycle')" title="回收站分级清理"><span><i data-lucide="trash-2"></i></span><span>回收站</span></button>
+        </div>
+
+        <div class="inner-panel active" data-inner-panel="syscache">
+<div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="broom"></i></div><div class="kpi-body"><div class="kpi-label">可清理项</div><div class="kpi-value" id="sysclean-count">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">总可释放</div><div class="kpi-value" id="sysclean-total">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="check"></i></div><div class="kpi-body"><div class="kpi-label">已选中</div><div class="kpi-value" id="sysclean-selected-count">0</div></div></div>
@@ -543,11 +538,28 @@
         <div id="sysclean-list" style="margin-top:12px"></div>
         <div id="sysclean-empty" class="dup-empty-state"><div class="dup-empty-icon">🧹</div><h3>尚未开始扫描</h3><p>扫描 APT 缓存、NPM/PIP 缓存、系统日志轮转文件、缩略图、浏览器缓存等可清理项。</p></div>
       </div>
-    </div>
+        </div>
 
-    <!-- Panel: 回收站清理 -->
-    <div class="tab-panel" id="trashPanel" data-panel="trash" hidden>
-      <div class="kpi-row">
+        <div class="inner-panel" data-inner-panel="tmpfiles">
+<div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="folder"></i></div><div class="kpi-body"><div class="kpi-label">临时目录</div><div class="kpi-value" id="temp-dirs-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-text"></i></div><div class="kpi-body"><div class="kpi-label">过期文件</div><div class="kpi-value" id="temp-files-count">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="save"></i></div><div class="kpi-body"><div class="kpi-label">总大小</div><div class="kpi-value" id="temp-total-size">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header"><h2><span><i data-lucide="clock"></i></span><span>临时文件</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" onclick="doTempScan()"><span><i data-lucide="search"></i></span><span>扫描目录</span></button>
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteTemp()" disabled id="deleteTempBtn"><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
+          </div>
+          <div id="temp-select-info" class="select-info" style="display:none"></div>
+        </div>
+        <div id="temp-status"></div><div id="temp-list" style="margin-top:12px"></div>
+      </div>
+        </div>
+
+        <div class="inner-panel" data-inner-panel="recycle">
+<div class="kpi-row">
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">30 天+</div><div class="kpi-value" id="trashKpi30">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">90 天+</div><div class="kpi-value" id="trashKpi90">-</div></div></div>
         <div class="kpi-card"><div class="kpi-icon"><i data-lucide="headstone"></i></div><div class="kpi-body"><div class="kpi-label">1 年+</div><div class="kpi-value" id="trashKpi365">-</div></div></div>
@@ -566,8 +578,9 @@
       <div id="trash-list" style="margin-top:12px"></div>
       <div id="trash-other" style="margin-top:16px"></div>
       <div id="trash-empty" class="dup-empty-state"><div class="dup-empty-icon">🗑️</div><h3>尚未开始扫描</h3><p>扫描 /vol*/UID/.@#local/trash/ 下的过期文件，按 30/90/365 天分级清理。删除前自动写 manifest 备份到 <code>data/manifests/</code>。</p></div>
-    </div>
-
+        </div>
+      </div>
+    </div><!-- Panel: 回收站清理 -->
     <!-- Panel: 定时清理 -->
     <div class="tab-panel" data-panel="schedule">
       <div class="kpi-row">
