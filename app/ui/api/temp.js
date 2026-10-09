@@ -1,15 +1,20 @@
 import { existsSync, readdirSync, lstatSync, unlinkSync, renameSync, cpSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { join, basename, dirname, extname } from 'node:path';
+import { join, basename, dirname, extname, resolve } from 'node:path';
 import { sendJSON, execCmd, parseBody, formatBytes } from '../lib/util.js';
 import { TEMP_DIRS } from '../lib/config.js';
 
 // Whitelist: only allow deletion of paths inside /tmp or /var/tmp
+//
+// P0 安全: 必须先 resolve() 消除 '..' 再判断。原先用 p.startsWith('/tmp/'),
+// 对 '/tmp/../etc/cron.d/x' 返回 true, 但 rm 自身会解析 '..', 删除落到 /tmp 之外。
+// resolve 后 '/tmp/../etc/...' === '/etc/...' → 正确拒绝。
 function isTempPath(p) {
   if (typeof p !== 'string') return false;
-  if (p === '/tmp' || p === '/var/tmp' ||
-      p.startsWith('/tmp/') || p.startsWith('/var/tmp/')) return true;
+  const n = resolve(p);
+  if (n === '/tmp' || n === '/var/tmp' ||
+      n.startsWith('/tmp/') || n.startsWith('/var/tmp/')) return true;
   // Test fixture allowlist
-  if (process.env.TRM_FNCLEARUP_TEST === '1' && p.startsWith('/tmp/fnclearup_test')) return true;
+  if (process.env.TRM_FNCLEARUP_TEST === '1' && (n === '/tmp/fnclearup_test' || n.startsWith('/tmp/fnclearup_test/'))) return true;
   return false;
 }
 

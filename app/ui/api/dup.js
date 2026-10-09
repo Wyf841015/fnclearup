@@ -245,12 +245,21 @@ async function checkPause(state, stateFile, update) {
   return wasAborted;
 }
 
+// P0 安全: jobId 直接拼进状态文件路径 join(DUP_STATE_DIR, `dup_${jobId}.json`),
+// 而 stop/pause/resume 会 writeFileSync(tmp)+renameSync 覆盖目标文件。
+// jobId 含 '../' 即可写到状态目录之外(进程 root 运行)。
+// 生成侧 jobId = 'dup_' + randomUUID().slice(0,8) (见 handleDupStart),
+// 这里按同样形状校验, 与 broken.js(/^broken_/)/namematch.js(/^name_/)/simdup.js(/^simdup_/) 一致。
+function isValidDupJobId(jobId) {
+  return typeof jobId === 'string' && /^dup_[0-9a-f]{1,32}$/.test(jobId);
+}
+
 // GET /api/dup/status?jobId=xxx&start=0&limit=50
 export function handleDupStatus(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const params = parseQuery(url);
   const jobId = params.jobId || '';
-  if (!jobId) { sendJSON(res, 400, { error: '缺少 jobId 参数', success: false }); return; }
+  if (!isValidDupJobId(jobId)) { sendJSON(res, 400, { error: 'jobId 非法', success: false }); return; }
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 404, { error: '任务不存在', success: false }); return; }
   try {
@@ -448,7 +457,7 @@ export async function handleDupExport(req, res) {
 export async function handleDupStop(req, res) {
   const data = await parseBody(req);
   const jobId = data.jobId;
-  if (!jobId) { sendJSON(res, 400, { success: false }); return; }
+  if (!isValidDupJobId(jobId)) { sendJSON(res, 400, { success: false, error: 'jobId 非法' }); return; }
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 200, { success: false, stopped: false }); return; }
   try {
@@ -465,7 +474,7 @@ export async function handleDupStop(req, res) {
 export async function handleDupPause(req, res) {
   const data = await parseBody(req);
   const jobId = data.jobId;
-  if (!jobId) { sendJSON(res, 400, { success: false }); return; }
+  if (!isValidDupJobId(jobId)) { sendJSON(res, 400, { success: false, error: 'jobId 非法' }); return; }
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 200, { success: false, paused: false }); return; }
   try {
@@ -484,7 +493,7 @@ export async function handleDupPause(req, res) {
 export async function handleDupResume(req, res) {
   const data = await parseBody(req);
   const jobId = data.jobId;
-  if (!jobId) { sendJSON(res, 400, { success: false }); return; }
+  if (!isValidDupJobId(jobId)) { sendJSON(res, 400, { success: false, error: 'jobId 非法' }); return; }
   const stateFile = join(DUP_STATE_DIR, `dup_${jobId}.json`);
   if (!existsSync(stateFile)) { sendJSON(res, 200, { success: false, resumed: false }); return; }
   try {
