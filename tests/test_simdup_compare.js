@@ -132,7 +132,14 @@ test('对比弹窗: 真执行渲染出每个文件的缩略图与相似度', () 
   assert.match(r.title, /第 1 组/, '标题未含组号');
   assert.match(r.title, /最相似 97%/, '标题未点明组内最相似度');
   // 路径必须 URL 编码, 防止中文/特殊字符破坏 URL
-  assert.ok(!/%E5%9B%BE%E7%89%87/.test(r.html) || /%25/.test(r.html) || true, 'URL 编码由 encodeURIComponent 负责');
+  // 路径必须经 encodeURIComponent 编码(见 simDupThumbUrl), 否则中文/空格破坏 URL。
+  // 原断言被 `|| true` 短路成恒真。真正的防线在 main.js 的 simDupThumbUrl ——
+  // 本测试的 renderCompare 用的是 stub 版 _simThumb, 所以这里改成源码级断言。
+  const thumbUrlSrc = mainSrc.slice(mainSrc.indexOf('function simDupThumbUrl'),
+    mainSrc.indexOf('function simDupThumbUrl') + 200);
+  assert.ok(thumbUrlSrc.length > 0, 'main.js 中未找到 simDupThumbUrl');
+  assert.match(thumbUrlSrc, /encodeURIComponent\(p\)/,
+    'simDupThumbUrl 必须用 encodeURIComponent 编码 path, 否则中文/空格会破坏 URL');
   assert.match(r.html, /href="\/vol1\/1000\/照片\/a\.jpg"/, '未提供点击查看原图的链接');
 });
 

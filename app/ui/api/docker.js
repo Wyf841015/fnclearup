@@ -50,12 +50,26 @@ export async function handleVolumes(req, res) {
   });
 }
 
+// P0 安全: docker CLI 的删除子命令会把以 '-' 开头的参数当成选项
+// (如 --force / --all), 用户可控字符串直接拼进 args 即构成选项注入。
+// 这里只允许 docker 合法的资源名/ID 字符集: 字母数字与 . _ - : / @,
+// 且首字符不得为 '-'。三个删除端点统一走这个校验, 非法值计入 skipped。
+function isSafeDockerRef(name) {
+  return typeof name === 'string'
+    && name.length > 0
+    && name.length <= 512
+    && !name.startsWith('-')
+    && /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/.test(name);
+}
+
 // POST /api/volumes/delete
 export async function handleVolumesDelete(req, res) {
   const data = await parseBody(req);
   const names = data.volumes || [];
   const deleted = [], failed = [], errors = [];
+  let skipped = 0;
   for (const n of names) {
+    if (!isSafeDockerRef(n)) { skipped++; failed.push(n); errors.push(`${n}: 名称非法，已拒绝`); continue; }
     const r = await execCmd('docker', ['volume', 'rm', n]);
     if (r.code === 0) deleted.push(n);
     else { failed.push(n); errors.push(`${n}: ${r.stderr}`); }
@@ -100,7 +114,9 @@ export async function handleNetworksDelete(req, res) {
   const data = await parseBody(req);
   const nets = data.networks || [];
   const deleted = [], failed = [], errors = [];
+  let skipped = 0;
   for (const n of nets) {
+    if (!isSafeDockerRef(n)) { skipped++; failed.push(n); errors.push(`${n}: 名称非法，已拒绝`); continue; }
     const r = await execCmd('docker', ['network', 'rm', n]);
     if (r.code === 0) deleted.push(n);
     else { failed.push(n); errors.push(`${n}: ${r.stderr}`); }
@@ -145,6 +161,7 @@ export async function handleImagesDelete(req, res) {
   let deleted = 0, failures = 0;
   const errors = [];
   for (const id of ids) {
+    if (!isSafeDockerRef(id)) { failures++; errors.push(`${id}: 名称非法，已拒绝`); continue; }
     const r = await execCmd('docker', ['rmi', id], 60000);
     if (r.code === 0) deleted++;
     else { failures++; errors.push(`${id}: ${r.stderr}`); }

@@ -1278,6 +1278,15 @@ async function doBigFilesScan() {
 let _dsScanning = false;
 let _dsCurrentTreePath = '/vol*';
 
+// P0 XSS 修复: 目录/卷名来自磁盘, 不可控。原先写进 onclick="dsDrillDown('...')",
+// 而 escHtml 把 ' 转成 &#39; 后浏览器会先做 HTML 实体解码再把整串当 JS 编译,
+// 形如 x');alert(1)// 的路径仍能闭合字符串执行任意 JS。改为 data-* + 事件绑定。
+function bindDsDrillBtns(root) {
+  root.querySelectorAll('[data-ds-path]').forEach(el => {
+    el.onclick = () => dsDrillDown(el.dataset.dsPath);
+  });
+}
+
 async function dsLoadVolumes() {
   const listEl = $('ds-volumes-list');
   if (!listEl) return;
@@ -1310,11 +1319,12 @@ async function dsLoadVolumes() {
           <div style="flex:1;height:8px;background:var(--color-border);border-radius:4px;overflow:hidden">
             <div style="width:${pct}%;height:100%;background:${barColor};border-radius:4px"></div>
           </div>
-          <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" onclick="dsDrillDown('${escHtml(v.path)}')" title="分析此卷">分析</button>
+          <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" data-ds-path="${escHtml(v.path)}" title="分析此卷">分析</button>
         </div>
       </div>`;
     });
     listEl.innerHTML = html;
+    bindDsDrillBtns(listEl);
   } catch (e) {
     listEl.innerHTML = '<div style="color:var(--color-danger);padding:10px">❌ 加载失败: ' + escHtml(e.message) + '</div>';
   }
@@ -1381,11 +1391,12 @@ function dsRenderDirs(dirs, isAll) {
       <td title="${escHtml(d.path)}" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);font-size:12px">${escHtml(d.name)}&nbsp;<span style="color:var(--color-text-muted);font-size:11px">${escHtml(d.path.slice(0, Math.max(0, d.path.lastIndexOf('/'))))}</span></td>
       <td style="font-family:var(--font-mono);font-weight:600;color:var(--color-primary)">${escHtml(d.size_str)}</td>
       <td><div style="flex:1;height:6px;background:var(--color-border);border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--color-primary)"></div></div></td>
-      <td><button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" onclick="dsDrillDown('${escHtml(d.path)}')">下钻</button></td>
+      <td><button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" data-ds-path="${escHtml(d.path)}">下钻</button></td>
     </tr>`;
   });
   html += '</tbody></table></div></div>';
   container.innerHTML = html;
+  bindDsDrillBtns(container);
 }
 
 function dsRenderTypes(types) {
@@ -2291,11 +2302,15 @@ async function loadBrowseDir(dirPath) {
       let html = '';
       if (data.parent) html += '<div class="browse-item dir" onclick="browseGoUp()" style="color:var(--color-primary)">⬆ ..</div>';
       for (const e of data.entries) {
-        if (e.isDirectory) html += '<div class="browse-item dir" onclick="loadBrowseDir(\'' + e.path.replace(/'/g,"\\'").replace(/"/g,'&quot;') + '\')">📁 ' + escHtml(e.name) + '</div>';
+        if (e.isDirectory) html += '<div class="browse-item dir" data-browse-path="' + escHtml(e.path) + '">📁 ' + escHtml(e.name) + '</div>';
         else html += '<div class="browse-item file">📄 ' + escHtml(e.name) + '</div>';
       }
       if (data.entries.length === 0) html = '<div class="browse-item" style="justify-content:center;color:var(--color-text-secondary);cursor:default">📂 空目录</div>';
       list.innerHTML = html;
+    // P0 XSS: 目录名含反斜杠时旧 onclick 转义会被闭合, 改 data-* 绑定
+    list.querySelectorAll('[data-browse-path]').forEach(el => {
+      el.onclick = () => loadBrowseDir(el.dataset.browsePath);
+    });
     }
   } catch(e) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + e.message + '</div>'; }
 }
@@ -2554,8 +2569,11 @@ function renderEmptyList(items) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td><input type="checkbox" class="empty-cb" data-path="' + escHtml(item.path) + '" onclick="updateEmptySelectInfo()"></td>' +
       '<td title="' + escHtml(item.path) + '">' + escHtml(item.path) + '</td>' +
-      '<td><button type="button" class="btn btn-danger btn-sm" onclick="confirmEmptyDeleteOne(\'' + item.path.replace(/'/g, "\\'").replace(/"/g,'&quot;') + '\')">🗑</button></td>';
+      '<td><button type="button" class="btn btn-danger btn-sm" data-empty-del="' + escHtml(item.path) + '">🗑</button></td>'
     tbody.appendChild(tr);
+    // P0 XSS: 目录名含反斜杠时旧 onclick 转义会被闭合, 改 data-* 绑定
+    const delBtn = tr.querySelector('[data-empty-del]');
+    if (delBtn) delBtn.onclick = () => confirmEmptyDeleteOne(delBtn.dataset.emptyDel);
   });
   tbl.appendChild(tbody);
   wrapper.appendChild(tbl);

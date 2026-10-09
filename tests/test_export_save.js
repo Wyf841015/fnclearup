@@ -323,7 +323,6 @@ test('后端: 必须真的执行 64MB 大小上限检查', () => {
 
 test('后端: 文件名正则必须排除路径分隔符与控制字符', () => {
   // FILENAME_RE 从 server.js 提取后, 断言它确实挡住了 ../ 与绝对路径
-  assert.ok(!FILENAME_RE_SRC.includes('..') === false || true);
   const re = new RegExp(FILENAME_RE_SRC.slice(1, FILENAME_RE_SRC.lastIndexOf('/')));
   // 只测正则自己负责的部分: 路径分隔符 / 绝对路径 / 控制字符。
   // 纯 '..' 不在这里测 —— 它不含分隔符, 正则放行是正常的, 由 handleExportSave

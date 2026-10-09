@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, lstatSync, statSync, unlinkSync, rmSync, mkdirSync, renameSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
-import { join, basename, dirname, extname } from 'node:path';
+import { join, basename, dirname, extname, resolve } from 'node:path';
 import { sendJSON, execCmd, parseBody, formatBytes, getManifestDir } from '../lib/util.js';
 import { VOL_GLOBS } from '../lib/config.js';
 
@@ -267,21 +267,32 @@ export function handleSysCleanScan(req, res) {
 // Whitelist: only allow deletion of paths in SCAN_TARGETS or any per-user cache item
 // P1-4 fix: targets whose path contains * (e.g. /vol*/@appcenter) are glob patterns —
 // compare using a regex derived from the pattern so real paths like /vol1/@appcenter/fnclearup pass.
+// P0 安全: 带 filter 的 target(如 syslog-gz 的 path=/var/log)绝不能被当作
+// 整目录可删目标 —— 之前 idMap 注册处已挡了裸 id,但这里 isTargetPath 不过滤
+// filter,fallback 的 join(targetPath, '..') 又能拼出 /var/log 本身,导致
+// rm -rf /var/log。带 filter 的 target 只能经其子 id(如 syslog-gz:syslog.1.gz)
+// 走下面的 dynamicChildren 路径访问,且那里仍要做 isTargetPath 复检。
 function isTargetPath(p) {
   if (typeof p !== 'string') return false;
+  const n = resolve(p); // 消除 '..', 防 /var/log/../log 之类
   for (const t of SCAN_TARGETS) {
     if (t.path.includes('*')) {
       // /vol*/@appcenter → regex ^/vol\d+/@appcenter(/|$)
       const pat = new RegExp('^' + t.path.replace(/\*/g, 'vol\\d+') + '(/|$)');
-      if (pat.test(p)) return true;
+      if (pat.test(n)) return true;
     } else {
-      if (p === t.path) return true;
-      if (p.startsWith(t.path + '/')) return true;
+      // P0 安全: 带 filter 的 target 只允许其子路径(如 /var/log/syslog.1.gz),
+      // 拒绝整目录本身(/var/log) —— 否则 journal:.. 经 join 归一化后
+      // 拼出 /var/log 会通过复检, 触发 rm -rf /var/log。
+      // 注意: 不能直接跳过 filter target, 否则其合法子项
+      // (syslog-gz:syslog.1.gz 之类)也会被误拒。
+      if (n === t.path && !t.filter) return true;
+      if (n.startsWith(t.path + '/')) return true;
     }
   }
   for (const u of buildUserCacheItems()) {
-    if (p === u.path) return true;
-    if (p.startsWith(u.path + '/')) return true;
+    if (n === u.path) return true;
+    if (n.startsWith(u.path + '/')) return true;
   }
   return false;
 }
@@ -340,7 +351,15 @@ export async function handleSysCleanClean(req, res) {
             const expanded = VOL_GLOBS.map(v => targetPath.replace('*', v)).filter(p => existsSync(p));
             targetPath = expanded[0] || targetPath; // first existing volume
           }
-          path = join(targetPath, rest);
+          // P0 安全: rest 来自用户可控的 id 后缀, join 会把 '..' 归一化,
+          // 'journal:..' → /var/log/journal/.. → /var/log。join 后必须复检
+          // 结果仍在 targetPath 之下, 否则 rm -rf 打到目录外。
+          const candidate = resolve(join(targetPath, rest));
+          if (candidate !== resolve(targetPath) && !candidate.startsWith(resolve(targetPath) + '/')) {
+            // 逃出目标目录 — 记为拒绝, 继续尝试下一个 target
+            continue;
+          }
+          path = candidate;
           label = `${target.label}: ${rest}`;
           target_id = target.id;
           resolved = true;
