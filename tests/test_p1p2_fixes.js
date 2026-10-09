@@ -122,8 +122,17 @@ test('P1-5: lucide observer 有自写互斥且 finally 复位', () => {
 /* ══════════════ P1-6 ══════════════ */
 test('P1-6: bigfiles trash 降级永久删除时透出标记', () => {
   assert.ok(bigfilesSrc.includes('permanentFallback'), '应记录走了永久删除');
-  assert.ok(bigfilesSrc.includes('permanentFallback ? { path:'),
-    '响应里应带上该标记, 让前端能如实告知用户"未能进回收站"');
+  // deleted 必须保持字符串数组 —— 换成 {path, permanentFallback} 对象会破坏
+  // 既有契约(调用方的 deleted.includes(path) 与字符串 map 渲染都会失效)。
+  // 这个坑真踩过: 第一版实现把 deleted 元素改成对象, 结果 test_api.js 里
+  // bigfiles/delete 的断言 deleted.includes(src) 恒 false。
+  assert.ok(!/deleted\.push\(permanentFallback\s*\?/.test(bigfilesSrc),
+    'deleted 数组里混入了对象元素, 破坏字符串数组契约');
+  assert.ok(/deleted\.push\(fp\)/.test(bigfilesSrc), 'deleted 应继续 push 路径字符串');
+  assert.ok(/permanentFallbacks\.push\(fp\)/.test(bigfilesSrc),
+    '降级路径应单独收集到 permanentFallbacks');
+  assert.ok(/^\s*permanentFallbacks,$/m.test(bigfilesSrc),
+    '响应里应带上 permanentFallbacks 字段, 让前端能如实告知用户"未能进回收站"');
 });
 
 /* ══════════════ P1-8 ══════════════ */

@@ -239,6 +239,7 @@ export async function handleBigFilesDelete(req, res) {
 
   const deleted = [];
   const failed = [];
+  const permanentFallbacks = [];   // trash 降级为永久删除的路径(不混入 deleted, 保持其字符串数组契约)
   for (const fp of valid) {
     try {
       if (!existsSync(fp)) {
@@ -256,7 +257,9 @@ export async function handleBigFilesDelete(req, res) {
           // if it's a directory.
           // P1: 用户选的是"进回收站(可恢复)", 这里实际做的是不可逆的永久删除。
           // 行为保持不变(否则 /vol02 网络盘等路径将完全无法清理), 但把
-          // permanentFallback 标记透出到响应, 让前端能如实告知用户。
+          // 标记放到独立的 permanentFallbacks 字段, 不改动 deleted 本身 ——
+          // deleted 一直是字符串数组, 把它换成 {path, permanentFallback} 对象会破坏
+          // 既有契约(调用方的 deleted.includes(path) 与字符串 map 渲染都会失效)。
           try {
             const st = statSync(fp);
             if (st.isDirectory()) {
@@ -286,7 +289,7 @@ export async function handleBigFilesDelete(req, res) {
           failed.push({ path: fp, reason: e.message });
         }
       }
-      if (ok) deleted.push(permanentFallback ? { path: fp, permanentFallback: true } : fp);
+      if (ok) { deleted.push(fp); if (permanentFallback) permanentFallbacks.push(fp); }
       else if (!failed.find(f => f.path === fp)) failed.push({ path: fp, reason: 'unknown' });
     } catch (e) {
       failed.push({ path: fp, reason: e.message });
@@ -296,6 +299,7 @@ export async function handleBigFilesDelete(req, res) {
   sendJSON(res, 200, {
     success: true,
     deleted,
+    permanentFallbacks,
     failed,
     skipped,
     total: deleted.length,
