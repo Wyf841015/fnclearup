@@ -18,7 +18,7 @@
 // pattern as empty_dir_scan.
 
 import { existsSync, statSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, resolve } from 'node:path';
 import { sendJSON, formatBytes, isSafePath, partitionDeletable, parseBody } from '../lib/util.js';
 import { moveToTrash } from './trash.js';
 import { VOL_GLOBS, SAFE_PREFIXES } from '../lib/config.js';
@@ -79,15 +79,28 @@ export async function handleBigFilesScan(req, res) {
           if (!roots.includes(r)) roots.push(r);
         }
       }
-    } else if (SAFE_PREFIXES.has(path + '/') || VOL_GLOBS.includes(path) || extraRoots.includes(path)) {
-      if (!existsSync(path)) {
-        sendJSON(res, 400, { error: `path not found: ${path}` });
+    } else {
+      // 允许卷内任意子目录, 不只是卷根。
+      //
+      // 原先用的是「把路径拼上斜杠后去 Set 里做 has() 精确匹配」, 而那个 Set
+      // 只装了各卷根(如 '/vol1/', '/vol2/', ...) 本身。于是只有路径正好等于
+      // 某个卷根时才成立: '/vol3' 通过, 而 '/vol3/1000/hermes' 直接被 403 拒掉。
+      // 用户想扫某个具体目录(而不是整卷)时必然踩到这个, 前端又把 403 的真实
+      // 原因掩盖成 toLocaleString 的 TypeError, 排查成本很高。
+      //
+      // 这里改成"必须是某个卷的前缀", 且先 resolve 消掉 .. 与 // 再判定 ——
+      // 直接 startsWith 会被 '/vol3/../etc' 绕过(它确实以 '/vol3/' 开头)。
+      const resolved = resolve(path);
+      const inSomeVol = VOL_GLOBS.some(v => resolved === v || resolved.startsWith(v + '/'));
+      if (!inSomeVol && !extraRoots.includes(resolved)) {
+        sendJSON(res, 403, { error: `path must be under /vol*: ${resolved}` });
         return;
       }
-      roots.push(path);
-    } else {
-      sendJSON(res, 403, { error: 'path must be under /vol*' });
-      return;
+      if (!existsSync(resolved)) {
+        sendJSON(res, 400, { error: `path not found: ${resolved}` });
+        return;
+      }
+      roots.push(resolved);
     }
   }
   if (roots.length === 0) {
