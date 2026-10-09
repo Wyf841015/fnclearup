@@ -25,11 +25,10 @@ test('dup_scan: stats 初始值含缓存与预筛字段', () => {
 
 test('dup_scan: 记录 cacheHits / hashed / cacheHitRate', () => {
   assert.ok(/state\.stats\.cacheHits = cacheHits\.length;/.test(scanSrc), '未记录 cacheHits');
-  assert.ok(/state\.stats\.hashed = toHash\.length;/.test(scanScanSrc(scanSrc), '未记录 hashed'));
+  assert.ok(/state\.stats\.hashed = toHash\.length;/.test(scanSrc), '未记录 hashed');
   assert.ok(/state\.stats\.cacheHitRate =/.test(scanSrc), '未计算 cacheHitRate');
 });
 
-function scanScanSrc(s) { return s; }
 
 test('dup_scan: 缓存命中率按 (命中 / 总量) 整数百分比计算', () => {
   const m = scanSrc.match(/state\.stats\.cacheHitRate = \(([^)]*)\)\s*\?\s*Math\.round\(([^)]*)\) \* 100\)/);

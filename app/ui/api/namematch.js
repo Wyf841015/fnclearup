@@ -85,6 +85,12 @@ export function handleNamematchStop(req, res) {
       writeFileSync(stateFile + '.tmp', JSON.stringify(state));
       renameSync(stateFile + '.tmp', stateFile);
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // P1: 状态文件写失败(磁盘满/权限)时不能仍回 stopped:true ——
+    // 那会让前端显示"已停止", 而扫描子进程继续跑满一小时预算。
+    console.error('[namematch] stop failed:', e.message);
+    sendJSON(res, 200, { stopped: false, error: e.message, job: jobId });
+    return;
+  }
   sendJSON(res, 200, { stopped: true, job: jobId });
 }

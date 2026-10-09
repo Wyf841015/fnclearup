@@ -233,6 +233,7 @@ export async function handleBigFilesDelete(req, res) {
         continue;
       }
       let ok = false;
+      let permanentFallback = false;
       if (mode === 'trash') {
         ok = moveToTrash(fp);
         if (!ok) {
@@ -240,6 +241,9 @@ export async function handleBigFilesDelete(req, res) {
           // — fall back to rm -rf via unlink. Big files are usually single
           // files so unlinkSync is the right tool; only descend to rm -rf
           // if it's a directory.
+          // P1: 用户选的是"进回收站(可恢复)", 这里实际做的是不可逆的永久删除。
+          // 行为保持不变(否则 /vol02 网络盘等路径将完全无法清理), 但把
+          // permanentFallback 标记透出到响应, 让前端能如实告知用户。
           try {
             const st = statSync(fp);
             if (st.isDirectory()) {
@@ -250,6 +254,7 @@ export async function handleBigFilesDelete(req, res) {
               unlinkSync(fp);
               ok = true;
             }
+            permanentFallback = ok;
           } catch (e) {
             failed.push({ path: fp, reason: 'trash fallback failed: ' + e.message });
           }
@@ -268,7 +273,7 @@ export async function handleBigFilesDelete(req, res) {
           failed.push({ path: fp, reason: e.message });
         }
       }
-      if (ok) deleted.push(fp);
+      if (ok) deleted.push(permanentFallback ? { path: fp, permanentFallback: true } : fp);
       else if (!failed.find(f => f.path === fp)) failed.push({ path: fp, reason: 'unknown' });
     } catch (e) {
       failed.push({ path: fp, reason: e.message });

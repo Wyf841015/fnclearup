@@ -255,12 +255,20 @@ export async function handleEmptyDirStop(req, res) {
   sendJSON(res, 200, { stopped: true, success: true });
 }
 
+// P1 安全: jobId 形状校验(见 handleEmptyDirStatus 的注释)
+function isValidEmptyJobId(jobId) {
+  return typeof jobId === 'string' && /^empty_[0-9a-f]{1,32}$/.test(jobId);
+}
+
 // ── GET /api/empty_dir/status?jobId=xxx ──
 export function handleEmptyDirStatus(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const params = parseQuery(url);
   const jobId = params.jobId || '';
-  if (!jobId) { sendJSON(res, 400, { error: '缺少 jobId', success: false }); return; }
+  // P1 安全: jobId 直接进 join(EMPTY_STATE_DIR, `empty_${jobId}.json`), 含 '../'
+  // 可读状态目录外任意 .json(只读, 但同 dup 的根因)。生成侧见 handleEmptyDirStart:
+  // jobId = 'empty_' + randomUUID().slice(0,8), 按同样形状校验。
+  if (!isValidEmptyJobId(jobId)) { sendJSON(res, 400, { error: 'jobId 非法', success: false }); return; }
   const stateFile = join(EMPTY_STATE_DIR, `empty_${jobId}.json`);
   if (!existsSync(stateFile)) {
     const job = emptyDirJobs.get(jobId);

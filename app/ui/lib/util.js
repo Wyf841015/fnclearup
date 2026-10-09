@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { resolve, join } from 'node:path';
-import { existsSync, statSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { SAFE_PREFIXES } from './config.js';
 
 export function formatBytes(b) {
@@ -99,7 +99,13 @@ function pkgvarRoot() {
  */
 export function protectedReason(p, opts = {}) {
   if (!p) return '路径为空';
-  const n = resolve(p);
+  // P2 安全: 必须 realpath 解析软链再判段名。resolve() 只消除 '..', 不解软链 ——
+  // 软链自身名字无害(像 /vol1/1000/我的下载)但指向 /vol3/@appcenter 时,
+  // 按传入路径拆段查不到 @appcenter, 于是放行 → 删掉别的应用安装文件。
+  // realpathSync 对不存在的路径会抛 ENOENT, 此时回退到 resolve 的结果
+  // (该路径本就无法被删除, 不应因此误判为受保护而改变其他行为)。
+  let n = resolve(p);
+  try { n = realpathSync(n); } catch { /* 不存在: 保持 resolve 结果 */ }
   if (opts.exemptSelf !== false) {
     const own = pkgvarRoot();
     if (n === own || n.startsWith(own + '/')) return null;   // 自身数据目录豁免

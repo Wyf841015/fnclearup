@@ -429,7 +429,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .dup-path-tag-remove:hover{background:rgba(255,255,255,.45)}
 .dup-scan-input-row{display:flex;gap:10px;margin-bottom:0}
 .dup-scan-opts{display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap}
-.dup-opt{display:flex;align-items:center;gap:4px;font-size:.82rem;color:var(--color-text-secondary,var(--color-muted,#888));white-space:nowrap}
+.dup-opt{display:flex;align-items:center;gap:4px;font-size:.82rem;color:var(--color-text-secondary);white-space:nowrap}
 .dup-opt select,.dup-opt input{background:var(--color-input-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);padding:4px 6px;font-size:.85rem}
 .dup-opt select{max-width:9em}
 .dup-scan-btns{display:flex;gap:6px;flex-shrink:0;align-items:flex-start}
@@ -504,11 +504,9 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .container{padding:16px 12px}
   .header{flex-direction:column;align-items:flex-start;gap:16px;padding:20px}
   .header-controls{width:100%;justify-content:flex-start}
-  .kpi-row
   .kpi-card{padding:16px;gap:12px}
   .kpi-icon{width:44px;height:44px;font-size:20px;border-radius:var(--radius-md)}
   .kpi-value{font-size:24px}
-  .dup-stats-row
   .tab-btn{padding:10px 16px;font-size:13px}
   .dup-scan-input-row{flex-direction:column}
   .dup-scan-btns{flex-direction:row;flex-wrap:wrap}
@@ -532,7 +530,6 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 }
   .inner-panel[data-inner-panel="recycle"] .section-header .btn{flex:1 1 auto;min-width:0;justify-content:center;padding:8px 10px;font-size:12px}
   .inner-panel[data-inner-panel="recycle"] .section-header .btn span:last-child{overflow:hidden;text-overflow:ellipsis}
-  .tab-panel[data-panel="schedule"] .kpi-row
 }
 @media(max-width:480px){
   h1{font-size:18px}
@@ -547,7 +544,6 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .kpi-card{padding:10px 6px;gap:6px;border-radius:var(--radius-sm)}
   .kpi-icon{width:32px;height:32px;font-size:16px;border-radius:var(--radius-sm);flex-shrink:0}
   .kpi-card:hover{transform:none}
-  .tab-panel[data-panel="schedule"] .kpi-row
   .tab-panel[data-panel="schedule"] .kpi-card{padding:10px 6px;gap:6px}
   .tab-panel[data-panel="schedule"] .kpi-value{font-size:14px}
   .kpi-value{font-size:18px;font-weight:700;letter-spacing:-0.5px}
@@ -558,7 +554,6 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   .dup-scan-input-row{flex-direction:column}
   .dup-scan-btns{flex-direction:row;flex-wrap:wrap}
   .dup-path-input{font-size:13px;padding:8px 10px}
-  .dup-stats-row
   .dup-stat-card{padding:10px}
   .dup-stat-value{font-size:18px}
   .modal{padding:16px;max-width:98%}

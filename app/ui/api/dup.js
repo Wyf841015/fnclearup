@@ -340,8 +340,13 @@ export async function handleDupDelete(req, res) {
         const fpSt = statSync(fp), keepSt = statSync(keep);
         if (fpSt.ino === keepSt.ino) throw new Error('文件已硬链接过');
         if (fpSt.dev !== keepSt.dev) throw new Error('跨文件系统无法硬链接: ' + fp);
-        unlinkSync(fp);                    // remove the duplicate inode
-        linkSync(keep, fp);                // link fp → keep (shares data blocks)
+        // P1 安全: 原先 unlinkSync(fp) 后才 linkSync —— linkSync 抛错(EPERM/EMLINK/
+        // 配额满/只读父目录)时 fp 已删除, 内容彻底不可恢复。改为先在临时名上建链接,
+        // 成功后再 rename 原子替换; 失败时原文件仍在。
+        const tmpLink = fp + '.fnc-link-tmp';
+        try { unlinkSync(tmpLink); } catch { /* 残留清不掉也要继续, 下面会报错 */ }
+        linkSync(keep, tmpLink);            // shares data blocks
+        renameSync(tmpLink, fp);            // 原子替换掉重复 inode
         linked.push(fp);
       } else {  // trash
         const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/(\d+)\/(.+)/);
