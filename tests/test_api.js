@@ -344,8 +344,16 @@ describe('API: Duplicate File Scan', () => {
   });
 
   it('GET /api/dup/status with invalid jobId returns 404', async () => {
-    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/dup/status?jobId=nonexistent');
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/dup/status?jobId=dup_00000000');
     assert.strictEqual(status, 404);
+
+    // 格式非法的 jobId(含路径穿越)必须被 400 拒绝 —— 这是 P0 安全修复的行为。
+    // 原先这里只测了 'nonexistent', 它既不是合法格式也不存在, 改用合法格式的
+    // 'dup_00000000' 才能真正区分"格式非法"与"格式合法但任务不存在"两种语义。
+    for (const bad of ['nonexistent', 'dup_../../etc/passwd', '../x', 'dup_ZZZ', '']) {
+      const r = await httpRequest('GET', '/app/fnclearup/api/dup/status?jobId=' + encodeURIComponent(bad));
+      assert.strictEqual(r.status, 400, `非法 jobId ${JSON.stringify(bad)} 应被 400 拒绝, 实际 ${r.status}`);
+    }
   });
 
   it('GET /api/jobs returns job list', async () => {
@@ -355,19 +363,19 @@ describe('API: Duplicate File Scan', () => {
   });
 
   it('POST /api/dup/pause with invalid jobId returns error gracefully', async () => {
-    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/pause', { jobId: 'nonexistent' });
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/pause', { jobId: 'dup_00000000' });
     assert.strictEqual(status, 200);
     assert.strictEqual(data.paused, false);
   });
 
   it('POST /api/dup/resume with invalid jobId returns error gracefully', async () => {
-    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/resume', { jobId: 'nonexistent' });
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/resume', { jobId: 'dup_00000000' });
     assert.strictEqual(status, 200);
     assert.strictEqual(data.resumed, false);
   });
 
   it('POST /api/dup/stop with invalid jobId returns error gracefully', async () => {
-    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/stop', { jobId: 'nonexistent' });
+    const { status, data } = await httpRequest('POST', '/app/fnclearup/api/dup/stop', { jobId: 'dup_00000000' });
     assert.strictEqual(status, 200);
     assert.strictEqual(data.stopped, false);
   });
@@ -1372,7 +1380,8 @@ describe('API: Empty Dir Status & Jobs (coverage gap)', () => {
   });
 
   it('GET /api/empty_dir/status returns 404 for invalid jobId', async () => {
-    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/empty_dir/status?jobId=nonexistent');
+
+    const { status, data } = await httpRequest('GET', '/app/fnclearup/api/empty_dir/status?jobId=empty_00000000');
     assert.strictEqual(status, 404);
     assert.ok(data.error);
   });
