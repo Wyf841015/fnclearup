@@ -85,6 +85,83 @@ function handleBrowse(req, res) {
   } catch (e) { sendJSON(res, 500, { error: e.message }); }
 }
 
+// ── POST /api/export/save ──────────────────────────────────────
+// 把导出内容写到用户选定的目录。
+//
+// 为什么要有这个端点: 以前所有导出都走浏览器下载(Blob + a.download), 文件落到
+// 浏览器/客户端的下载目录, 在 fnOS WebView 里既看不见也拿不到, 而且手机上尤其
+// 麻烦。改成由用户在 NAS 上选目录后直接落盘。
+//
+// 安全: 目录必须过 isSafePath(/vol* 白名单 + fnOS 保留目录保护), 文件名必须不含
+// 路径分隔符与 .. —— 否则 filename 写成 "../../etc/x" 就能绕过目录校验写到别处。
+// 写入用 tmp + rename 原子替换, 避免写到一半断电留下半个文件。
+const EXPORT_MAX_BYTES = 64 * 1024 * 1024;   // 64 MB 上限
+const FILENAME_RE = /^[^\/\\:*?"<>|\x00-\x1f]{1,200}$/;
+
+async function handleExportSave(req, res) {
+  let data;
+  try { data = await parseBody(req); } catch (e) {
+    sendJSON(res, 400, { success: false, error: '请求体解析失败: ' + e.message }); return;
+  }
+  const dir = String(data.dir || '');
+  const filename = String(data.filename || '').trim();
+  const content = data.content;
+  const encoding = data.encoding === 'base64' ? 'base64' : 'utf8';
+
+  if (!isSafePath(dir)) {
+    sendJSON(res, 403, { success: false, error: '路径越界：仅允许 /vol* 下的目录' }); return;
+  }
+  if (!FILENAME_RE.test(filename) || filename === '.' || filename === '..') {
+    sendJSON(res, 400, { success: false, error: '文件名不合法（不能含路径分隔符）' }); return;
+  }
+  if (typeof content !== 'string') {
+    sendJSON(res, 400, { success: false, error: 'content 必须是字符串' }); return;
+  }
+  let buf;
+  try {
+    buf = Buffer.from(content, encoding);
+  } catch (e) {
+    sendJSON(res, 400, { success: false, error: '内容编码错误: ' + e.message }); return;
+  }
+  if (buf.length > EXPORT_MAX_BYTES) {
+    sendJSON(res, 413, { success: false, error: `文件过大 (${(buf.length / 1048576).toFixed(1)} MB)，上限 ${EXPORT_MAX_BYTES / 1048576} MB` }); return;
+  }
+  try {
+    const st = statSync(dir);
+    if (!st.isDirectory()) { sendJSON(res, 400, { success: false, error: '目标不是目录' }); return; }
+  } catch (e) {
+    sendJSON(res, 400, { success: false, error: '目录不存在或不可读: ' + e.message }); return;
+  }
+
+  const target = join(dir, filename);
+  const existed = existsSync(target);
+  if (existed && !data.overwrite) {
+    sendJSON(res, 409, { success: false, exists: true, error: `${filename} 已存在` }); return;
+  }
+  const tmp = target + '.fnc-export-tmp';
+  try {
+    writeFileSync(tmp, buf);
+    renameSync(tmp, target);
+  } catch (e) {
+    try { if (existsSync(tmp)) unlinkSync(tmp); } catch { /* 清理失败不影响主流程 */ }
+    sendJSON(res, 500, { success: false, error: '写入失败: ' + e.message }); return;
+  }
+  const st = statSync(target);
+  sendJSON(res, 200, {
+    success: true, path: target, size: st.size,
+    sizeText: formatBytesForExport(st.size),
+    overwritten: existed,
+  });
+}
+
+function formatBytesForExport(n) {
+  if (!n || n <= 0) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(1)) + ' ' + u[i];
+}
+
 // ── HTTP Router ──
 async function handle(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -148,6 +225,7 @@ async function handle(req, res) {
       if (method === 'GET' && path === '/api/browse') { handleBrowse(req, res); return; }
       // POST
       if (method === 'POST' && path === '/api/scan') { await handleScan(req, res); return; }
+      if (method === 'POST' && path === '/api/export/save') { await handleExportSave(req, res); return; }
       if (method === 'POST' && path === '/api/delete') { await handleDelete(req, res); return; }
       if (method === 'POST' && path === '/api/volumes/delete') { await handleVolumesDelete(req, res); return; }
       if (method === 'POST' && path === '/api/networks/delete') { await handleNetworksDelete(req, res); return; }

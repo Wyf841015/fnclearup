@@ -970,17 +970,21 @@
   </div>
 
   <!-- 目录浏览弹窗 -->
-  <div id="browseModal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('visible')">
+  <div id="browseModal" class="modal-overlay" onclick="if(event.target===this)browseBackdropClick()">
     <div class="modal-content modal-md" onclick="event.stopPropagation()">
-      <div class="modal-header"><h3 class="modal-title">📁 选择目录</h3><button type="button" class="modal-close" onclick="hideBrowseModal()">✕</button></div>
+      <div class="modal-header"><h3 class="modal-title" id="browseTitle">📁 选择目录</h3><button type="button" class="modal-close" onclick="hideBrowseModal()">✕</button></div>
       <div class="modal-body">
         <div class="browse-current-path" id="browsePath">/</div>
         <div class="browse-list" id="browseList"></div>
+        <div class="browse-save-row" id="browseSaveRow">
+          <label for="browseFilename">文件名</label>
+          <input type="text" id="browseFilename" placeholder="导出.csv" spellcheck="false" autocomplete="off" />
+        </div>
       </div>
       <div class="modal-footer">
         <div class="browse-new-dir-row">
           <button type="button" class="btn btn-outline" id="browseUpBtn" onclick="browseGoUp()">⬆ 上级目录</button>
-          <button type="button" class="btn btn-primary" onclick="browseSelect()">✅ 选择当前目录</button>
+          <button type="button" class="btn btn-primary" id="browseSelectBtn" onclick="browseSelect()">✅ 选择当前目录</button>
         </div>
       </div>
     </div>
