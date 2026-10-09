@@ -29,20 +29,31 @@ function fnBody(src, sig) {
    必须切走再切回 tab 才能看到新记录。
    ══════════════════════════════════════════════════════════════ */
 
-// ── 签名算法(与 main.js 中的实现保持一致) ────────────────────
-// 后端 schedule.js L336 是 history.push(), 最新记录在数组末尾;
-// L337 满 100 条后 slice(-100), 长度不再变化。
-// 所以签名必须取**最后一条**, 取 [0] 会在攒够 100 条后彻底失效。
-function sigOf(history) {
+// ── 签名算法: 从 main.js **真源码**里抠出来 eval ──────────────────
+//
+// 原来这里是手抄一份 main.js 的表达式, 注释还写着"与 main.js 中的实现保持一致"
+// —— 纯靠人工同步。把 main.js 那行改成 hist[0].completedAt, 本文件下面三个
+// 签名测试仍然全绿。同目录 test_sponsor_reminder.js 已明确记录过"自己重实现
+// 导致全绿"这个坑, 此处重犯, 现在改为抠真源码。
+//
+// 后端 schedule.js 是 history.push() 追加(最新在末尾), 满 100 条后 slice(-100)
+// 裁剪(长度不再变化), 所以签名必须取**最后一条**。
+const _histBody = fnBody(MAIN, 'async function loadScheduleHistory');
+assert.ok(_histBody, 'main.js 里找不到 loadScheduleHistory');
+const _sigSrc = /const sig = ([^;]+);/.exec(_histBody);
+assert.ok(_sigSrc, 'loadScheduleHistory 里找不到 const sig = ...');
+const sigOf = new Function('hist', 'newest', 'return ' + _sigSrc[1] + ';');
+// main.js 里 sig 依赖 hist / newest 两个局部变量, 这里按同样形状构造它们:
+function sigOfHistory(history) {
   const hist = Array.isArray(history) ? history : [];
   const newest = hist.length ? hist[hist.length - 1] : null;
-  return hist.length + '|' + ((newest && newest.completedAt) || '');
+  return sigOf(hist, newest);
 }
 
 test('签名: 新记录 push 到末尾后签名必须变化', () => {
   const before = [{ completedAt: '2026-10-01T00:00:00Z' }];
   const after = [{ completedAt: '2026-10-01T00:00:00Z' }, { completedAt: '2026-10-02T00:00:00Z' }];
-  assert.notStrictEqual(sigOf(before), sigOf(after));
+  assert.notStrictEqual(sigOfHistory(before), sigOfHistory(after));
 });
 
 test('签名: 满 100 条后(长度不再变)追加新记录仍能检测到', () => {
@@ -50,15 +61,15 @@ test('签名: 满 100 条后(长度不再变)追加新记录仍能检测到', ()
   // 裁剪后长度仍是 100, 只有最后一条变了
   const afterTrim = [...full.slice(1), { completedAt: '2026-11-01T00:00:00Z' }];
   assert.strictEqual(full.length, afterTrim.length, '前提: 裁剪后长度不变');
-  assert.notStrictEqual(sigOf(full), sigOf(afterTrim), '取 [0] 会漏掉, 取最后一条才能检测');
+  assert.notStrictEqual(sigOfHistory(full), sigOfHistory(afterTrim), '取 [0] 会漏掉, 取最后一条才能检测');
 });
 
 test('签名: 无变化时签名保持一致(轮询跳过重绘)', () => {
   const h = [{ completedAt: 'a' }, { completedAt: 'b' }];
-  assert.strictEqual(sigOf(h), sigOf(h));
-  assert.strictEqual(sigOf(h), sigOf([...h]));
-  assert.strictEqual(sigOf([]), sigOf(null));
-  assert.strictEqual(sigOf(undefined), '0|');
+  assert.strictEqual(sigOfHistory(h), sigOfHistory(h));
+  assert.strictEqual(sigOfHistory(h), sigOfHistory([...h]));
+  assert.strictEqual(sigOfHistory([]), sigOfHistory(null));
+  assert.strictEqual(sigOfHistory(undefined), '0|');
 });
 
 /* ══════════════════════════════════════════════════════════════

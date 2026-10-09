@@ -62,11 +62,33 @@ test('dup_hash_worker: 引用统一的 partial 段大小常量', () => {
     'partial 模式未使用 PARTIAL_SEGMENT_BYTES');
 });
 
+/** 取 anchor 之后第一个 { 开始的完整代码块(花括号配对, 跳过字符串里的括号) */
+function blockAfter(src, anchor) {
+  const i = src.indexOf(anchor);
+  if (i < 0) throw new Error('未找到锚点: ' + anchor);
+  let d = 0, started = false;
+  for (let k = i; k < src.length; k++) {
+    const ch = src[k];
+    if (ch === "'" || ch === '"' || ch === '`') {   // 跳过字符串字面量
+      const q = ch;
+      for (k++; k < src.length && src[k] !== q; k++) {
+        if (src[k] === '\\') k++;
+      }
+      continue;
+    }
+    if (ch === '{') { d++; started = true; }
+    else if (ch === '}') { d--; if (started && d === 0) return src.slice(i, k + 1); }
+  }
+  throw new Error('块未闭合: ' + anchor);
+}
+
 test('dup_hash_worker: 仍只做头尾两段(不引入中段采样)', () => {
   // 机械盘上多一次 seek 的成本(数毫秒)远高于多读几十 KB,
   // 所以只允许加大单段长度, 不允许增加采样点。
-  const seg = workerSrc.slice(workerSrc.indexOf("if (mode === 'partial')"),
-    workerSrc.indexOf("if (mode === 'partial')") + 1400);
+  // 花括号配对取整块, 不用固定 1400 字符切片 —— 1400 已溢出到无关的
+  // ID3 读取逻辑(实测切片尾部是 "// Read ID3 tags before hashing"),
+  // 之后 worker 里多插一行 readSync(fd, head 就会被误判成"新增中段采样"。
+  const seg = blockAfter(workerSrc, "if (mode === 'partial')");
   const head = (seg.match(/readSync\(fd, head/g) || []).length;
   const tail = (seg.match(/readSync\(fd, tail/g) || []).length;
   assert.ok(head === 1 && tail === 1,

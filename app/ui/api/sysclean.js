@@ -278,7 +278,12 @@ function isTargetPath(p) {
   for (const t of SCAN_TARGETS) {
     if (t.path.includes('*')) {
       // /vol*/@appcenter → regex ^/vol\d+/@appcenter(/|$)
-      const pat = new RegExp('^' + t.path.replace(/\*/g, 'vol\\d+') + '(/|$)');
+      // /vol*/@appcenter → ^/vol\d+/@appcenter(/|$)
+      // P2 修 bug: 替换 '*' 时只能替换 '*' 这**一个字符**, 所以要写成 '\d+'。
+      // 原先写成 'vol\d+' 而 '*' 前面已经有 'vol', 结果拼成 /^\/volvol\d+\//,
+      // 实测 pat.test('/vol3/@appcenter/photos') === false —— app-logs 这类
+      // glob 目标的清理因此 100% 失效(只在 failed[] 里留一句"path not in whitelist")。
+      const pat = new RegExp('^' + t.path.replace(/\*/g, '\\d+') + '(/|$)');
       if (pat.test(n)) return true;
     } else {
       // P0 安全: 带 filter 的 target 只允许其子路径(如 /var/log/syslog.1.gz),

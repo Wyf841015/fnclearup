@@ -8,18 +8,33 @@ const App = {
   tempScanned: false
 };
 
+// P1: 原来直接 return r.json(), HTTP 状态码被丢弃 —— 后端 500 返回 HTML 时
+// 抛出的是 "Unexpected token '<'" 这类 JSON 解析错, 真实错误信息被吞掉;
+// 4xx+JSON 时业务 error 字段能读到但调用方无从知道这是错误响应。
+// 这里不抛错(抛错会打断几十个现有调用点的正常路径), 只把状态信息挂到结果对象上,
+// 调用方需要时可读 __ok / __status / __error。
+async function parseFetchResponse(r) {
+  let data;
+  try { data = await r.json(); }
+  catch { data = { success: false, error: `响应不是合法 JSON (HTTP ${r.status})` }; }
+  data.__ok = r.ok;
+  data.__status = r.status;
+  if (!r.ok && !data.error) data.__error = `HTTP ${r.status}`;
+  return data;
+}
+
 const API = {
   base: '/app/fnclearup/',
   async get(path, timeoutMs=15000) {
     const ac = new AbortController();
     const t = setTimeout(()=>ac.abort(), timeoutMs);
-    try { const r=await fetch(this.base+path,{signal:ac.signal}); clearTimeout(t); return r.json(); }
+    try { const r=await fetch(this.base+path,{signal:ac.signal}); clearTimeout(t); return await parseFetchResponse(r); }
     catch(e){ clearTimeout(t); throw e; }
   },
   async post(path, body, timeoutMs=30000) {
     const ac = new AbortController();
     const t = setTimeout(()=>ac.abort(), timeoutMs);
-    try { const r=await fetch(this.base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ac.signal}); clearTimeout(t); return r.json(); }
+    try { const r=await fetch(this.base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ac.signal}); clearTimeout(t); return await parseFetchResponse(r); }
     catch(e){ clearTimeout(t); throw e; }
   }
 };
@@ -48,9 +63,19 @@ function initLucide() {
   lucide.createIcons();
   if (!initLucide._obs && typeof MutationObserver !== 'undefined') {
     initLucide._obs = true;
+    // P1: 回调触发的**原因**正是 createIcons() 自己替换 <i data-lucide> 产生的
+    // childList 变更。debounce 只合并不打断, 只要 createIcons() 每次都产出新的
+    // childList, 链条就以 ~20Hz 永续自触发。这里加自写互斥(与 motion.js 的
+    // data-counting 同思路): 执行期间置位, 置位时直接 return。
     new MutationObserver(() => {
+      if (document.body.__iconizing) return;
       clearTimeout(_lucideTimer);
-      _lucideTimer = setTimeout(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }, 50);
+      _lucideTimer = setTimeout(() => {
+        if (document.body.__iconizing) return;
+        document.body.__iconizing = true;
+        try { if (typeof lucide !== 'undefined') lucide.createIcons(); }
+        finally { document.body.__iconizing = false; }
+      }, 50);
     }).observe(document.body, { subtree: true, childList: true });
   }
 }
@@ -390,7 +415,17 @@ async function switchTab(tabName) {
 // ════════════════════════════════
 // App Scan
 // ════════════════════════════════
+let _appScanning = false;
 async function doScan() {
+  // P1: switchTab('app') 每次都 await doScan(), 快速来回切 tab 会并发两个
+  // api/scan, 两次都写 App.installedApps / App.orphanData 并各自重建表格,
+  // 后返回的旧结果会覆盖新结果。加 in-flight 锁(项目里其它扫描都有此守卫)。
+  if (_appScanning) return;
+  _appScanning = true;
+  try { await doScanInner(); } finally { _appScanning = false; }
+}
+
+async function doScanInner() {
   const btn=$('scanBtn')||$('scanTrigger'); const status=$('app-status'); const list=$('app-list');
   if(btn){btn.disabled=true;btn.innerHTML='<span>⏳</span><span>扫描中...</span>';}
   if(status){status.className='loading';status.textContent='⏳ 正在扫描...';}
@@ -976,7 +1011,7 @@ async function startDupScan(tab) {
     const result = await API.post('api/dup/scan', { type: tab==='music'?'music':'files', paths: scanPaths, minSize, keepMode });
     if (result.error || !result.jobId) {
       showToast(result.error||'启动扫描失败','error');
-      if(statusEl) statusEl.innerHTML='❌ '+(result.error||'启动扫描失败');
+      if(statusEl) statusEl.innerHTML='❌ '+escHtml(result.error||'启动扫描失败');
       if(scanBtn){scanBtn.disabled=false;scanBtn.style.display='';}
       return;
     }
@@ -1019,7 +1054,7 @@ function finishDupScan(tab, data) {
   const se=$(ids.status);
   if(!data||data.status==='error'||data.status==='aborted') {
     const msg = data?(data.error||(data.status==='aborted'?'已中止':'失败')):'扫描失败';
-    if(se)se.innerHTML='❌ '+msg; showToast(msg,'error');
+    if(se)se.innerHTML='❌ '+escHtml(msg); showToast(msg,'error');
     const ee=$(ids.empty); if(ee){ee.style.display='';const h3=ee.querySelector('h3');if(h3)h3.textContent='❌ 扫描失败';}
     return;
   }
@@ -1526,7 +1561,7 @@ function simDupCompareGroup(groupNo){
           : (p>=95 ? 'var(--color-success,#22c55e)' : (p>=80 ? 'var(--color-primary)' : 'var(--color-warning,#f59e0b)'));
         return '<figure style="margin:0;display:flex;flex-direction:column;gap:6px">'
           + '<a href="'+escHtml(f.path)+'" target="_blank" rel="noopener" '
-          + 'style="display:block;aspect-ratio:4/3;background:var(--bg-subtle,#f1f5f9);border-radius:8px;overflow:hidden;border:1px solid var(--border-color,#e2e8f0)">'
+          + 'style="display:block;aspect-ratio:4/3;background:var(--color-bg);border-radius:8px;overflow:hidden;border:1px solid var(--color-border)">'
           + '<img src="'+escHtml(simDupThumbUrl(f.path))+'" alt="'+escHtml(f.name)+'" loading="lazy" '
           + 'style="width:100%;height:100%;object-fit:contain;display:block"></a>'
           + '<figcaption style="font-size:12px;line-height:1.5;word-break:break-all">'
@@ -2289,7 +2324,11 @@ function hideBrowseModal() {
   // "💾 选择保存位置" 标题也不该继续挂在关闭状态的弹窗上。
   setBrowseMode('select');
 }
+// P1: 每次点击目录都发独立 fetch, 只有超时没有取消/序号比对。两个响应乱序到达时,
+// 旧结果会直接覆盖 list.innerHTML, 出现"路径栏显示 A、列表却是 B"的错位。
+let _browseSeq = 0;
 async function loadBrowseDir(dirPath) {
+  const seq = ++_browseSeq;              // 本次请求序号
   const list = document.getElementById('browseList');
   const pathEl = document.getElementById('browsePath');
   if (pathEl) pathEl.textContent = dirPath;
@@ -2297,7 +2336,8 @@ async function loadBrowseDir(dirPath) {
   try {
     const r = await fetch('/app/fnclearup/api/browse?path=' + encodeURIComponent(dirPath), { signal: AbortSignal.timeout(15000) });
     const data = await r.json();
-    if (!data.success) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + (data.error||'加载失败') + '</div>'; return; }
+    if (seq !== _browseSeq) return;   // 已有更新的请求在飞, 丢弃本次过期响应
+    if (!data.success) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + escHtml(data.error||'加载失败') + '</div>'; return; }
     if (list) {
       let html = '';
       if (data.parent) html += '<div class="browse-item dir" onclick="browseGoUp()" style="color:var(--color-primary)">⬆ ..</div>';
@@ -2312,7 +2352,7 @@ async function loadBrowseDir(dirPath) {
       el.onclick = () => loadBrowseDir(el.dataset.browsePath);
     });
     }
-  } catch(e) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + e.message + '</div>'; }
+  } catch(e) { if (list) list.innerHTML = '<div class="browse-item" style="justify-content:center;color:var(--color-danger);cursor:default">❌ ' + escHtml(e.message) + '</div>'; }
 }
 function browseGoUp() {
   const p = document.getElementById('browsePath');
@@ -2369,6 +2409,7 @@ async function postExportSave(dir, filename, pending, overwrite) {
   const res = await fetch('api/export/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(60000),
     body: JSON.stringify({
       dir, filename,
       content: pending.content,

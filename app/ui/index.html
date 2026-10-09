@@ -313,7 +313,7 @@
         <summary style="cursor:pointer;color:var(--color-text-secondary);user-select:none">⚙️ 扫描排除规则（跳过不参与重复检测的目录）</summary>
         <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
           <textarea id="dupExcludePatterns" rows="6" spellcheck="false"
-            style="font-family:var(--font-mono);font-size:12px;padding:8px;border-radius:6px;border:1px solid var(--border-color,#e2e8f0);background:var(--bg-subtle,#f8fafc);color:var(--color-text,#333);resize:vertical"
+            style="font-family:var(--font-mono);font-size:12px;padding:8px;border-radius:6px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text,#333);resize:vertical"
             placeholder="每行一条规则"></textarea>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button type="button" class="btn btn-primary btn-sm" onclick="saveDupExcludeRules()">💾 保存</button>
@@ -508,8 +508,8 @@
     
 
     <!-- P1-4: 相似文件并排对比 (原生 <dialog>, CEF/WebView 下比自定义 modal 可靠) -->
-    <dialog id="simdupCompareDlg" style="border:none;padding:0;border-radius:12px;max-width:min(94vw,1100px);max-height:88vh;background:var(--bg-card,#fff);color:var(--color-text,#333);box-shadow:0 12px 48px rgba(0,0,0,.35)">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-color,#e2e8f0)">
+    <dialog id="simdupCompareDlg" style="border:none;padding:0;border-radius:12px;max-width:min(94vw,1100px);max-height:88vh;background:var(--color-card-bg);color:var(--color-text,#333);box-shadow:0 12px 48px rgba(0,0,0,.35)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--color-border)">
         <h3 style="margin:0;font-size:15px" id="simdupCmpTitle">相似文件对比</h3>
         <button type="button" id="simdupCmpClose" class="btn btn-ghost btn-sm" title="关闭">✕</button>
       </div>
