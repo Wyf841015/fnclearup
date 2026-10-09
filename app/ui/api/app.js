@@ -103,7 +103,10 @@ export async function handleDelete(req, res) {
   const mode = data.mode === 'permanent' ? 'permanent' : 'trash';
   const rawPaths = data.paths || [];
   const paths = rawPaths.filter(p => isSafePath(p));
-  const skipped = rawPaths.length - paths.length;
+  // let 而非 const: 下方循环里对「路径已不存在」的情况会 skipped++。
+  // 原来是 const, 只要勾选中含一个已被卸载清掉的残余目录就会抛
+  // TypeError: Assignment to constant variable, 导致整个删除请求 500。
+  let skipped = rawPaths.length - paths.length;
   const deleted = [], failed = [], usersDeleted = [], usersFailed = [];
   for (const p of paths) {
     try {
