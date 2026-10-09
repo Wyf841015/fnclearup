@@ -14,12 +14,19 @@ const App = {
 // 这里不抛错(抛错会打断几十个现有调用点的正常路径), 只把状态信息挂到结果对象上,
 // 调用方需要时可读 __ok / __status / __error。
 async function parseFetchResponse(r) {
-  let data;
+  let data, parsed = true;
   try { data = await r.json(); }
-  catch { data = { success: false, error: `响应不是合法 JSON (HTTP ${r.status})` }; }
-  data.__ok = r.ok;
+  catch { parsed = false; data = { success: false, error: `响应不是合法 JSON (HTTP ${r.status})` }; }
+  // HTTP 200 但 body 不是 JSON 时(网关 302 跳登录页会回 HTML)同样不可信 ——
+  // 这时数据全是 undefined, 调用方按 200 正常渲染就会显示 "undefined 个"。
+  // 所以 __ok 要同时看 HTTP 状态和 JSON 是否解析成功。
+  data.__ok = r.ok && parsed;
   data.__status = r.status;
-  if (!r.ok && !data.error) data.__error = `HTTP ${r.status}`;
+  // 后端的 4xx 响应本身带 error 字段(如 403 { error: 'path must be under /vol*' }),
+  // 原来的写法 "if (!r.ok && !data.error)" 在这种情况下反而不设 __error,
+  // 调用方回退成 `HTTP 403` —— 真实原因又被掩盖了一次。这里统一: 有 error 用它,
+  // 没有才回退成状态码。
+  if (!data.__ok) data.__error = data.error || `HTTP ${r.status}`;
   return data;
 }
 
@@ -1283,6 +1290,11 @@ async function doBigFilesScan() {
 
   try {
     const data = await API.get('api/bigfiles/scan?' + params.toString());
+    // 后端的 4xx 分支(如 403 path must be under /vol*)只回 { error }, 没有
+    // scanned_paths 等字段。原先直接渲染, 第一个用到缺失字段的地方抛
+    // TypeError, 被下面的 catch 捕获后把真实错误信息掩盖成
+    // "Cannot read properties of undefined", 用户完全看不到真正原因。
+    if (data.__ok === false) throw new Error(data.__error || `HTTP ${data.__status}`);
     if ($('bigfiles-candidates')) $('bigfiles-candidates').textContent = data.total_candidates ?? 0;
     if ($('bigfiles-results')) $('bigfiles-results').textContent = (data.files || []).length;
     const totalSize = (data.files || []).reduce((s, f) => s + (f.size || 0), 0);
@@ -1294,7 +1306,7 @@ async function doBigFilesScan() {
       const rootLabel = data.root === '/vol*' ? '所有卷' : data.root;
       const partialLabel = data.truncated ? `（仅显示前 ${data.top_n} 个）` : '';
       const stoppedNote = data.files && data.files.length === 0 && data.scanned_paths > 0 ? ' [已停止]' : '';
-      status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${stoppedNote}，扫描了 ${data.scanned_paths.toLocaleString()} 个路径`;
+      status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${stoppedNote}，扫描了 ${(data.scanned_paths || 0).toLocaleString()} 个路径`;
     }
     renderBigFilesList(data.files || []);
   } catch (e) {
