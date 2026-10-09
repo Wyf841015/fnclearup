@@ -198,6 +198,33 @@ function showCleanupSummary() {
 
 // Sponsor
 function showSponsorModal() { $('#sponsorModal')?.classList.add('show'); }
+
+// ── 赞助提醒: 启动风险警告确认后再弹一次 ──────────────────────────
+//
+// 为什么加频率控制: 打开应用本来就有强制的「清理有风险」警告(还带 3 秒倒计时),
+// 再叠一个每次必弹的赞助框就是连续两次打断, 天天用的人会直接麻木 ——
+// 到了「看到就划掉」的程度, 反而比不弹更糟。
+// 规则: 首次打开必弹; 之后每 7 天提醒一次。localStorage 不可用时按「该弹」处理,
+// 宁可多弹一次也别让整个提醒链路静默失效。
+const SPONSOR_REMIND_KEY = 'fnclearup.sponsor.remindAt';
+const SPONSOR_REMIND_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function maybeShowSponsorReminder() {
+  let due = true;
+  try {
+    const last = Number(localStorage.getItem(SPONSOR_REMIND_KEY) || 0);
+    due = !(last > 0 && (Date.now() - last) < SPONSOR_REMIND_INTERVAL_MS);
+    if (due) localStorage.setItem(SPONSOR_REMIND_KEY, String(Date.now()));
+  } catch (e) {
+    console.error('[main.js] sponsor remind:', e);
+    due = true;
+  }
+  if (due) {
+    // 延后一拍: 让警告弹窗的关闭动画先走完, 两个框不要叠在一起闪
+    setTimeout(() => showSponsorModal(), 260);
+  }
+  return due;
+}
 function showSponsorImgFull(img) { const o=document.getElementById('sponsorImgOverlay'); if(o){o.classList.add('show');document.getElementById('sponsorImgFull').src=img.src;} }
 
 // 联系作者
@@ -3192,6 +3219,8 @@ function closeStartupWarning(confirmed) {
   if (confirmed) {
     // Just a soft toast — the modal is the actual deterrent
     showToast('✅ 已确认。继续操作前请确保已备份重要数据。', 'success', 3000);
+    // 风险警告确认后, 再递上一个赞助提醒(内部有 7 天频率控制)
+    maybeShowSponsorReminder();
   }
 }
 
@@ -3514,7 +3543,7 @@ function init() {
 
   // Export all functions to window for inline onclick and event delegation
   const exports = {
-    toggleTheme, showSponsorModal, showSponsorImgFull, showContactModal,
+    toggleTheme, showSponsorModal, maybeShowSponsorReminder, showSponsorImgFull, showContactModal,
     showCleanupSummary, refreshCleanupSummary, filterTable, exportTableToCSV,
     switchGroup,
     switchTab,
