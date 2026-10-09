@@ -90,9 +90,13 @@ test('后端: trash 模式路径不匹配 /volN/UID/ 时报失败而非静默永
   assert.strictEqual(f('/vol1/a/b'), null, 'UID 段非数字开头, 不能当 UID 用');
   assert.strictEqual(f('/vol1/userdata/b'), null, '目录名不能被误当 UID');
   assert.strictEqual(f('/vol1/1000'), null, '卷根下没有 UID 段, 不能直接进回收站');
-  // 网盘 UID 带后缀, 必须仍然可用
-  assert.strictEqual(f('/vol02/1000-1-abc/深/层/f.mp4'),
-    '/vol02/1000-1-abc/.@#local/trash/深/层/f.mp4');
+  // 网盘 /vol02 建不了 .@#local/trash(fuse 拒绝 mkdir), 必须返回 null —— 与
+  // api/trash.js 的 moveToTrash 一致。放行的话会走到 mkdir 抛错, 用户看到"删除失败"。
+  assert.strictEqual(f('/vol02/1000-1-abc/深/层/f.mp4'), null,
+    '/vol02 是网盘 fuse 挂载, 建不了回收站, 必须拒绝而不是尝试 mkdir');
+  assert.strictEqual(f('/mnt/vol02/1000-1-abc/x.bin'), null);
+  // 其他卷的带后缀 UID 仍应可用
+  assert.strictEqual(f('/vol3/1000-1-abc/x.bin'), '/vol3/1000-1-abc/.@#local/trash/x.bin');
   // null 时 deleteOne 必须抛错, 不能走到 unlink
   const del = fnBody(bcode, 'deleteOne');
   assert.match(del, /if \(!dest\) \{\s*throw new Error\('路径格式不支持回收站/, 'dest 为 null 必须抛错');
@@ -130,7 +134,9 @@ test('后端: 空 paths 返回 400', () => {
 test('前端: 重名分区按组选择, 副本才可删', () => {
   const body = fnBody(code, 'nmRender');
   assert.ok(body, '应有 nmRender');
-  assert.match(body, /const dupFiles = \(g\.files \|\| \[\]\)\.slice\(1\)/,
+  assert.match(body, /const files = g\.files \|\| \[\];/,
+    '应先取出组内文件列表');
+  assert.match(body, /const dupFiles = files\.slice\(1\);/,
     '必须 slice(1) 保留第一份 —— 这是重名分区的核心安全约束');
   assert.match(body, /data-paths=/, '组 checkbox 要带待删路径数组');
   assert.match(body, /data-keep=/, '要记录保留的那一份(用于提示)');
@@ -176,7 +182,12 @@ test('前端: 三个分区渲染后都要刷新选择计数', () => {
     // 三个渲染函数都要**两处**: 空状态分支里一次(那里会提前 return,
     // 末尾那次根本执行不到, 少了它按钮会停留在上一次扫描的数量), 正常分支末尾一次。
     // 断言"至少一处"是不够的 —— 注入验证时删掉其中一处, 测试照样全绿。
-    const n = body.split("filesUpdateSelectInfo('" + mod + "')").length - 1;
+    // 统计要排除两类干扰: onchange="filesUpdateSelectInfo('x')" 属性(那是绑定
+    // 不是调用), 以及解释这行的注释(否则加了注释就变成 3 处)。
+    const n = body.split('\n')
+      .filter(l => !/onchange\s*=/.test(l) && !l.trim().startsWith('//'))
+      .join('\n')
+      .split("filesUpdateSelectInfo('" + mod + "')").length - 1;
     assert.strictEqual(n, 2,
       fn + ' 内应有 2 处 filesUpdateSelectInfo(\'' + mod + '\')'
       + '(空状态分支 + 正常分支末尾), 实际 ' + n);

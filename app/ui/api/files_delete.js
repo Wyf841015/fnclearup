@@ -31,7 +31,12 @@ function trashTarget(fp) {
   // \d[^/]* 两者兼顾: 要求数字开头(fnOS UID 的确定特征), 又允许带后缀。
   const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/(\d[^/]*)\/(.+)/);
   if (!m) return null;
-  return `/${m[1]}/${m[2]}/.@#local/trash/${m[3]}`;
+  const root = `/${m[1]}/${m[2]}`;
+  // /vol02 是 fnOS 网盘 fuse 挂载, 建不了 .@#local/trash(mkdir 会被 fuse 拒绝)。
+  // 这一点与 api/trash.js 的 moveToTrash 一致 —— 不能只按 UID 段判断就放行,
+  // 否则网盘路径会走到 mkdir 然后抛错, 用户看到的是"删除失败"。
+  if (root.startsWith('/vol02/')) return null;
+  return `${root}/.@#local/trash/${m[3]}`;
 }
 
 /** 目标已存在时追加 _1 / _2 … 后缀, 与 dup/empty_dir 的行为一致 */

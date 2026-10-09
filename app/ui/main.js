@@ -1610,6 +1610,9 @@ function simDupRenderResult(s) {
       + '<span style="font-size:11px;color:var(--color-text-secondary)"> (dHash 距离 '+s.stats.bestDist+'/'+SIMDASH_BITS+')</span>';
   }
   if (!s.groups || !s.groups.length) {
+    // 这里会提前 return, 末尾那次 filesUpdateSelectInfo 执行不到 —— 少了它,
+    // 扫出空结果时删除按钮仍停留在上一次扫描的数量。
+    filesUpdateSelectInfo('simdup');
     list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现相似文件</h3><p>当前阈值下没有匹配项，可换「宽松」策略重试</p></div>';
     return;
   }
@@ -1736,6 +1739,7 @@ function brokRender(s) {
   else if (_brokCat === 'dl') { items = s.download_residue||[]; label = '下载残留'; }
   else { items = s.broken||[]; label = '损坏文件'; }
   if (!items.length) {
+      filesUpdateSelectInfo('broken');   // 提前 return, 末尾那次执行不到
     list.innerHTML = `<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现${label}</h3><p>当前目录没有匹配项</p></div>`;
     return;
   }
@@ -1814,31 +1818,46 @@ async function nmScan() {
     const groups = s.groups || [];
     if (!groups.length) {
       list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现重名文件</h3><p>没有同名文件散落在不同目录</p></div>';
+      filesUpdateSelectInfo('namematch');
       return;
     }
-    // 按组选择: 每组勾选后删除该组除第一份外的所有副本 —— 重名文件通常分散在
-    // 不同目录/不同介质, 逐文件勾选容易漏选或全选(全选会把仅存的一份也删掉)。
-    // 组内第一份默认保留(索引 0), 后面的才是可安全删除的副本。
+    // 文件级明细 + 组级选择。
+    //
+    // 之前一行只显示组名和份数, 用户看不出具体删哪几个 —— 同一组里哪个保留、
+    // 哪个删除完全看不出来。这里把组内文件逐个列出: 第一份标「保留」(这是组粒度
+    // 选择的保证, 全选也不会删掉它), 其余标「删除」并给累计可释放空间。
     let html = '<div class="list-scroll"><table class="data-table"><thead><tr>'
       + '<th style="width:34px"><input type="checkbox" class="fd-cb-all" data-mod="namematch" onchange="filesSelectAll(this)"></th>'
-      + '<th style="width:46px">#</th><th>文件名</th><th style="width:70px">份数</th><th style="width:14%">总大小</th><th>位置</th></tr></thead><tbody>';
-    groups.forEach((g, i) => {
-      const dupFiles = (g.files || []).slice(1);   // 保留第一份
+      + '<th style="width:62px">操作</th><th>文件名</th><th style="width:70px">份数</th>'
+      + '<th style="width:90px">大小</th><th>位置</th></tr></thead><tbody>';
+    groups.forEach((g, gi) => {
+      const files = g.files || [];
+      // 保留第一份, 其余是副本 —— 与后端/选择逻辑一致的判定
+      const dupFiles = files.slice(1);
       const dupSize = dupFiles.reduce((s2, f) => s2 + (f.size || 0), 0);
       const dupPaths = dupFiles.map(f => f.path);
-      html += `<tr>
-        <td><input type="checkbox" class="fd-cb" data-mod="namematch" data-group="${i}" data-paths="${escHtml(JSON.stringify(dupPaths))}" data-size="${dupSize}" data-keep="${escHtml((g.files && g.files[0] && g.files[0].path) || '')}" onchange="filesUpdateSelectInfo('namematch')" ${dupFiles.length ? '' : 'disabled'} title="${dupFiles.length ? '删除本组除第一份外的 ' + dupFiles.length + ' 个副本' : '本组只有一份, 无副本可删'}"></td>
-        <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i+1}</td>
-        <td style="white-space:nowrap">${escHtml(g.name)}</td>
-        <td style="font-family:var(--font-mono);font-size:13px">×${g.count}</td>
-        <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${formatBytes(g.total_size || 0)}</td>
-        <td><div style="display:flex;flex-direction:column;gap:2px;font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary)">${(g.files || []).map(f => '<span title="' + escHtml(f.path) + '">' + escHtml(f.dir || f.path) + '</span>').join('')}</div></td>
-      </tr>`;
+      files.forEach((f, fi) => {
+        const isKeep = fi === 0;
+        html += `<tr${isKeep ? ' style="background:var(--color-primary-bg)"' : ''}>
+          ${fi === 0
+            ? `<td><input type="checkbox" class="fd-cb" data-mod="namematch" data-group="${gi}"
+                 data-paths="${escHtml(JSON.stringify(dupPaths))}" data-size="${dupSize}"
+                 data-keep="${escHtml(f.path)}" title="${dupFiles.length ? '选中后删除本组其余 ' + dupFiles.length + ' 个副本' : '本组只有一份, 无副本可删'}"
+                 onchange="filesUpdateSelectInfo('namematch')" ${dupFiles.length ? '' : 'disabled'}></td>`
+            : '<td></td>'}
+          <td style="font-size:11px;white-space:nowrap;font-weight:600;color:${isKeep ? 'var(--color-success)' : 'var(--color-danger)'}">${isKeep ? '● 保留' : '✕ 删除'}</td>
+          <td style="white-space:nowrap">${escHtml(g.name)}</td>
+          <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);text-align:center">${fi === 0 ? '×' + g.count : ''}</td>
+          <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${isKeep ? '<span style="opacity:.6">' + formatBytes(f.size || 0) + '</span>' : formatBytes(f.size || 0)}</td>
+          <td style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(f.path)}">${escHtml(f.dir || f.path)}</td>
+        </tr>`;
+      });
     });
     html += '</tbody></table></div>';
     list.innerHTML = html;
     filesUpdateSelectInfo('namematch');
   }
+
 async function nmStop() {
   if (!_nmJob) return;
   _nmScanning = false;
@@ -2100,17 +2119,26 @@ async function doBigFilesDelete() {
   $('bigfiles-status').textContent = mode === 'trash' ? '🗑 移到回收站…' : '🔥 永久删除…';
   try {
     const data = await API.post('api/bigfiles/delete', { paths, mode, confirmed: true });
+    if (data.__ok === false) throw new Error(data.__error || ('HTTP ' + data.__status));
     const deleted = data.total || 0;
     const skipped = data.skipped || 0;
     const failures = data.failures || 0;
+    // 选了"放到回收站"但实际永久删除的路径(卷根/网盘等建不了回收站的)。
+    // 原先这个字段前端根本不显示 —— 用户去回收站找不到文件, 只会认为"删除失败"。
+    const fallbacks = Array.isArray(data.permanentFallbacks) ? data.permanentFallbacks : [];
     const fmtSize = formatBytes(_bigFilesSelectedBytes);
     const modeLabel = mode === 'trash' ? '移到回收站' : '永久删除';
     let msg = `✅ ${modeLabel}完成：${deleted}/${paths.length} 个 (${fmtSize})`;
     if (skipped) msg += ` · 跳过 ${skipped}`;
     if (failures) msg += ` · 失败 ${failures}`;
+    if (fallbacks.length) {
+      msg += ` · ${fallbacks.length} 个未能进回收站已直接删除（${escHtml(fallbacks[0])} 等）`;
+    }
     msg += blockedNotice(data);
     $('bigfiles-status').textContent = msg;
-    showToast(msg, failures ? 'error' : 'success');
+    // 有失败/被拦/未能进回收站时不能用绿色成功样式 —— 否则用户以为一切正常
+    const partial = failures || data.blockedCount || fallbacks.length;
+    showToast(msg, partial ? (failures ? 'error' : 'warning') : 'success');
     // Re-scan to refresh the list (deleted files are gone)
     if (deleted > 0) await doBigFilesScan();
   } catch (e) {
