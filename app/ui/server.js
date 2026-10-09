@@ -12,6 +12,7 @@ import { handleVolumes, handleVolumesDelete, handleNetworks, handleNetworksDelet
 import { handleTempScan, handleTempDelete } from './api/temp.js';
 import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleDupExport, handleDupStop, handleDupPause, handleDupResume, dupJobs, setDupPaths } from './api/dup.js';
 import { handleEmptyDirScan, handleEmptyDirStop, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
+import { handleFilesDelete } from './api/files_delete.js';
 import { handleSysCleanScan, handleSysCleanClean, handleSysCleanListManifests, handleSysCleanGetManifest } from './api/sysclean.js';
 import { scanTrash, browseTrash, cleanTrash, isTrashPath } from './api/trash.js';
 import { initSchedule, handleSchedule, handleScheduleTrigger, handleScheduleHistory, handleScheduleReport } from './api/schedule.js';
@@ -242,6 +243,7 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/empty_dir/scan') { await handleEmptyDirScan(req, res); return; }
       if (method === 'POST' && path === '/api/empty_dir/stop') { await handleEmptyDirStop(req, res); return; }
       if (method === 'POST' && path === '/api/empty_dir/delete') { await handleEmptyDirDelete(req, res); return; }
+    if (method === 'POST' && path === '/api/files/delete') { await handleFilesDelete(req, res); return; }
       if (method === 'GET' && path === '/api/empty_dir/status') { handleEmptyDirStatus(req, res); return; }
       if (method === 'GET' && path === '/api/empty_dir/jobs') {
         const list = [...emptyDirJobs].map(([id, j]) => ({ id, scanPath: j.scanPath, status: 'running' }));

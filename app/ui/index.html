@@ -374,6 +374,7 @@
                <div class="dup-path-list" id="simdupPathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('simdup')">📁 添加目录</button>
             <button type="button" class="btn btn-primary" onclick="simDupScan()" id="simdupBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="simDupStop()" id="simdupStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+            <button type="button" class="btn btn-danger" onclick="openFilesDeleteModal('simdup')" id="simdupDeleteBtn" disabled><span>🗑</span><span>删除选中</span></button>
           </div>
         </div>
         <div id="simdup-status"></div>
@@ -399,6 +400,7 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-secondary)"><input type="checkbox" id="broken-checkmedia"> 检损坏媒体</label>
             <button type="button" class="btn btn-primary" onclick="brokScan()" id="brokenBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="brokStop()" id="brokenStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+            <button type="button" class="btn btn-danger" onclick="openFilesDeleteModal('broken')" id="brokenDeleteBtn" disabled><span>🗑</span><span>删除选中</span></button>
           </div>
         </div>
         <div id="broken-status"></div>
@@ -425,6 +427,7 @@
                <div class="dup-path-list" id="namePathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('name')">📁 添加目录</button>
             <button type="button" class="btn btn-primary" onclick="nmScan()" id="nmBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
             <button type="button" class="btn btn-ghost" onclick="nmStop()" id="nmStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+            <button type="button" class="btn btn-danger" onclick="openFilesDeleteModal('namematch')" id="namematchDeleteBtn" disabled><span>🗑</span><span>删除选中</span></button>
           </div>
         </div>
         <div id="nm-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
@@ -911,6 +914,25 @@
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideEmptyDeleteModal()">取消</button>
         <button type="button" class="btn btn-danger" onclick="confirmEmptyDelete()">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 相似/异常/重名 共用的删除确认弹窗 -->
+  <div class="modal-overlay" id="filesDeleteModal">
+    <div class="modal">
+      <h3><span><i data-lucide="alert-triangle"></i></span><span>确认删除</span></h3>
+      <p>即将从「<strong id="filesDeleteSrcLabel">当前分区</strong>」删除 <strong id="filesDeleteCount">0</strong> 个文件，可释放 <strong id="filesDeleteSize">0 B</strong></p>
+      <div class="paths-preview" id="filesDeletePaths" style="max-height:200px;overflow-y:auto"></div>
+      <div class="delete-mode-select">
+        <label class="delete-radio"><input type="radio" name="filesDeleteMode" value="trash" checked><span>放到回收站<small>文件移至卷回收站，可恢复</small></span></label>
+        <label class="delete-radio"><input type="radio" name="filesDeleteMode" value="permanent"><span>永久删除<small>直接删除文件，不可恢复</small></span></label>
+      </div>
+      <p style="color:var(--color-warning);font-size:12px;margin-top:10px">⚠️ <span id="filesDeleteWarn"></span></p>
+      <label class="delete-ack"><input type="checkbox" id="filesDeleteAck" onchange="filesRefreshConfirmBtn()"><span>我已确认以上路径, 了解删除后果</span></label>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeFilesDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" id="filesDeleteConfirmBtn" onclick="confirmFilesDelete()" disabled>确认删除</button>
       </div>
     </div>
   </div>

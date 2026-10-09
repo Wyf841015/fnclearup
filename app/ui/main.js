@@ -1617,12 +1617,15 @@ function simDupRenderResult(s) {
   s.groups.forEach(g => {
     g.files.forEach(f => clusters.push({ group: g.group, path: f.path, name: f.name, size: f.size, size_str: f.size_str, minDist: f.minDist, groupMinDist: g.minDist }));
   });
-  let html = '<div class="list-scroll"><table class="data-table"><thead><tr>' +
+  let html = '<div class="list-scroll"><table class="data-table"><thead><tr>'
+    + '<th style="width:34px"><input type="checkbox" class="fd-cb-all" data-mod="simdup" onchange="filesSelectAll(this)"></th>'
+    + '<th style="width:50px">组</th><th>文件名</th><th style="width:13%">大小</th>'
     '<th style="width:50px">组</th><th>文件名</th><th style="width:13%">大小</th>'
     + '<th style="width:88px">相似度</th><th style="width:38%">位置</th></tr></thead><tbody>';
   clusters.forEach(c => {
     const dir = c.path.slice(0, c.path.lastIndexOf('/')) || '/';
     html += `<tr>
+      <td><input type="checkbox" class="fd-cb" data-mod="simdup" data-path="${escHtml(c.path)}" data-size="${c.size || 0}" onchange="filesUpdateSelectInfo('simdup')"></td>
       <td style="text-align:center"><button type="button" class="simdup-cmp-btn" data-grp="${c.group}" title="并排对比该组">${c.group}</button></td>
       <td><span title="${escHtml(c.path)}">${escHtml(c.name)}</span></td>
       <td style="font-family:var(--font-mono);color:var(--color-primary)">${escHtml(c.size_str)}</td>
@@ -1636,6 +1639,7 @@ function simDupRenderResult(s) {
   list.querySelectorAll('.simdup-cmp-btn').forEach(function(btn){
     btn.addEventListener('click', function(){ simDupCompareGroup(parseInt(btn.dataset.grp, 10)); });
   });
+  filesUpdateSelectInfo('simdup');
 }
 
 // 对比弹窗的关闭绑定(关闭按钮 / 点遮罩 / ESC)
@@ -1735,11 +1739,12 @@ function brokRender(s) {
     list.innerHTML = `<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现${label}</h3><p>当前目录没有匹配项</p></div>`;
     return;
   }
-  let html = '<div class="list-scroll"><table class="data-table"><thead><tr><th style="width:46px">#</th><th>文件名</th><th style="width:14%">信息</th><th style="width:40%">位置</th></tr></thead><tbody>';
+  let html = '<div class="list-scroll"><table class="data-table"><thead><tr><th style="width:34px"><input type="checkbox" class="fd-cb-all" data-mod="broken" onchange="filesSelectAll(this)"></th><th style="width:46px">#</th><th>文件名</th><th style="width:14%">信息</th><th style="width:40%">位置</th></tr></thead><tbody>';
   items.forEach((it, i) => {
     const dir = it.path.slice(0, it.path.lastIndexOf('/')) || '/';
     const info = _brokCat === 'links' ? (it.target || '') : (it.size_str || (it.error || ''));
     html += `<tr>
+      <td><input type="checkbox" class="fd-cb" data-mod="broken" data-path="${escHtml(it.path)}" onchange="filesUpdateSelectInfo('broken')"></td>
       <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i+1}</td>
       <td><span title="${escHtml(it.path)}">${escHtml(it.name)}</span></td>
       <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(info)}">${escHtml(info)}</td>
@@ -1748,6 +1753,7 @@ function brokRender(s) {
   });
   html += '</tbody></table></div>';
   list.innerHTML = html;
+  filesUpdateSelectInfo('broken');
 }
 
 async function brokStop() {
@@ -1803,32 +1809,176 @@ async function nmScan() {
   }
 }
 
-function nmRender(s) {
-  const list = $('nm-list'); if (!list) return;
-  const groups = s.groups || [];
-  if (!groups.length) {
-    list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现重名文件</h3><p>没有同名文件散落在不同目录</p></div>';
-    return;
+  function nmRender(s) {
+    const list = $('nm-list'); if (!list) return;
+    const groups = s.groups || [];
+    if (!groups.length) {
+      list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现重名文件</h3><p>没有同名文件散落在不同目录</p></div>';
+      return;
+    }
+    // 按组选择: 每组勾选后删除该组除第一份外的所有副本 —— 重名文件通常分散在
+    // 不同目录/不同介质, 逐文件勾选容易漏选或全选(全选会把仅存的一份也删掉)。
+    // 组内第一份默认保留(索引 0), 后面的才是可安全删除的副本。
+    let html = '<div class="list-scroll"><table class="data-table"><thead><tr>'
+      + '<th style="width:34px"><input type="checkbox" class="fd-cb-all" data-mod="namematch" onchange="filesSelectAll(this)"></th>'
+      + '<th style="width:46px">#</th><th>文件名</th><th style="width:70px">份数</th><th style="width:14%">总大小</th><th>位置</th></tr></thead><tbody>';
+    groups.forEach((g, i) => {
+      const dupFiles = (g.files || []).slice(1);   // 保留第一份
+      const dupSize = dupFiles.reduce((s2, f) => s2 + (f.size || 0), 0);
+      const dupPaths = dupFiles.map(f => f.path);
+      html += `<tr>
+        <td><input type="checkbox" class="fd-cb" data-mod="namematch" data-group="${i}" data-paths="${escHtml(JSON.stringify(dupPaths))}" data-size="${dupSize}" data-keep="${escHtml((g.files && g.files[0] && g.files[0].path) || '')}" onchange="filesUpdateSelectInfo('namematch')" ${dupFiles.length ? '' : 'disabled'} title="${dupFiles.length ? '删除本组除第一份外的 ' + dupFiles.length + ' 个副本' : '本组只有一份, 无副本可删'}"></td>
+        <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i+1}</td>
+        <td style="white-space:nowrap">${escHtml(g.name)}</td>
+        <td style="font-family:var(--font-mono);font-size:13px">×${g.count}</td>
+        <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${formatBytes(g.total_size || 0)}</td>
+        <td><div style="display:flex;flex-direction:column;gap:2px;font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary)">${(g.files || []).map(f => '<span title="' + escHtml(f.path) + '">' + escHtml(f.dir || f.path) + '</span>').join('')}</div></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+    list.innerHTML = html;
+    filesUpdateSelectInfo('namematch');
   }
-  let html = '<div class="list-scroll"><table class="data-table"><thead><tr><th style="width:46px">#</th><th>文件名</th><th style="width:70px">份数</th><th style="width:14%">总大小</th><th>位置</th></tr></thead><tbody>';
-  groups.forEach((g, i) => {
-    html += `<tr>
-      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${i+1}</td>
-      <td style="white-space:nowrap">${escHtml(g.name)}</td>
-      <td style="font-family:var(--font-mono);font-size:13px">×${g.count}</td>
-      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)">${formatBytes(g.total_size)}</td>
-      <td><div style="display:flex;flex-direction:column;gap:2px;font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary)">${g.files.map(f => '<span title="' + escHtml(f.path) + '" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">📄 ' + escHtml(f.dir) + ' (' + (f.size_str||'') + ')</span>').join('')}</div></td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
-  list.innerHTML = html;
-}
-
 async function nmStop() {
   if (!_nmJob) return;
   _nmScanning = false;
   try { await API.post('api/namematch/stop?job=' + encodeURIComponent(_nmJob), {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// 相似 / 异常 / 重名 三分区的选择与删除
+//
+// 三个分区共用 /api/files/delete(后端 app/ui/api/files_delete.js), 删除逻辑
+// 与空目录一致: trash 移到 /volN/UID/.@#local/trash, permanent 直接删。
+//
+// 选择模型按分区语义各不相同:
+//   相似  逐文件 —— 每个文件都是独立候选
+//   异常  逐文件 —— 空文件/死链/损坏文件/下载残留都是独立项
+//   重名  按组   —— 勾一组 = 删该组除第一份外的所有副本。逐文件勾选容易
+//                   全选(把仅存的一份也删掉), 组粒度天然保证至少留一份。
+// ═══════════════════════════════════════════════════════════════════
+const FD_MOD_LABEL = { simdup: '相似', broken: '异常', namematch: '重名' };
+
+/** 取某分区已勾选项 → { paths, size, keeps } */
+function filesCollect(mod) {
+  const boxes = document.querySelectorAll('.fd-cb[data-mod="' + mod + '"]:checked');
+  const paths = [], keeps = [];
+  let size = 0;
+  boxes.forEach(el => {
+    if (mod === 'namematch') {
+      // 组粒度: data-paths 是 JSON 数组, data-keep 是保留的那一份
+      try {
+        const arr = JSON.parse(el.dataset.paths || '[]');
+        arr.forEach(p => paths.push(p));
+        if (el.dataset.keep) keeps.push(el.dataset.keep);
+      } catch { /* 数据异常的行跳过 */ }
+      size += parseInt(el.dataset.size || '0', 10) || 0;
+    } else {
+      paths.push(el.dataset.path);
+      size += parseInt(el.dataset.size || '0', 10) || 0;
+    }
+  });
+  return { paths: Array.from(new Set(paths.filter(Boolean))), keeps, size };
+}
+
+/** 勾选状态变化 → 更新按钮文案/可用态 + 表头全选框半选态 */
+function filesUpdateSelectInfo(mod) {
+  const { paths, size } = filesCollect(mod);
+  const btn = $(mod + 'DeleteBtn');
+  if (btn) {
+    btn.disabled = paths.length === 0;
+    const span = btn.querySelector('span:last-child');
+    if (span) span.textContent = paths.length ? '删除选中 (' + paths.length + ')' : '删除选中';
+    btn.title = paths.length ? '共 ' + formatBytes(size) : '';
+  }
+  const all = document.querySelector('.fd-cb-all[data-mod="' + mod + '"]');
+  if (all) {
+    const allBoxes = document.querySelectorAll('.fd-cb[data-mod="' + mod + '"]');
+    const total = allBoxes.length;
+    const checked = document.querySelectorAll('.fd-cb[data-mod="' + mod + '"]:checked').length;
+    all.checked = total > 0 && checked === total;
+    all.indeterminate = checked > 0 && checked < total;
+  }
+}
+
+/** 表头全选框 */
+function filesSelectAll(cb) {
+  const mod = cb.dataset.mod;
+  document.querySelectorAll('.fd-cb[data-mod="' + mod + '"]').forEach(el => {
+    if (!el.disabled) el.checked = cb.checked;
+  });
+  filesUpdateSelectInfo(mod);
+}
+
+/** 打开确认弹窗。mod: simdup | broken | namematch */
+function openFilesDeleteModal(mod) {
+  const { paths, size } = filesCollect(mod);
+  if (!paths.length) { showToast('请先勾选要删除的文件', 'error'); return; }
+  const modal = $('filesDeleteModal');
+  if (!modal) return;
+  modal.dataset.mod = mod;
+  $('filesDeleteSrcLabel').textContent = FD_MOD_LABEL[mod] || mod;
+  $('filesDeleteCount').textContent = paths.length;
+  $('filesDeleteSize').textContent = formatBytes(size);
+  const prev = $('filesDeletePaths');
+  if (prev) {
+    prev.innerHTML = paths.slice(0, 20)
+      .map(p => '<div style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(p) + '">' + escHtml(p) + '</div>')
+      .join('') + (paths.length > 20 ? '<div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px">… 另有 ' + (paths.length - 20) + ' 项</div>' : '');
+  }
+  const warn = $('filesDeleteWarn');
+  if (warn) {
+    if (mod === 'namematch') warn.textContent = '将保留每组第一份, 只删除其余副本。';
+    else if (mod === 'broken') warn.textContent = '「无效链接」删除的是链接本身, 不会影响它指向的文件。';
+    else if (mod === 'simdup') warn.textContent = '相似文件不等于重复文件, 请确认后再删。';
+    else warn.textContent = '';
+  }
+  const ack = $('filesDeleteAck');
+  if (ack) ack.checked = false;
+  const trashRadio = modal.querySelector('input[name="filesDeleteMode"][value="trash"]');
+  if (trashRadio) trashRadio.checked = true;
+  filesRefreshConfirmBtn();
+  modal.classList.add('visible');
+}
+
+function filesRefreshConfirmBtn() {
+  const btn = $('filesDeleteConfirmBtn');
+  if (btn) btn.disabled = !$('filesDeleteAck')?.checked;
+}
+
+function closeFilesDeleteModal() {
+  $('filesDeleteModal')?.classList.remove('visible');
+}
+
+async function confirmFilesDelete() {
+  const modal = $('filesDeleteModal');
+  const mod = modal?.dataset.mod;
+  if (!mod) { closeFilesDeleteModal(); return; }
+  const { paths } = filesCollect(mod);
+  if (!paths.length) { closeFilesDeleteModal(); return; }
+  const mode = modal.querySelector('input[name="filesDeleteMode"]:checked')?.value || 'trash';
+  const btn = $('filesDeleteConfirmBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await API.post('api/files/delete', { paths, mode });
+    if (r.__ok === false) throw new Error(r.__error || ('HTTP ' + r.__status));
+    closeFilesDeleteModal();
+    let msg = '✅ 已' + (mode === 'trash' ? '移入回收站' : '永久删除') + ' ' + (r.deleted || 0) + ' 个文件';
+    if (r.gone && r.gone.length) msg += '，' + r.gone.length + ' 个已被其他程序移走';
+    if (r.blockedCount) msg += '，' + r.blockedCount + ' 个被安全策略拦截';
+    if (r.failures) msg += '，' + r.failures + ' 个失败';
+    showToast(msg, (r.failures || r.blockedCount) ? 'error' : 'success');
+    // 重新扫描刷新列表
+    if (mod === 'simdup') simDupScan();
+    else if (mod === 'broken') brokScan();
+    else nmScan();
+  } catch (e) {
+    showToast('删除失败: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 
 async function stopBigFiles() {
   try { await API.post('api/bigfiles/stop', {}); showToast('已请求停止', 'info'); } catch (e) { showToast('停止失败: ' + e.message, 'error'); }
@@ -3660,6 +3810,8 @@ function init() {
     doBigFilesScan, stopBigFiles,
     confirmBigFilesDelete, closeBigFilesDeleteModal, doBigFilesDelete,
     bigfilesSelectAll, bigfilesUpdateSelectInfo, bigfilesRefreshConfirmBtn,
+    filesCollect, filesSelectAll, filesUpdateSelectInfo, openFilesDeleteModal,
+    closeFilesDeleteModal, confirmFilesDelete, filesRefreshConfirmBtn,
     dsLoadVolumes, dsDrillDown, dsStop,
     dcCheckAvailable, dcScan, renderDcStoppedList, dcSelectAll, dcUpdateSelectInfo, dcRemoveSelected, dcPruneCache,
     copyQQNumber,
