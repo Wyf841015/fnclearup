@@ -321,6 +321,9 @@ function switchGroup(g) {
 }
 
 async function switchTab(tabName) {
+  // 切到任何 tab 都先停掉定时清理的轮询, 只有 schedule 分支会再启动。
+  // 放在函数最前面而不是各分支里, 免得新增 tab 时漏掉停止。
+  stopSchedulePolling();
   // 若目标 tab 不在当前显示的组里, 顺手把组切过去(例如从「清理回收」直接跳到「定时」)
   const g = tabGroupOf(tabName);
   if (g) { showGroup(g); groupLastTab[g] = tabName; }
@@ -347,7 +350,15 @@ async function switchTab(tabName) {
     await switchTab('sysjunk');
     switchInnerTab(map[tabName]);
   }
-  else if(tabName==='schedule') { loadSchedule(); loadScheduleHistory(); }
+  else if(tabName==='schedule') {
+    // 切进「定时清理」才开轮询: 后台自动执行的任务完成后, 「上次运行」和
+    // 执行历史会自己更新, 不必再切走切回。_lastHistorySig 先清掉, 因为
+    // 上次离开这个 tab 期间历史可能已经被后端追加过。
+    _lastHistorySig = null;
+    loadSchedule();
+    loadScheduleHistory(true);
+    startSchedulePolling();
+  }
   else if(tabName==='diskanalysis') { if(!App.dsLoaded) { App.dsLoaded=true; dsLoadVolumes(); } }
 }
 
@@ -3064,6 +3075,48 @@ function closeStartupWarning(confirmed) {
 // Schedule
 // ════════════════════════════════
 
+// ── 定时清理状态轮询 ──────────────────────────────────────────────
+// 定时任务是在后端后台自动触发的, 前端原本零感知: loadScheduleHistory 只在
+// switchTab('schedule') 里被调一次, 于是任务执行完成后「上次运行」和「执行
+// 历史」都要等用户切走再切回 tab 才更新 —— 实际使用中表现为"清理完了但历史
+// 还是旧的"。
+//
+// 这里做两件事:
+//   1) startSchedulePolling  — 只在「定时清理」tab 可见时轮询, 切走即停,
+//      不在其他 tab 空耗请求。
+//   2) 拆出 loadScheduleStatus — 轮询只更新只读字段(status/next/runCount/
+//      lastRun)。**不能**直接轮询 loadSchedule: 它会重置 scheduleHour/
+//      scheduleMinute 和各清理类型 checkbox, 用户正在编辑的配置会被冲掉。
+let _schedulePollTimer = 0;
+const SCHEDULE_POLL_MS = 5000;
+
+function startSchedulePolling() {
+  stopSchedulePolling();
+  _schedulePollTimer = setInterval(() => {
+    loadScheduleStatus();
+    loadScheduleHistory();
+  }, SCHEDULE_POLL_MS);
+}
+
+function stopSchedulePolling() {
+  if (_schedulePollTimer) { clearInterval(_schedulePollTimer); _schedulePollTimer = 0; }
+}
+
+// 只刷新只读状态, 不触碰任何表单控件 (见上方注释)
+async function loadScheduleStatus() {
+  try {
+    const data = await API.get('api/schedule');
+    if (!data || !data.success) return;
+    $('#scheduleStatus').textContent = data.enabled ? '🟢 已启用' : '🔴 已停用';
+    $('#scheduleNext').textContent = data.nextRun ? new Date(data.nextRun).toLocaleString('zh-CN') : '-';
+    $('#scheduleRunCount').textContent = data.runCount || 0;
+    $('#scheduleLastRun').textContent = data.lastRun ? new Date(data.lastRun).toLocaleString('zh-CN') : '-';
+  } catch (e) {
+    // 轮询里的失败不弹 toast — 短暂网络抖动不该打扰用户
+    console.error('[schedule] status poll error:', e);
+  }
+}
+
 async function loadSchedule() {
   try {
     const data = await API.get('api/schedule');
@@ -3134,6 +3187,8 @@ async function saveSchedule() {
     if (result && result.success) {
       showToast('✅ 定时设置已保存', 'success');
       loadSchedule(); // Refresh display
+      // 保存会重置服务端状态(下次运行时间/执行计数), 历史区一并强刷
+      loadScheduleHistory(true);
     } else {
       showToast('❌ 保存失败', 'error');
     }
@@ -3153,8 +3208,18 @@ async function triggerSchedule() {
     const result = await API.post('api/schedule/trigger');
     if (result && result.success) {
       showToast('▶ 定时清理已触发', 'info');
-      // Refresh schedule display
-      setTimeout(loadSchedule, 2000);
+      // 任务在后台跑, 跑完才会往 history 里追加记录。所以:
+      //   立即强刷一次(此时可能已有"执行中"的记录)
+      //   2s / 5s / 9s 再各强刷一次覆盖任务结束的时刻
+      // 之后交给轮询接手。原先只有 setTimeout(loadSchedule, 2000), 且不带
+      // force, 历史签名没变就会被跳过 —— 这正是"触发后历史不刷新"的另一半原因。
+      _lastHistorySig = null;
+      loadSchedule();
+      loadScheduleHistory(true);
+      [2000, 5000, 9000].forEach(ms => setTimeout(() => {
+        loadScheduleStatus();
+        loadScheduleHistory(true);
+      }, ms));
     } else {
       showToast('❌ 触发失败', 'error');
     }
@@ -3209,11 +3274,23 @@ function viewScheduleFilesFromAttr(btn) {
   document.body.appendChild(modal);
 }
 
-async function loadScheduleHistory() {
+// force=true 时无视签名强制重绘(切 tab / 保存 / 手动触发后用);
+// 轮询时传 false, 历史没变化就整段跳过, 避免表格反复重绘闪烁。
+let _lastHistorySig = null;
+async function loadScheduleHistory(force) {
   try {
     const data = await API.get('api/schedule/history');
     const list = $('#scheduleHistoryList');
     if (!list) return;
+    // 签名 = 条数 + **最后一条**的完成时间。
+    // 注意不能取 history[0]: 后端是 history.push() 追加(L336), 最新记录在末尾,
+    // history[0] 永远是最旧那条、恒定不变; 而且满 100 条后会被 slice(-100) 裁剪,
+    // length 也不再变 —— 取 [0] 的话攒够 100 条后轮询就彻底瞎了。
+    const hist = (data && Array.isArray(data.history)) ? data.history : [];
+    const newest = hist.length ? hist[hist.length - 1] : null;
+    const sig = hist.length + '|' + ((newest && newest.completedAt) || '');
+    if (!force && sig === _lastHistorySig) return;
+    _lastHistorySig = sig;
     if (!data || !data.history || data.history.length === 0) {
       list.innerHTML = '<p class="schedule-empty">暂无执行记录</p>';
       return;
