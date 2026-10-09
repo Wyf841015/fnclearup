@@ -134,7 +134,9 @@ function filterTable(inputId, tableId, colIndex) {
   }
 }
 
-// Generic table CSV export: extracts table data, creates CSV, triggers download
+// Generic table CSV export: extracts table data, then lets the user pick a
+// folder on the NAS to write it to (was: Blob + a.download → browser's download
+// dir, unreachable inside the fnOS WebView).
 function exportTableToCSV(tableId, filename) {
   const table = document.getElementById(tableId);
   if (!table) return showToast('未找到数据表', 'error');
@@ -156,13 +158,9 @@ function exportTableToCSV(tableId, filename) {
     }
     rows.push(row.join(','));
   }
+  // \uFEFF = BOM, Excel 打开中文 CSV 不乱码; 用转义写法而非字面字符, 避免源码编码问题
   const csv = '\uFEFF' + cols.join(',') + '\n' + rows.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = filename || 'export.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast('导出成功: ' + (filename || 'export.csv'), 'success');
+  saveContentViaBrowser(csv, filename || 'export.csv');
 }
 
 async function refreshCleanupSummary() {
@@ -2172,9 +2170,61 @@ async function exportDup(tab){
 // ── Directory Browser ──
 let _browseTargetId = '';
 let _browseDupTab = '';
+// 导出保存模式: 复用同一个 browseModal, 只是多一个文件名输入框。
+// _browseSaving 为真时 browseSelect() 不再回填输入框, 而是调后端把
+// _pendingExport 里的内容写到用户选的目录。
+let _browseSaving = false;
+let _pendingExport = null;   // { content, filename, encoding }
+
+// 把「内容 + 文件名」交给用户在 NAS 上选目录落盘。
+// 以前走 Blob + a.download, 文件落到客户端浏览器目录 —— 在 fnOS WebView
+// 里用户根本拿不到, 手机上更是无从下载。
+function saveContentViaBrowser(content, filename, encoding) {
+  if (typeof content !== 'string' || content.length === 0) {
+    showToast('没有可导出的内容', 'warning');
+    return false;
+  }
+  _pendingExport = { content, filename: filename || 'export.txt', encoding: encoding || 'utf8' };
+  _browseSaving = true;
+  _browseDupTab = '';
+  _browseTargetId = '';
+  document.getElementById('browseSaveRow').classList.add('visible');
+  document.getElementById('browseFilename').value = _pendingExport.filename;
+  document.getElementById('browseTitle').textContent = '💾 选择保存位置';
+  document.getElementById('browseSelectBtn').textContent = '💾 保存到此处';
+  document.getElementById('browseModal').classList.add('visible');
+  // 起点给 '/' —— handleBrowse 在根目录只列出可用的 /vol*, 用户点进去即可
+  loadBrowseDir('/');
+  return true;
+}
+
+// 三种模式(选择目录 / 去重路径 / 导出保存)共用的开关逻辑
+function setBrowseMode(mode) {
+  _browseSaving = mode === 'save';
+  const isSave = _browseSaving;
+  const row = document.getElementById('browseSaveRow');
+  if (row) row.classList.toggle('visible', isSave);
+  const title = document.getElementById('browseTitle');
+  if (title) title.textContent = isSave ? '💾 选择保存位置' : '📁 选择目录';
+  const btn = document.getElementById('browseSelectBtn');
+  if (btn) btn.textContent = isSave ? '💾 保存到此处' : '✅ 选择当前目录';
+}
+
+// 点遮罩关闭。保存模式下不允许直接关掉 —— 用户已经点了导出, 内容还捏在
+// _pendingExport 里, 一关掉内容就丢了且无处可寻; 此时只能改文件名或换目录,
+// 或显式点 ✕ / 「保存到此处」/「上级目录」以外的方式退出。
+function browseBackdropClick() {
+  if (_browseSaving) {
+    showToast('请先选择保存位置，或点右上角 ✕ 取消导出', 'warning', 3500);
+    return;
+  }
+  hideBrowseModal();
+}
+
 function showBrowseModal(inputId) {
   _browseTargetId = inputId;
   _browseDupTab = '';
+  setBrowseMode('select');
   const input = document.getElementById(inputId);
   const path = input ? input.value || '/' : '/';
   document.getElementById('browseModal').classList.add('visible');
@@ -2183,12 +2233,23 @@ function showBrowseModal(inputId) {
 function showDupBrowseModal(tab) {
   _browseDupTab = tab;
   _browseTargetId = '';
+  setBrowseMode('select');
   document.getElementById('browseModal').classList.add('visible');
   // Always start from root to avoid ENOENT on stale default paths
   loadBrowseDir('/');
 }
 function hideBrowseModal() {
   document.getElementById('browseModal')?.classList.remove('visible');
+  // 复位保存模式, 否则下次打开目录浏览会带着上次的文件名和标题
+  if (_browseSaving) {
+    _browseSaving = false;
+    _pendingExport = null;
+    const inp = document.getElementById('browseFilename');
+    if (inp) inp.value = '';
+  }
+  // 无条件把 UI 拨回「选择目录」形态: 即使本来就不是保存模式, 上一轮保存留下的
+  // "💾 选择保存位置" 标题也不该继续挂在关闭状态的弹窗上。
+  setBrowseMode('select');
 }
 async function loadBrowseDir(dirPath) {
   const list = document.getElementById('browseList');
@@ -2218,10 +2279,77 @@ function browseGoUp() {
   const parent = cur === '/' ? null : cur.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/';
   if (parent) loadBrowseDir(parent);
 }
+// 把待导出内容写到用户选定的目录。
+// 单独抽出来是因为覆盖确认需要重试一次(带 overwrite), 逻辑较长不宜塞进 browseSelect。
+async function doSaveExportTo(dir) {
+  const pending = _pendingExport;
+  if (!pending) { showToast('没有待保存的内容', 'error'); hideBrowseModal(); return; }
+  const nameInput = document.getElementById('browseFilename');
+  const filename = (nameInput ? nameInput.value : '').trim() || pending.filename;
+  if (dir === '/') {
+    showToast('请选择一个具体目录（不能是根目录 /）', 'warning', 4000);
+    return;
+  }
+  const btn = document.getElementById('browseSelectBtn');
+  // 只记 disabled 状态, **不要把文案存下来 finally 还原** ——
+  // 成功路径里 hideBrowseModal() 已经通过 setBrowseMode 把按钮拨回
+  // 「✅ 选择当前目录」, 再用存档文案覆盖回去就会留下
+  // 「关闭的弹窗上却挂着『💾 保存到此处』按钮」这种脏状态(浏览器实测抓到过)。
+  const wasDisabled = btn ? btn.disabled : false;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 保存中...'; }
+  try {
+    let r = await postExportSave(dir, filename, pending, false);
+    // 409 = 目标已存在且未允许覆盖
+    if (r && r.__status === 409) {
+      if (confirm(`「${filename}」已存在于：\n${dir}\n\n是否覆盖？`)) {
+        r = await postExportSave(dir, filename, pending, true);
+      } else {
+        return;   // 用户取消, 弹窗保持打开以便改名字或换目录
+      }
+    }
+    if (r && r.success) {
+      showToast(`✅ 已保存: ${r.path}（${r.sizeText}）${r.overwritten ? '（已覆盖）' : ''}`, 'success', 5000);
+      hideBrowseModal();
+    } else {
+      showToast('保存失败: ' + ((r && r.error) || '未知错误'), 'error', 6000);
+    }
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error', 6000);
+  } finally {
+    // 文案交给 setBrowseMode 管: 成功时弹窗已关(选择模式), 失败/取消时弹窗还开着
+    // (保存模式), 两种情况都由它给出正确文案。
+    if (btn) btn.disabled = wasDisabled;
+    if (_browseSaving) setBrowseMode('save'); else setBrowseMode('select');
+  }
+}
+
+async function postExportSave(dir, filename, pending, overwrite) {
+  const res = await fetch('api/export/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dir, filename,
+      content: pending.content,
+      encoding: pending.encoding || 'utf8',
+      overwrite: !!overwrite,
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+  let body = {};
+  try { body = await res.json(); } catch { body = { success: false, error: 'HTTP ' + res.status }; }
+  body.__status = res.status;
+  return body;
+}
+
 function browseSelect() {
   const p = document.getElementById('browsePath');
   if (!p) return;
   const path = p.textContent;
+  // 导出保存模式: 不回填输入框, 直接把待导出内容写到用户选的目录
+  if (_browseSaving) {
+    doSaveExportTo(path);
+    return;
+  }
   if (_browseDupTab) {
     const tab = _browseDupTab;
     _browseDupTab = '';
@@ -2702,23 +2830,19 @@ async function downloadSysCleanManifest(path, name) {
     const url = `api/sysclean/manifest?path=${encodeURIComponent(path)}`;
     const res = await fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
-      let msg = `下载失败 (HTTP ${res.status})`;
-      try { const j = await res.json(); if (j.error) msg = `下载失败: ${j.error}`; } catch { console.error('[main.js]'); }
+      let msg = `读取失败 (HTTP ${res.status})`;
+      try { const j = await res.json(); if (j.error) msg = `读取失败: ${j.error}`; } catch { console.error('[main.js]'); }
       showToast(msg, 'error', 5000);
       return;
     }
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = name || 'manifest.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-    showToast(`✅ 已下载 ${name}`, 'success', 3000);
+    // 取成文本后交给「选择保存位置」弹窗, 不再走浏览器下载 ——
+    // manifest 是 JSON, text() 足够, 也不必把内容再 base64 一遍。
+    const text = await res.text();
+    const fname = name || 'manifest.json';
+    if (!saveContentViaBrowser(text, fname)) return;
+    showToast(`已读取 ${fname}，请选择保存位置`, 'info', 3000);
   } catch (e) {
-    showToast('下载失败: ' + e.message, 'error', 5000);
+    showToast('读取失败: ' + e.message, 'error', 5000);
   }
 }
 
@@ -3420,6 +3544,7 @@ function init() {
     brokScan, brokStop, brokSwitchCat, brokRender,
     nmScan, nmStop, nmRender,
     showBrowseModal, showDupBrowseModal, hideBrowseModal, loadBrowseDir, browseGoUp, browseSelect,
+  browseBackdropClick, saveContentViaBrowser,
     renderDupPaths, removeDupPath,
     startEmptyScan, stopEmptyScan, selectAllEmpty, updateEmptySelectInfo,
     showEmptyDeleteModal, hideEmptyDeleteModal, confirmEmptyDelete, confirmEmptyDeleteOne,

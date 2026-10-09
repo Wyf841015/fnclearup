@@ -829,3 +829,43 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 /* 结果列表容器: 上边距原本是 12 处内联 style, 抽到这里统一管 */
 #app-list,#disk-list,#images-list,#docker-volumes-list,#networks-list,#nm-list,#empty-list,#sysclean-list,#temp-list,#trash-status,#trash-list{margin-top:12px}
 #trash-other{margin-top:16px}
+
+/* ═══════════════════════════════════════════════════════════
+   导出保存: 目录浏览弹窗的「文件名」行
+   默认 display:none, 由 setBrowseMode('save') 加 .visible 显示。
+   不用媒体查询控制显隐 —— fnOS 移动 WebView 以桌面 UA 渲染,
+   max-width 断点不触发。
+   ═══════════════════════════════════════════════════════════ */
+.browse-save-row {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.browse-save-row.visible { display: flex; }
+.browse-save-row label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.browse-save-row input {
+  flex: 1 1 auto;
+  min-width: 0;              /* grid/flex 子项默认 min-width:auto, 长文件名会撑破弹窗 */
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.browse-save-row input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px oklch(from var(--color-primary) l c h / 0.12);
+}
+.browse-save-row input::placeholder { color: var(--color-text-tertiary); font-family: var(--font); }
+:root.dark .browse-save-row input { background: var(--color-bg); color: var(--color-text-primary); }
