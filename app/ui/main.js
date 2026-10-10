@@ -1306,7 +1306,12 @@ async function doBigFilesScan(preserveStatus) {
       const rootLabel = data.root === '/vol*' ? '所有卷' : data.root;
       const partialLabel = data.truncated ? `（仅显示前 ${data.top_n} 个）` : '';
       const stoppedNote = data.files && data.files.length === 0 && data.scanned_paths > 0 ? ' [已停止]' : '';
-      status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${stoppedNote}，扫描了 ${(data.scanned_paths || 0).toLocaleString()} 个路径`;
+      // 扫描阶段已整棵跳过 fnOS 系统目录与回收站。不说清楚的话, 用户会以为自己
+      // 的盘被那些文件占满(实际占用大头常是 @sysappmeta 的应用模型), 白折腾一圈。
+      const skipNote = data.skipped_protected_dirs
+        ? ` · 已跳过 ${data.skipped_protected_dirs} 个系统目录/回收站（应用安装文件与运行数据，不占用可清理空间）`
+        : '';
+      status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${skipNote}${stoppedNote}，扫描了 ${(data.scanned_paths || 0).toLocaleString()} 个路径`;
     }
     renderBigFilesList(data.files || []);
     // preserveStatus: 删除后自动重扫时不要覆盖状态栏。
