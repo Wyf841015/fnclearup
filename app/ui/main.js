@@ -996,6 +996,42 @@ function switchDupInnerTab(tabName) {
   updateDupSelectedCount();
 }
 
+/**
+ * 扫描启动失败时把界面恢复成扫描前的样子。
+ *
+ * startDupScan 一进来就把 results / empty / actions 全藏了, 再显示 progress 区 ——
+ * 这些改动只在「扫描成功启动」时才是对的。所以启动失败(目录不存在、网盘掉线、
+ * 参数非法)必须原样还原, 否则用户看到的是:
+ *   - progress 区永远停在「正在验证路径...」, 一个不动的进度条
+ *   - 内容区一片空白(空态和结果都被藏了), 整块像卡死
+ * 错误本身会写进状态栏, 但状态栏在 progress 区里, 用户第一眼看到的仍是空进度条。
+ *
+ * 成功路径的收尾在 finishDupScan, 失败路径收尾在这里 —— 两条路径都要还原,
+ * 漏一条就是上面那个现象。
+ */
+function restoreDupScanUI(tab, msg) {
+  const ids = getDupIds(tab);
+  $(ids.progress)?.classList.remove('visible');
+  // 文案/计数也要清。只移除 visible 时它虽然看不见, 但下次扫描开头设的
+  // 「正在验证路径...」会闪一帧上一次的旧内容(比如「正在计算哈希值 812/1000」)。
+  const bar = $(ids.progressBar); if (bar) bar.style.width = '0%';
+  const txt = $(ids.progressText); if (txt) txt.textContent = '';
+  const cnt = $(ids.progressCount); if (cnt) cnt.textContent = '';
+  const cur = $(ids.currentFile); if (cur) cur.textContent = '';
+  const scanBtn = $(ids.scanBtn), stopBtn = $(ids.stopBtn);
+  if (scanBtn) { scanBtn.disabled = false; scanBtn.style.display = ''; }
+  if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.disabled = true; }
+  // 空态区放回来并说明为什么空 —— 目录不存在时它是唯一能承载解释的地方
+  const emptyEl = $(ids.empty);
+  if (emptyEl) {
+    emptyEl.style.display = '';
+    const h3 = emptyEl.querySelector('h3');
+    if (h3) h3.textContent = '❌ ' + (msg || '无法开始扫描');
+    const p = emptyEl.querySelector('p');
+    if (p) p.textContent = msg ? ('原因: ' + msg) : '请检查目录是否存在, 或换一个目录再试';
+  }
+}
+
 async function startDupScan(tab) {
   const ids = getDupIds(tab);
   if (DupState[tab].checking) { showToast('已有扫描任务进行中', 'error'); return; }
@@ -1024,9 +1060,10 @@ async function startDupScan(tab) {
     if (minEl && minEl.value) { minSize = parseInt(minEl.value, 10); if (isNaN(minSize) || minSize<0) minSize = 0; }
     const result = await API.post('api/dup/scan', { type: tab==='music'?'music':'files', paths: scanPaths, minSize, keepMode });
     if (result.error || !result.jobId) {
-      showToast(result.error||'启动扫描失败','error');
-      if(statusEl) statusEl.innerHTML='❌ '+escHtml(result.error||'启动扫描失败');
-      if(scanBtn){scanBtn.disabled=false;scanBtn.style.display='';}
+      const msg = result.error || '启动扫描失败';
+      showToast(msg,'error');
+      if(statusEl) statusEl.innerHTML='❌ '+escHtml(msg);
+      restoreDupScanUI(tab, msg);   // ★ 还原界面, 别留一个不动的进度条 + 空白内容区
       return;
     }
     DupState[tab].jobId = result.jobId;
@@ -1034,8 +1071,12 @@ async function startDupScan(tab) {
     if(stopBtn){stopBtn.style.display='';stopBtn.disabled=false;}
     pollDupProgress(tab);
   } catch(e) {
-    showToast('启动扫描失败: '+e.message,'error');
-    if(scanBtn){scanBtn.disabled=false;scanBtn.style.display='';}
+    // AbortError 是超时(API.post 默认 30s)。目录太大时扫描启动请求本身可能就慢,
+    // 但对用户来说结果是"没开始扫描", 不该表现成一个永远不动的空进度条。
+    const msg = e.name === 'AbortError' ? '启动扫描超时(30s), 目录可能过大' : (e.message || String(e));
+    showToast('启动扫描失败: '+msg,'error');
+    if(statusEl) statusEl.innerHTML='❌ '+escHtml(msg);
+    restoreDupScanUI(tab, msg);
   }
 }
 
@@ -1065,6 +1106,13 @@ function finishDupScan(tab, data) {
   if(btns.scan){btns.scan.disabled=false;btns.scan.style.display='';}
   if(btns.stop){btns.stop.style.display='none';}
   $(ids.progress)?.classList.remove('visible');
+  // 文案/计数也清掉。progress 区虽然看不见了, 但下次 startDupScan 开头会重设
+  // 「正在验证路径...」, 中间这一帧会闪出上一次的旧内容(比如「正在计算哈希值
+  // 812/1000」)—— 扫描失败和扫描成功都会遇到, 所以放在 finishDupScan 收尾里。
+  { const pb=$(ids.progressBar); if(pb) pb.style.width='0%';
+    const pt=$(ids.progressText); if(pt) pt.textContent='';
+    const pc=$(ids.progressCount); if(pc) pc.textContent='';
+    const cf=$(ids.currentFile); if(cf) cf.textContent=''; }
   const se=$(ids.status);
   if(!data||data.status==='error'||data.status==='aborted') {
     const msg = data?(data.error||(data.status==='aborted'?'已中止':'失败')):'扫描失败';
