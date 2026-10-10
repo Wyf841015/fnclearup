@@ -19,7 +19,7 @@
 
 import { existsSync, statSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
-import { sendJSON, formatBytes, isSafePath, partitionDeletable, parseBody } from '../lib/util.js';
+import { sendJSON, formatBytes, isSafePath, partitionDeletable, parseBody, isProtectedPath } from '../lib/util.js';
 import { moveToTrash } from './trash.js';
 import { VOL_GLOBS, SAFE_PREFIXES } from '../lib/config.js';
 
@@ -116,6 +116,9 @@ export async function handleBigFilesScan(req, res) {
   activeJob = job;
   const t0 = Date.now();
   let scanned = 0;
+  let skippedProtectedDirs = 0;
+  let statFailures = 0;
+  let lastStatErr = '';
 
   async function walk(root) {
     // BFS queue: [path, level]
@@ -151,10 +154,21 @@ export async function handleBigFilesScan(req, res) {
           } else if (e.isDirectory()) {
             if (level >= depth) continue;
             if (skipRecurse) continue; // ← big files in this dir are still picked up above
+            // P0(2026-10-10): 整棵跳过 fnOS 系统目录与回收站, 而不是等删除时才拦。
+            //
+            // 原来的问题: 扫描把 /vol3/@sysappmeta/ai-manager/models/*.onnx 这类
+            // 应用模型文件也列给用户("占了我 5.8G, 得清一下"), 用户勾选后删除端点
+            // 全被 partitionDeletable 拦下 —— deleted=2 / blocked=8 / skipped=8,
+            // 用户看到的就是"全部失败"。既浪费了一次扫描, 又让人以为程序坏了。
+            //
+            // 剪在 push 之前而不是过滤结果: 一是省掉整棵子树的遍历(fuse 挂载的
+            // 系统目录能扫到上万个 inode), 二是结果列表里不再混着删不掉的东西。
+            // exemptSelf:true —— 应用自身数据目录该列出来, 用户有权知道自己占了多少。
+            if (isProtectedPath(full, { exemptSelf: true })) { skippedProtectedDirs++; continue; }
             queue.push([full, level + 1]);
           }
           // symlinks and special nodes are ignored silently (safe default)
-        } catch { console.error('[bigfiles.js]'); }
+        } catch (err) { statFailures++; lastStatErr = `${e.name}: ${e.message}`; }
         if (scanned % YIELD_INTERVAL === 0) await new Promise(r => setImmediate(r));
       }
     }
@@ -175,6 +189,13 @@ export async function handleBigFilesScan(req, res) {
     scanned_paths: scanned,
     elapsed_ms: elapsed,
     truncated: candidates.length > topN,
+    // 扫描阶段就跳过了多少个受保护目录 —— 让前端能如实告诉用户"这些不是你的,
+    // 也不该你清", 而不是让用户白勾一遍再被删除端点拦。
+    skipped_protected_dirs: skippedProtectedDirs,
+    // stat 失败(权限/断链)统计: 之前 catch 里连错误内容都不打, 日志里只有一行
+    // 光秃秃的 "[bigfiles.js]", 排查时完全无从下手。
+    stat_failures: statFailures,
+    last_stat_error: lastStatErr,
     root: roots.join(','),
     min_size: minSize,
     top_n: topN,
