@@ -669,6 +669,32 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   min-width: 24px; line-height: 1.5;
   transition: filter .15s, transform .15s;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   相似文件: 按组分块 + 每组推荐保留一个
+   组头(组号/份数/相似度/可释放空间/对比) + 组内文件行(★推荐保留 / ✕删除)
+   基础规则全部走 flex-wrap + auto-fit, 不依赖媒体查询 —— fnOS 移动
+   WebView 以桌面 UA + 980 viewport 渲染, max-width 断点根本不触发。
+   ═══════════════════════════════════════════════════════════════════ */
+.simdup-group{border:1px solid var(--color-border);border-radius:var(--radius-md);margin-bottom:12px;overflow:hidden;background:var(--color-card-bg)}
+.simdup-group-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;background:var(--color-bg);border-bottom:1px solid var(--color-border)}
+.simdup-group-no{font-weight:700;font-size:13px;color:var(--color-primary);white-space:nowrap;flex-shrink:0}
+.simdup-group-meta{flex:1 1 200px;min-width:0;font-size:12px;color:var(--color-text-secondary);line-height:1.5}
+.simdup-group-meta b{color:var(--color-text);font-size:13px}
+.simdup-group-body{padding:2px 0}
+.simdup-file{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 12px;font-size:13px;border-bottom:1px solid var(--color-border)}
+.simdup-file:last-child{border-bottom:none}
+.simdup-file.is-keep{background:var(--color-primary-bg)}
+.simdup-flag{flex-shrink:0;min-width:76px;font-size:11px;font-weight:700;white-space:nowrap}
+.simdup-flag.keep{color:var(--color-success)}
+.simdup-flag.del{color:var(--color-danger);font-weight:600;opacity:.75}
+.simdup-thumb{flex-shrink:0;width:40px;height:40px;border-radius:4px;overflow:hidden;background:var(--color-bg);border:1px solid var(--color-border);display:flex;align-items:center;justify-content:center}
+.simdup-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.simdup-name{flex:1 1 200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;flex-direction:column;gap:2px}
+.simdup-why{font-size:11px;font-style:normal;color:var(--color-success);opacity:.9;overflow:hidden;text-overflow:ellipsis}
+.simdup-size{flex-shrink:0;min-width:64px;text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)}
+.simdup-dist{flex-shrink:0;min-width:44px;text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)}
+.simdup-dir{flex:1 1 100%;min-width:0;font-family:var(--font-mono);font-size:11px;color:var(--color-text-secondary);opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .simdup-cmp-btn:hover, .simdup-cmp-btn:hover{ filter: brightness(1.12); transform: scale(1.06); }
 .simdup-cmp-btn:active, .simdup-cmp-btn:active{ transform: scale(.96); }
 #simdupCompareDlg{ border: none; padding: 0; }

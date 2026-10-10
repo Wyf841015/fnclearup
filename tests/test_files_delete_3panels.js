@@ -147,7 +147,10 @@ test('前端: 重名分区按组选择, 副本才可删', () => {
 test('前端: filesCollect 按分区语义分派', () => {
   const body = fnBody(code, 'filesCollect');
   assert.ok(body, '应有 filesCollect');
-  assert.match(body, /if \(mod === 'namematch'\)/, '重名走组粒度');
+  // 相似也改成组粒度了: 「相似」与「重名」一样, 组内只需留一份推荐保留的,
+  // 逐文件勾选时全选会把每组仅存的那份也删掉。异常仍是文件粒度。
+  assert.match(body, /if \(mod === 'namematch' \|\| mod === 'simdup'\)/,
+    '相似与重名都应走组粒度');
   assert.match(body, /JSON\.parse\(el\.dataset\.paths/, '重名解析 data-paths');
   assert.match(body, /paths\.push\(el\.dataset\.path\)/, '相似/异常走文件粒度');
   assert.match(body, /Array\.from\(new Set\(paths\.filter\(Boolean\)\)\)/,
@@ -157,12 +160,18 @@ test('前端: filesCollect 按分区语义分派', () => {
 test('前端: 三个分区都有 checkbox 列与删除按钮', () => {
   for (const mod of ['simdup', 'broken', 'namematch']) {
     assert.match(htmlSrc, new RegExp("id=\"" + mod + "DeleteBtn\""), mod + ' 缺删除按钮');
+    // 相似是组卡片布局, 没有表头全选框, 改用 HTML 里的「全选各组」按钮
+    if (mod === 'simdup') {
+      assert.match(htmlSrc, /filesSelectAll\('simdup'\)/, 'simdup 缺全选各组按钮');
+      continue;
+    }
     assert.ok(htmlSrc.includes('class="fd-cb-all" data-mod="' + mod + '"') ||
               code.includes('fd-cb-all" data-mod="' + mod + '"'),
       mod + ' 缺表头全选框');
   }
   // 每个分区都要有行 checkbox
-  assert.equal((code.match(/class="fd-cb" data-mod="simdup"/g) || []).length, 1, 'simdup 行 checkbox');
+  // 相似改成组卡片后, checkbox 在组头上(data-group 携带组号), 不再是每行一个
+  assert.match(code, /class="fd-cb" data-mod="simdup" data-group=/, 'simdup 组头 checkbox');
   assert.equal((code.match(/class="fd-cb" data-mod="broken"/g) || []).length, 1, 'broken 行 checkbox');
   assert.equal((code.match(/class="fd-cb" data-mod="namematch"/g) || []).length, 1, 'namematch 行 checkbox');
 });
@@ -204,7 +213,7 @@ test('前端: 未勾选时删除按钮禁用, 弹窗也打不开', () => {
 
 test('前端: 表头全选跳过 disabled 的行', () => {
   const body = fnBody(code, 'filesSelectAll');
-  assert.match(body, /if \(!el\.disabled\) el\.checked = cb\.checked/,
+  assert.match(body, /if \(!el\.disabled\) el\.checked = on/,
     '只有一份的组(disabled)不能被全选勾上 —— 否则会把唯一那份加入待删');
 });
 

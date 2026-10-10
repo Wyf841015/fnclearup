@@ -95,10 +95,12 @@ test('前端: 相似度单元格按量级着色', () => {
 });
 
 test('前端: 表格接入相似度列并携带 minDist', () => {
-  assert.ok(/minDist: f\.minDist, groupMinDist: g\.minDist/.test(mainSrc),
-    'clusters 未携带 minDist');
-  assert.ok(/simSimilarityCell\(c\.minDist\)/.test(mainSrc), '行未渲染相似度单元格');
-  assert.ok(/>相似度</.test(mainSrc), '表头缺少相似度列');
+  // 相似改成组卡片后不再有 clusters 数组和表格相似度列, 但相似度信息不能丢:
+  //   组头显示该组最相似的一对, 组内每行显示自己与组内其他文件的相似度。
+  assert.ok(/最相似/.test(mainSrc) && /simSimilarityPct\(g\.minDist\)/.test(mainSrc),
+    '组头应显示该组的相似度');
+  assert.ok(/simSimilarityPct\(f\.minDist\)/.test(mainSrc), '组内每行应显示各自相似度');
+  assert.ok(/simdup-dist/.test(mainSrc), '缺少相似度显示容器');
 });
 
 test('前端: 概览点明最相似的一对', () => {

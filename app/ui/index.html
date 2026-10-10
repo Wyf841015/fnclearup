@@ -373,7 +373,8 @@
             </select>
                <div class="dup-path-list" id="simdupPathList" style="flex:1 1 260px;min-width:0"></div><button type="button" class="btn btn-outline" onclick="showDupBrowseModal('simdup')">📁 添加目录</button>
             <button type="button" class="btn btn-primary" onclick="simDupScan()" id="simdupBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
-            <button type="button" class="btn btn-ghost" onclick="simDupStop()" id="simdupStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+            <button type="button" class="btn btn-outline" onclick="filesSelectAll('simdup')" id="simdupSelectAllBtn" title="勾选所有组, 删除每组除推荐保留之外的副本">✓ 全选各组</button>
+      <button type="button" class="btn btn-ghost" onclick="simDupStop()" id="simdupStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
             <button type="button" class="btn btn-danger" onclick="openFilesDeleteModal('simdup')" id="simdupDeleteBtn" disabled><span>🗑</span><span>删除选中</span></button>
           </div>
         </div>

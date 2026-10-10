@@ -84,8 +84,9 @@ test('对比弹窗: 用原生 <dialog> 而非自定义 modal', () => {
 });
 
 test('对比弹窗: 组号渲染为可点击按钮并携带组号', () => {
-  assert.ok(/class="simdup-cmp-btn" data-grp="\$\{c\.group\}"/.test(mainSrc),
-    '组号未渲染为带 data-grp 的按钮');
+  // 相似改成组卡片后, 对比按钮从"每行一个"挪到了组头, 但 data-grp 仍必须带组号
+  assert.ok(/class="simdup-cmp-btn" data-grp="' \+ g\.group \+ '"/.test(mainSrc),
+    '组头未渲染为带 data-grp 的对比按钮');
   assert.ok(/querySelectorAll\('\.simdup-cmp-btn'\)/.test(mainSrc), '未做事件委托绑定');
   assert.ok(/_simCmpGroups = s\.groups \|\| \[\]/.test(mainSrc), '渲染时未保存 groups 供弹窗取用');
 });
