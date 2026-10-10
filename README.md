@@ -57,49 +57,60 @@
 实测：扫整卷 /vol3 候选 36 → 17，跳过 20 个系统目录；对可删目录做删除，
 trash 与 permanent 两种模式均 **100% 成功**。
 
-### 子分区卡片右侧超出：HTML 嵌套错误，不是 CSS 写歪了
+### 子分区卡片超出：HTML 嵌套错误，7 个面板里 4 个挂到了 body 下
 
 用户报「去重、相似等卡片右侧超出了上面文件体检卡片」。实测（1280px 视口）：
 
 ```
-.tabs（导航区）       left=51   right=1219   宽 1168
-.tab-panel.active  left=0    right=1270   宽 1270   ← 撑满全屏
-inner-tabs（在 panel 内） 16  ~  1254        ← 比导航区右侧多出 35px
+.tabs（导航区）        left=51   right=1219   宽 1168
+.tab-panel.active   left=0    right=1270   宽 1270   ← 撑满全屏
+inner-tabs（面板内）    16  ~  1254        ← 右侧多 35px、左侧多 35px
 ```
 
-根因在 `index.html`：`</div><!-- Panel: tmp -->` 这一行前面多了一个 `</div>`，
-`.tabs` 提前闭合，于是 `data-panel="scan"`（文件体检，去重/相似/异常/重名/空目录/大文件
-全在这一块）和 `data-panel="schedule"` 成了 `<body>` 的直接子元素。`<body>` 有
-`position:relative` 且无宽度约束，宽度就是整个视口。
+根因：`index.html` 里 `.tabs` **提前闭合**（`</div><!-- Panel: tmp -->` 前面多了一个
+`</div>`），于是 7 个 `tab-panel` 里有 **4 个**成了 `<body>` 的直接子元素：
 
-**修法（CSS 侧，治标）**：给 `.tab-panel` 复制一份 `.container` 的宽度约束 ——
-`max-width:1200px; margin-left/right:auto; padding-left/right:16px`，并在
-`max-width:768px` 媒体查询里同步 padding（12px），与 `.container` 保持一致。
-修后实测 `container` / `tab-panel` 均为 `35 ~ 1235`，完全对齐；`inner-tabs`
-为 `51 ~ 1219`，与导航区一致；全树扫描溢出项 0。
+```
+panel[app] [disk] [docker]           在 .tabs 内 ✓
+panel[scan] [sysjunk] [schedule] [diskanalysis]  挂在 body 下 ★
+.footer                                挂在 body 下 ★（比导航区宽 51px）
+```
 
-**顺带发现：CSS 是 7 天 `immutable` 强缓存**
+`<body>` 有 `position:relative` 且无宽度约束，宽度就是整个视口；而 `.tabs` 在
+`.container`（`max-width:1200`）内只有 1168px。
+
+**修法（改 HTML，根治）**：
+1. 删掉提前闭合的 2 个 `</div>`（L214 和 L215 行内那个）
+2. 在最后一个 panel（diskanalysis）之后、第一个 modal 之前闭合 `.tabs`
+3. `footer` 之后闭合 `.container`
+4. 顺带把 `<dialog id="simdupCompareDlg">` 从两个 panel 之间挪进 `scan` 面板内
+   —— 它原本插在 `scan` 和 `sysjunk` 中间，成了 `.tabs` 的直接子元素
+
+`switchTab` / `switchInnerTab` 都用 `querySelector` 按 `data-panel` 属性定位，
+不依赖父级，移动面板位置不影响功能。修后浏览器实测 7 个 tab 的
+`父=tabs`、全后代溢出 0。
+
+**绕路的教训**：最初想用 CSS 补丁（`.tab-panel` 加 `max-width` + 16px 横向 padding）
+绕过，结果引入了**新的不一致** —— 补丁给所有面板都加了 16px padding，导致
+`.tabs` 内的面板（app/disk/docker）内容缩进 16px，而 body 下的那批对齐，
+**切 tab 时左右边界会跳动 16px**。CSS 绕不过结构问题，只会在旁边制造新 bug。
+结构修好后 CSS 补丁已撤掉，并有测试守着不让它复活。
+
+顺带发现 CSS 是 7 天强缓存：
 
 ```
 $ curl -sI .../styles/style.css | grep -i cache
 Cache-Control: public, max-age=604800, immutable
 ```
 
-服务端**没有**缓存（实测移除限宽规则后返回的 CSS 短了 101 字节），是浏览器按
-`immutable` 缓存了。`index.html` 里写的是 `<link href="styles/style.css?v=3">`，
-这个 `?v=` 就是唯一的失效手段 —— **改了 CSS 不 bump，浏览器 7 天内一直用旧样式**。
+服务端**没有**缓存（实测移除规则后返回的 CSS 短了 101 字节），是浏览器按
+`immutable` 缓存了。`index.html` 写的是 `styles/style.css?v=3`，这个 `?v=` 就是
+唯一的失效手段 —— **改了 CSS 不 bump，浏览器 7 天内一直用旧样式**，表现为
+「代码明明改了，界面却没变化」。已 `?v=3` → `?v=4`。
 
-本轮就踩了这个坑：做新旧对比时一直在测旧 CSS，差点得出「修复无效」的错误结论
-（我一度以为限宽规则没写进去）。现在 `?v=3` → `?v=4`，并加了
-`tests/test_static_asset_version.js` 记录这个机制。
-
-对比静态文件时**必须 bump `?v=` 或用全新浏览器 session**，否则测的是缓存。
-
-**没动 HTML**：彻底修法是删掉那个多余的 `</div>` 把面板挪回 `.tabs` 内，但那要动
-1000+ 行的嵌套结构，`switchTab` / `switchInnerTab` 都靠 `data-panel` 属性定位
-（理论上不受父级影响，但值得实测一遍再动）。`tests/test_layout_panel_alignment.js`
-里有一条测试记录了「scan 面板挂在 body 下」这个现状，将来若修了 HTML 嵌套，
-它会提示可以清掉这条 CSS 约束。
+本轮做新旧对比时一直在测旧 CSS，一度以为限宽规则没写进去，差点得出「修复无效」
+的错误结论，是靠 `curl` 直查服务端返回长度才发现的。**对比静态文件必须 bump
+`?v=` 或用全新浏览器 session。**
 
 ### 只读卷：扫描时就说清「这个卷删不掉」
 
