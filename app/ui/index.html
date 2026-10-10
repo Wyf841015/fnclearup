@@ -60,7 +60,6 @@
       <button type="button" class="tab-btn active" data-tab="schedule" onclick="switchTab('schedule')" role="tab" aria-selected="true"><i data-lucide="clock"></i> 定时</button>
     </div>
 
-
     <!-- Panel: 应用残余 -->
     <div class="tab-panel active" data-panel="app">
       <div class="kpi-row">
@@ -226,8 +225,7 @@
         </div>
       </div>
     </div>
-        </div>
-      </div><!-- Panel: tmp -->
+<!-- Panel: tmp -->
     <!-- Panel: 重复文件 -->
     <div class="tab-panel" data-panel="scan">
       <div class="inner-tabs">
@@ -506,19 +504,20 @@
       </div>
         </div>
       </div>
-    </div>
-
-    <!-- Tab: 相似图片/视频检测 (P0-2) -->
+  <!-- Tab: 相似图片/视频检测 (P0-2) -->
     
 
-    <!-- P1-4: 相似文件并排对比 (原生 <dialog>, CEF/WebView 下比自定义 modal 可靠) -->
-    <dialog id="simdupCompareDlg" style="border:none;padding:0;border-radius:12px;max-width:min(94vw,1100px);max-height:88vh;background:var(--color-card-bg);color:var(--color-text,#333);box-shadow:0 12px 48px rgba(0,0,0,.35)">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--color-border)">
-        <h3 style="margin:0;font-size:15px" id="simdupCmpTitle">相似文件对比</h3>
-        <button type="button" id="simdupCmpClose" class="btn btn-ghost btn-sm" title="关闭">✕</button>
-      </div>
-      <div id="simdupCmpBody" style="padding:16px;overflow:auto;max-height:calc(88vh - 56px)"></div>
-    </dialog>
+      <!-- P1-4: 相似文件并排对比 (原生 <dialog>, CEF/WebView 下比自定义 modal 可靠) -->
+      <dialog id="simdupCompareDlg" style="border:none;padding:0;border-radius:12px;max-width:min(94vw,1100px);max-height:88vh;background:var(--color-card-bg);color:var(--color-text,#333);box-shadow:0 12px 48px rgba(0,0,0,.35)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--color-border)">
+          <h3 style="margin:0;font-size:15px" id="simdupCmpTitle">相似文件对比</h3>
+          <button type="button" id="simdupCmpClose" class="btn btn-ghost btn-sm" title="关闭">✕</button>
+        </div>
+        <div id="simdupCmpBody" style="padding:16px;overflow:auto;max-height:calc(88vh - 56px)"></div>
+      </dialog>
+    </div>
+
+    
 
     <!-- Tab: 异常文件检测 (P0-3) -->
     
@@ -762,6 +761,7 @@
     <!-- Panel: Docker 清理 (stopped containers + build cache) -->
     
   <!-- 大文件删除确认弹窗（独立 modal 区分 dup/temp/delete,显示路径预览 + 模式选择 + 二次确认） -->
+  </div><!-- /.tabs: 7 个 tab-panel 全部结束; 以下是 modal 与 footer -->
   <div class="modal-overlay" id="bigfilesDeleteModal">
     <div class="modal">
       <h3 style="color:var(--color-danger)"><span><i data-lucide="alert-triangle"></i></span><span>确认删除大文件</span></h3>
@@ -1057,7 +1057,8 @@
   </div>
 
   <div class="footer"><p>Copyright©2026 <a href="https://gitee.com/wyf1015" target="_blank">一零一二</a> · 清理精灵</p></div>
-</div>
+  </div>
+</div><!-- /.container -->
 <!-- 动效编排层: 必须先于 main.js 加载, init() 时会调 window.Motion.init() -->
   <script src="motion.js"></script>
   <script src="main.js"></script>
