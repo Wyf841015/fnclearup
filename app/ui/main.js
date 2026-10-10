@@ -676,8 +676,15 @@ function switchInnerTab(tabName) {
   if(tabName==='images'&&!App.dockerImagesLoaded){App.dockerImagesLoaded=true;doImagesScan();}
   else if(tabName==='volumes'&&!App.dockerVolumesLoaded)loadDockerVolumes();
   else if(tabName==='networks'&&!App.dockerNetworksLoaded){App.dockerNetworksLoaded=true;doNetworksScan();}
-  // 容器 / 缓存 分区来自原「Docker 清理」tab
-  else if(tabName==='containers'||tabName==='cache'){ dcCheckAvailable(); }
+  // 容器 / 缓存 分区来自原「Docker 清理」tab。
+  // 切进来就自动扫 —— 用户反馈"每次都需要手动点击扫描"。容器分区实测只要
+  // 0.1s 且状态随时会变, 每次都重扫; 缓存分区只读 KPI 卡片, dcCheckAvailable
+  // 已经顺手填好了。
+  else if(tabName==='containers'){ dcAutoScan(); }
+  else if(tabName==='cache'){ dcCheckAvailable(); }
+  // 系统缓存分区: 同样改成自动扫, 但走 sysCleanAutoScan() 限流(1 分钟内
+  // 不重复), 因为它要 3.8~16s。
+  else if(tabName==='syscache'){ sysCleanAutoScan(); }
   // 临时文件分区: 懒加载逻辑从原 switchTab('temp') 搬过来
   else if(tabName==='tmpfiles'&&!App.tempScanned){App.tempScanned=true;doTempScan();}
   // 空目录分区: 每次进入都重置到未扫描态(原 switchTab('empty') 的逻辑)
@@ -2337,6 +2344,12 @@ async function doBigFilesDelete() {
 // ═══════════════════════════════
 // Docker Cleanup (stopped containers + build cache)
 // ═══════════════════════════════
+// 分区自动扫描用的状态。放在这里而不是各函数内部, 是因为 dcAutoScan 和手动
+// 点「扫描」按钮走的是同一个 dcScan, 必须共用同一个"正在扫"标记。
+let _dcScanning = false;          // 容器列表正在拉, 防自动扫描与手点撞车
+let _dcScannedAt = 0;            // 上次拉到的时刻(ms), 用于状态栏显示
+let _sysCleanScanning = false;    // 系统缓存扫描中(耗时 3.8~16s, 必须防重入)
+let _sysCleanScannedAt = 0;       // 上次扫描时刻, 1 分钟内不重复自动扫
 let _dcStoppedList = []; // last scan result (cached for selection)
 
 async function dcCheckAvailable() {
@@ -2373,19 +2386,57 @@ async function dcCheckAvailable() {
     $('dc-cache-total').textContent = '-';
     $('dc-cache-reclaim').textContent = '-';
     $('dcPruneBtn').disabled = true;
-    $('dc-cache-status').textContent = '点击「扫描」按钮获取详情';
+    // ★ 这个分区没有「扫描」按钮(只有 dcPruneCache), 原来那句"点击「扫描」按钮
+    // 获取详情"指向一个不存在的按钮, 用户只会在这里干等。改成说明真实原因。
+    $('dc-cache-status').textContent = daemon === false
+      ? '⚠️ Docker daemon 未响应，无法读取构建缓存'
+      : '未获取到构建缓存信息';
   }
+  // 把探测结果带回去: 进「容器」分区时 dcScan 可以直接用它渲染, 不用再打一次
+  // api/docker/stopped(否则切一次容器分区要发三个请求)。
+  return { available, daemon, stopped, cache };
 }
 
-async function dcScan() {
+// preloaded: dcCheckAvailable 已经拿到的 {available, daemon, stopped} —— 传进来
+// 就省掉一次重复请求。缺省(手动点「扫描」按钮)照旧自己拉。
+// ── 分区自动扫描 ──────────────────────────────────────────────────
+// 为什么容器分区可以每次都扫: api/docker/stopped 实测只要 0.1s, 而容器的启停
+// 由用户在别处随时改变, 切进来看到的是"上次扫描时的快照"几乎必然是错的。
+// 所以每次进入都重扫, 代价可以忽略, 换来的是看到的一定是当前状态。
+async function dcAutoScan() {
+  const probe = await dcCheckAvailable();
+  // Docker 不可用时 dcCheckAvailable 已经把入口藏起来并退回镜像分区, 这里不再扫。
+  if (!probe || !probe.available) return;
+  await dcScan(probe);
+}
+
+// 为什么系统缓存分区要限流: api/sysclean/scan 实测 3.8~16s(要 stat 上千个缓存
+// 目录)。切一次就等十几秒, 来回切两个 tab 更是叠加。所以只在没扫过时自动扫,
+// 一分钟内切走再切回来直接沿用上次结果 —— 缓存体积一分钟内不会变多少。
+// 手动「扫描缓存」按钮始终可用, 随时能强刷。
+async function sysCleanAutoScan() {
+  if (_sysCleanScanning) return;
+  if (SysCleanState.scanLoaded && _sysCleanScannedAt
+      && (Date.now() - _sysCleanScannedAt) < 60000) {
+    return;
+  }
+  await doSysCleanScan();
+}
+
+async function dcScan(preloaded) {
   const btn = $('dcScanBtn');
   const status = $('dc-stopped-status');
   const list = $('dc-stopped-list');
+  // 正在扫就直接返回: 自动扫描和用户手点可能撞在一起, 两个响应同时往同一个
+  // 列表渲染, 后到的会把先到的结果覆盖掉, 用户看到的是随机一份数据。
+  if (_dcScanning) return;
+  _dcScanning = true;
   btn.disabled = true;
   status.className = '';
   status.textContent = '🔍 扫描中…';
   try {
-    const data = await API.get('api/docker/stopped');
+    const data = preloaded && preloaded.available ? preloaded : await API.get('api/docker/stopped');
+    _dcScannedAt = Date.now();
     if (!data.available) {
       dcCheckAvailable(); // refresh unavailable banner
       status.className = 'error';
@@ -2403,6 +2454,7 @@ async function dcScan() {
     status.className = 'error';
     status.textContent = '❌ ' + e.message;
   } finally {
+    _dcScanning = false;
     btn.disabled = false;
   }
 }
@@ -3092,14 +3144,23 @@ async function doSysCleanScan() {
   const status = $('sysclean-status');
   const list = $('sysclean-list');
   const empty = $('sysclean-empty');
+  // 这个接口要 3.8~16s, 自动扫描和用户手点很容易撞车(切进分区的同时手点按钮)。
+  // 两个响应同时往同一个列表渲染, 后到的会覆盖先到的, 用户看到的是随机一份数据。
+  if (_sysCleanScanning) return;
+  _sysCleanScanning = true;
   if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span><span>扫描中...</span>'; }
   if (status) { status.className = 'loading'; status.textContent = '⏳ 正在扫描系统缓存...'; }
   if (list) list.innerHTML = '';
   if (empty) empty.style.display = 'none';
   try {
-    const data = await API.get('api/sysclean/scan');
+    // ★ 这个接口要 stat 上千个缓存目录, 实测 3.8~16s, 而 API.get 默认超时只有
+    // 15s —— 慢的那一半用户必然看到 "signal is aborted without reason"。
+    // 手动点扫描时同样会超时, 只是用户会当成自己网络问题, 根本想不到是超时。
+    // 给 90s: 上限只是防挂死, 正常情况下 4 秒左右就回来了。
+    const data = await API.get('api/sysclean/scan', 90000);
     SysCleanState.items = data.items || [];
     SysCleanState.scanLoaded = true;
+    _sysCleanScannedAt = Date.now();
     if ($('sysclean-count')) $('sysclean-count').textContent = data.count || 0;
     if ($('sysclean-total')) $('sysclean-total').textContent = data.total_size_str || '0 B';
     renderSysCleanList();
@@ -3107,6 +3168,7 @@ async function doSysCleanScan() {
   } catch (e) {
     if (status) { status.className = 'error'; status.textContent = '❌ 扫描失败: ' + e.message; }
   } finally {
+    _sysCleanScanning = false;
     if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔍</span><span>扫描缓存</span>'; }
   }
 }
