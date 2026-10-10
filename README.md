@@ -78,6 +78,23 @@ inner-tabs（在 panel 内） 16  ~  1254        ← 比导航区右侧多出 35
 修后实测 `container` / `tab-panel` 均为 `35 ~ 1235`，完全对齐；`inner-tabs`
 为 `51 ~ 1219`，与导航区一致；全树扫描溢出项 0。
 
+**顺带发现：CSS 是 7 天 `immutable` 强缓存**
+
+```
+$ curl -sI .../styles/style.css | grep -i cache
+Cache-Control: public, max-age=604800, immutable
+```
+
+服务端**没有**缓存（实测移除限宽规则后返回的 CSS 短了 101 字节），是浏览器按
+`immutable` 缓存了。`index.html` 里写的是 `<link href="styles/style.css?v=3">`，
+这个 `?v=` 就是唯一的失效手段 —— **改了 CSS 不 bump，浏览器 7 天内一直用旧样式**。
+
+本轮就踩了这个坑：做新旧对比时一直在测旧 CSS，差点得出「修复无效」的错误结论
+（我一度以为限宽规则没写进去）。现在 `?v=3` → `?v=4`，并加了
+`tests/test_static_asset_version.js` 记录这个机制。
+
+对比静态文件时**必须 bump `?v=` 或用全新浏览器 session**，否则测的是缓存。
+
 **没动 HTML**：彻底修法是删掉那个多余的 `</div>` 把面板挪回 `.tabs` 内，但那要动
 1000+ 行的嵌套结构，`switchTab` / `switchInnerTab` 都靠 `data-panel` 属性定位
 （理论上不受父级影响，但值得实测一遍再动）。`tests/test_layout_panel_alignment.js`
