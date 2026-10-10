@@ -273,10 +273,29 @@ test('系统垃圾合并: main.js 保留旧 tab 名的兼容别名', () => {
   }
   assert.ok(body.includes("switchTab('sysjunk')"), '旧 tab 名未重定向到 sysjunk');
   // 临时文件的懒加载逻辑要从 switchTab 搬到 switchInnerTab('tmpfiles')
+  //
+  // 用花括号配对取**完整**函数体, 不要 slice(k, k+1400) 写死窗口 ——
+  // switchInnerTab 每加一个分区就长几行, 固定窗口迟早把后面的分支切掉,
+  // 表现为"功能好好的但测试报未挂载"。2026-10-10 就这么踩了一次:
+  // 容器/系统缓存两个新分区把函数撑长, tmpfiles 落到窗口外, 假失败一次。
   const k = main.indexOf('function switchInnerTab');
-  const sw = main.slice(k, k + 1400);
+  assert.ok(k > 0, '应能找到 switchInnerTab');
+  let depth = 0, sw = '';
+  for (let x = main.indexOf('{', k); x < main.length; x++) {
+    const ch = main[x];
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; sw += ch; if (depth === 0) break; continue; }
+    sw += ch;
+  }
+  assert.ok(depth === 0, 'switchInnerTab 的花括号应配平');
   assert.ok(/tabName==='tmpfiles'/.test(sw) && /App\.tempScanned/.test(sw),
     "临时文件的懒加载扫描未挂到 switchInnerTab('tmpfiles')");
+  // 同理检查另外几个惰性加载分区也在里面
+  for (const [part, flag] of [['images','dockerImagesLoaded'],['volumes','dockerVolumesLoaded'],
+                              ['networks','dockerNetworksLoaded'],['tmpfiles','tempScanned']]) {
+    assert.ok(new RegExp("tabName==='" + part + "'").test(sw) && sw.includes(flag),
+      part + ' 分区的懒加载标记 ' + flag + ' 不在 switchInnerTab 里');
+  }
 });
 
 // ── 方案 B-3: 六个扫描型合并为「文件体检」 ──
