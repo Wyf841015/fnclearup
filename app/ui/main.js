@@ -1263,7 +1263,7 @@ function updateDupSelectedCount() {
 // ═══════════════════════════════
 let _bigFilesScanning = false;
 
-async function doBigFilesScan() {
+async function doBigFilesScan(preserveStatus) {
   if (_bigFilesScanning) return;
   _bigFilesScanning = true;
   const status = $('bigfiles-status');
@@ -1309,6 +1309,10 @@ async function doBigFilesScan() {
       status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${stoppedNote}，扫描了 ${(data.scanned_paths || 0).toLocaleString()} 个路径`;
     }
     renderBigFilesList(data.files || []);
+    // preserveStatus: 删除后自动重扫时不要覆盖状态栏。
+    // 否则"✅ 删除完成: 3/3"会被紧跟着的"找到 0 个 ≥100 MB 的文件"立刻冲掉,
+    // 用户只看到扫描结果, 误以为删除失败。KPI 仍照常刷新。
+    if (preserveStatus && status && status.dataset.lastOp) status.textContent = status.dataset.lastOp;
   } catch (e) {
     if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
     if (list) list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">⚠️</div><h3>扫描失败</h3><p>' + escHtml(e.message) + '</p></div>';
@@ -2118,7 +2122,10 @@ async function doBigFilesDelete() {
   closeBigFilesDeleteModal();
   $('bigfiles-status').textContent = mode === 'trash' ? '🗑 移到回收站…' : '🔥 永久删除…';
   try {
-    const data = await API.post('api/bigfiles/delete', { paths, mode, confirmed: true });
+    // 超时给 120s: 默认 30s 对超大文件不够。unlink/rename 在大数据量或
+    // 网盘 fuse 上会明显变慢, 30s 到了就是 AbortError, 前端报"删除失败",
+    // 但后端其实还在删 —— 用户看到的就是"明明在删却提示失败"。
+    const data = await API.post('api/bigfiles/delete', { paths, mode, confirmed: true }, 120000);
     if (data.__ok === false) throw new Error(data.__error || ('HTTP ' + data.__status));
     const deleted = data.total || 0;
     const skipped = data.skipped || 0;
@@ -2135,16 +2142,24 @@ async function doBigFilesDelete() {
       msg += ` · ${fallbacks.length} 个未能进回收站已直接删除（${escHtml(fallbacks[0])} 等）`;
     }
     msg += blockedNotice(data);
-    $('bigfiles-status').textContent = msg;
+    const st = $('bigfiles-status');
+    if (st) { st.textContent = msg; st.dataset.lastOp = msg; }
     // 有失败/被拦/未能进回收站时不能用绿色成功样式 —— 否则用户以为一切正常
     const partial = failures || data.blockedCount || fallbacks.length;
     showToast(msg, partial ? (failures ? 'error' : 'warning') : 'success');
     // Re-scan to refresh the list (deleted files are gone)
-    if (deleted > 0) await doBigFilesScan();
+    if (deleted > 0) await doBigFilesScan(true);
   } catch (e) {
-    $('bigfiles-status').className = 'error';
-    $('bigfiles-status').textContent = '❌ ' + e.message;
-    showToast('删除失败: ' + e.message, 'error');
+    // 超时 ≠ 没删成。请求超时后端仍可能在继续删(unlink 大文件/网盘 fuse 尤其慢),
+    // 直接报"删除失败"会让用户以为文件还在、从而重复操作。
+    // 所以超时单独给一条"结果未知, 请刷新确认"的提示。
+    const timedOut = /abort/i.test(e.message || '') || e.name === 'AbortError';
+    const st = $('bigfiles-status');
+    const msg = timedOut
+      ? '⏳ 删除超时（超过 120 秒），结果未知 — 请重新扫描确认哪些文件已删除，不要重复操作'
+      : '❌ ' + e.message;
+    if (st) { st.className = timedOut ? 'loading' : 'error'; st.textContent = msg; st.dataset.lastOp = msg; }
+    showToast(timedOut ? '删除超时, 结果未知, 请重新扫描确认' : ('删除失败: ' + e.message), timedOut ? 'warning' : 'error');
   }
 }
 
