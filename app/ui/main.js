@@ -1548,6 +1548,110 @@ function simSimilarityPct(dist){
   if (dist == null || dist < 0) return null;
   return Math.max(0, Math.round((1 - dist / SIMDASH_BITS) * 100));
 }
+// ═══════════════════════════════════════════════════════════════════
+// 相似文件: 每组推荐保留一个
+//
+// 相似 ≠ 重复: dHash 距离小只是视觉接近, 内容仍可能有差异(不同水印、
+// 压缩质量、局部裁剪)。所以不能像去重那样靠哈希判定"这份是多余的",
+// 只能给出**建议**, 最终删不删由用户决定。推荐只决定默认勾选谁被保留。
+//
+// 推荐依据(按优先级, 每一条都可解释):
+//   1. 文件名干净  —— 带 (1) / -副本 / _copy / -副本(2) 这类特征的, 基本可断定
+//      是复制出来的副本, 原件优先。文件名完全相同时这一条区分不出, 往下看。
+//   2. 修改时间新  —— 同样干净时, 新的那份通常是用户后来整理/导出的结果。
+//   3. 体积更大    —— 同类文件中更大的往往是更高画质/更高分辨率的那份。
+//   4. 路径更短    —— 深拷贝目录(backup/备份/xxx - 副本)里的让位给浅层的。
+// 全部相同则按路径字典序, 保证同一份数据每次推荐结果一致(否则用户会
+// 看到"推荐的文件每次扫描都不一样", 反而不敢信)。
+// ═══════════════════════════════════════════════════════════════════
+// 全部锚定在 stem 末尾。分隔符统一成 [\s_\-] 的字符类 —— 写成 /[-_]copy$/
+// 会漏掉 "photo copy"(空格分隔) 这种最常见的形态。
+const SIMDUP_COPY_SUFFIX = [
+  /\(\d+\)$/,                      // photo(1)
+  /（\d+）$/,                        // photo（1）全角
+  /[\s_\-]copy$/i,                  // photo - copy / photo_copy / photo copy
+  /[\s_\-]cop(?:y|ies)\s*\d*$/i,   // photo copy2
+  /[\s_\-]副本$/,                    // photo - 副本
+  /[\s_\-]副本\(\d+\)$/,          // photo - 副本(2)
+  /[\s_\-]backups?$/i,              // photo backup
+  /[\s_\-]bak$/i,
+];
+// 整名就等于这些词的, 是文件本来就这么叫, 不算副本标记。
+// 注意别写 /copy\.\w+$/ 这种 —— 它会把 "photo - copy.jpg" 一起豁免掉。
+const SIMDUP_COPY_ALLOW = [
+  /^copy$/i, /copywriting/i, /copyright/i,
+];
+
+/**
+ * 文件名是否带"这是副本"的味道。
+ * 关键: 只看**扩展名之前**的部分(stem)。直接对全名匹配 /(1)$/ 会失配 ——
+ * "photo(1).jpg" 的结尾是 ".jpg" 不是 "(1)", 而 "report(1).pdf" 这类才碰巧
+ * 在 . 前。加 strip 之后 photo(1).jpg / video(2).mp4 都能识别。
+ */
+function simDupLooksLikeCopy(name) {
+  const n = String(name || '');
+  if (!n) return false;
+  if (SIMDUP_COPY_ALLOW.some(re => re.test(n))) return false;
+  const dot = n.lastIndexOf('.');
+  const stem = dot > 0 ? n.slice(0, dot) : n;
+  return SIMDUP_COPY_SUFFIX.some(re => re.test(stem));
+}
+
+/** 人话解释为什么推荐这份(展示在 tooltip 里, 让用户能推翻推荐) */
+function simDupKeepReason(f, all) {
+  const reasons = [];
+  if (!simDupLooksLikeCopy(f.name)) {
+    const copies = all.filter(x => simDupLooksLikeCopy(x.name)).length;
+    if (copies) reasons.push('文件名无副本标记(其余 ' + copies + ' 份带 (1)/副本 等后缀)');
+  }
+  const withMtime = all.filter(x => x.mtime != null);
+  if (withMtime.length > 1 && f.mtime != null) {
+    const newest = withMtime.reduce((a, b) => (a.mtime >= b.mtime ? a : b));
+    if (newest.path === f.path) reasons.push('组内修改时间最新');
+  }
+  const maxSize = Math.max(...all.map(x => x.size || 0));
+  if (f.size === maxSize && all.filter(x => x.size === maxSize).length === 1) reasons.push('组内体积最大(通常画质最高)');
+  if (!reasons.length) {
+    const shortest = all.reduce((a, b) => (a.path.split('/').length <= b.path.split('/').length ? a : b));
+    reasons.push(shortest.path === f.path ? '路径层级最浅' : '组内综合排序第一');
+  }
+  return reasons.join(' · ');
+}
+
+/**
+ * 在组内挑一个推荐保留的, 返回 { index, file, reason }。
+ * 排序键必须全序且稳定(最后用 path 兜底), 否则同一份数据两次扫描推荐会跳。
+ */
+function simDupPickKeeper(files) {
+  if (!files || !files.length) return null;
+  if (files.length === 1) return { index: 0, file: files[0], reason: '组内只有一个文件' };
+  const sorted = files.map((f, i) => ({
+    f, i,
+    copy: simDupLooksLikeCopy(f.name) ? 1 : 0,              // 越小越优先
+    mtime: f.mtime == null ? -1 : f.mtime,                  // 越大越优先(取反)
+    size: f.size || 0,                                       // 越大越优先(取反)
+    depth: (f.path || '').split('/').length,                 // 越小越优先
+    path: f.path || '',                                      // 字典序兜底
+  }));
+  sorted.sort((a, b) =>
+    (a.copy - b.copy)
+    || (b.mtime - a.mtime)
+    || (b.size - a.size)
+    || (a.depth - b.depth)
+    || (a.path.localeCompare(b.path))
+  );
+  const win = sorted[0];
+  return { index: win.i, file: win.f, reason: simDupKeepReason(win.f, files) };
+}
+
+/** 组内文件按"推荐保留的排第一"重排, 用于展示 */
+function simDupOrderGroup(files) {
+  const pick = simDupPickKeeper(files);
+  if (!pick) return [];
+  const rest = files.filter((_, i) => i !== pick.index);
+  return [files[pick.index], ...rest];
+}
+
 function simSimilarityCell(dist){
   const pct = simSimilarityPct(dist);
   if (pct == null) return '<td style="color:var(--color-text-secondary);font-size:12px">—</td>';
@@ -1614,33 +1718,76 @@ function simDupRenderResult(s) {
       + '<span style="font-size:11px;color:var(--color-text-secondary)"> (dHash 距离 '+s.stats.bestDist+'/'+SIMDASH_BITS+')</span>';
   }
   if (!s.groups || !s.groups.length) {
-    // 这里会提前 return, 末尾那次 filesUpdateSelectInfo 执行不到 —— 少了它,
-    // 扫出空结果时删除按钮仍停留在上一次扫描的数量。
-    filesUpdateSelectInfo('simdup');
+    // 这里会提前 return, 末尾那次 filesUpdateSelectInfo 执行不到。
     list.innerHTML = '<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现相似文件</h3><p>当前阈值下没有匹配项，可换「宽松」策略重试</p></div>';
+    // 顺序要紧: 必须先清空 DOM 再刷新。filesCollect 查的是
+    // .fd-cb[data-mod="simdup"]:checked —— 若在 innerHTML 赋值之前调用,
+    // 读到的还是上一轮扫描的旧 checkbox, 按钮会一直停留在旧数量。
+    filesUpdateSelectInfo('simdup');
     return;
   }
-  let clusters = [];
-  s.groups.forEach(g => {
-    g.files.forEach(f => clusters.push({ group: g.group, path: f.path, name: f.name, size: f.size, size_str: f.size_str, minDist: f.minDist, groupMinDist: g.minDist }));
+
+  // ═══ 按组分块渲染 ═══
+  //
+  // 原来所有文件铺成一张大表, 靠"组"列的数字区分 —— 组内文件在视觉上完全散开,
+  // 也没有"这一组该留哪个"的提示。用户要的是"每组推荐保留一个", 所以改成:
+  //   组头   组号 · 份数 · 组相似度 · 组总占用 · [并排对比]
+  //   组内行 推荐保留的那份标 ★ 推荐(带推荐理由), 其余标 ✕ 删除
+  // 组头的 checkbox = 删掉本组除推荐外的全部; 组内不逐文件给框,
+  // 因为"相似"的判断权在推荐算法, 逐文件勾选会让用户误以为可以随便挑。
+  let html = '';
+  s.groups.forEach((g, gi) => {
+    const ordered = simDupOrderGroup(g.files || []);
+    if (!ordered.length) return;
+    const pick = simDupPickKeeper(g.files || []);
+    const keepIdx = pick ? pick.index : 0;
+    const delFiles = ordered.filter((_, i) => (g.files || []).indexOf(ordered[i]) !== keepIdx);
+    // 组的可释放空间 = 组内总量 - 推荐保留那份
+    const keepSize = pick ? (pick.file.size || 0) : 0;
+    const groupSize = (g.files || []).reduce((a, f) => a + (f.size || 0), 0);
+    const delSize = groupSize - keepSize;
+    const pct = simSimilarityPct(g.minDist);
+    const cmp = pct == null ? '—'
+      : '<span style="color:' + (pct >= 95 ? 'var(--color-success)' : pct >= 80 ? 'var(--color-primary)' : 'var(--color-warning)') + '">' + pct + '%</span>';
+
+    html += '<div class="simdup-group">'
+      // ── 组头 ──
+      + '<div class="simdup-group-head">'
+        + '<input type="checkbox" class="fd-cb" data-mod="simdup" data-group="' + g.group + '"'
+          + ' data-paths="' + escHtml(JSON.stringify(delFiles.map(f => f.path))) + '"'
+          + ' data-size="' + delSize + '"'
+          + ' data-keep="' + escHtml(ordered[0].path) + '"'
+          + ' title="' + escHtml(delFiles.length ? '选中后删除本组其余 ' + delFiles.length + ' 个文件, 保留推荐的那份' : '本组只有一份, 无可删除项') + '"'
+          + ' onchange="filesUpdateSelectInfo(\'simdup\')" ' + (delFiles.length ? '' : 'disabled') + '>'
+        + '<span class="simdup-group-no">组 ' + g.group + '</span>'
+        + '<span class="simdup-group-meta">'
+          + '<b>' + (g.files || []).length + '</b> 个'
+          + ' · 最相似 ' + cmp
+          + ' · 组占用 ' + formatBytes(groupSize)
+          + (delSize > 0 ? ' · <span style="color:var(--color-success)">可释放 ' + formatBytes(delSize) + '</span>' : '')
+        + '</span>'
+        + '<button type="button" class="simdup-cmp-btn" data-grp="' + g.group + '" title="并排对比该组">🖼 对比</button>'
+      + '</div>'
+      // ── 组内文件行 ──
+      + '<div class="simdup-group-body">';
+    ordered.forEach(f => {
+      const isKeep = f === ordered[0];
+      const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
+      html += '<div class="simdup-file' + (isKeep ? ' is-keep' : '') + '" title="' + escHtml(f.path) + '">'
+        + '<span class="simdup-flag ' + (isKeep ? 'keep' : 'del') + '">'
+          + (isKeep ? '★ 推荐保留' : '✕ 删除') + '</span>'
+        + '<span class="simdup-thumb"><img src="' + escHtml(simDupThumbUrl(f.path)) + '" alt="' + escHtml(f.name) + '" loading="lazy"></span>'
+        + '<span class="simdup-name">' + escHtml(f.name)
+          + (isKeep && pick ? '<em class="simdup-why">' + escHtml(pick.reason) + '</em>' : '')
+        + '</span>'
+        + '<span class="simdup-size">' + escHtml(f.size_str) + '</span>'
+        + '<span class="simdup-dist">' + (simSimilarityPct(f.minDist) == null ? '—' : simSimilarityPct(f.minDist) + '%') + '</span>'
+        + '<span class="simdup-dir" title="' + escHtml(dir) + '">' + escHtml(dir) + '</span>'
+      + '</div>';
+    });
+    html += '</div></div>';
   });
-  let html = '<div class="list-scroll"><table class="data-table"><thead><tr>'
-    + '<th style="width:34px"><input type="checkbox" class="fd-cb-all" data-mod="simdup" onchange="filesSelectAll(this)"></th>'
-    + '<th style="width:50px">组</th><th>文件名</th><th style="width:13%">大小</th>'
-    '<th style="width:50px">组</th><th>文件名</th><th style="width:13%">大小</th>'
-    + '<th style="width:88px">相似度</th><th style="width:38%">位置</th></tr></thead><tbody>';
-  clusters.forEach(c => {
-    const dir = c.path.slice(0, c.path.lastIndexOf('/')) || '/';
-    html += `<tr>
-      <td><input type="checkbox" class="fd-cb" data-mod="simdup" data-path="${escHtml(c.path)}" data-size="${c.size || 0}" onchange="filesUpdateSelectInfo('simdup')"></td>
-      <td style="text-align:center"><button type="button" class="simdup-cmp-btn" data-grp="${c.group}" title="并排对比该组">${c.group}</button></td>
-      <td><span title="${escHtml(c.path)}">${escHtml(c.name)}</span></td>
-      <td style="font-family:var(--font-mono);color:var(--color-primary)">${escHtml(c.size_str)}</td>
-      ${simSimilarityCell(c.minDist)}
-      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dir)}">${escHtml(dir)}</td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
+
   list.innerHTML = html;
   // P1-4: 事件委托绑定(inline onclick 在 CEF/WebView 下常静默失效)
   list.querySelectorAll('.simdup-cmp-btn').forEach(function(btn){
@@ -1743,8 +1890,12 @@ function brokRender(s) {
   else if (_brokCat === 'dl') { items = s.download_residue||[]; label = '下载残留'; }
   else { items = s.broken||[]; label = '损坏文件'; }
   if (!items.length) {
-      filesUpdateSelectInfo('broken');   // 提前 return, 末尾那次执行不到
     list.innerHTML = `<div class="dup-empty-state"><div class="dup-empty-icon">🎉</div><h3>未发现${label}</h3><p>当前目录没有匹配项</p></div>`;
+    // 顺序要紧: 必须先清空 DOM 再刷新。filesCollect 查的是
+    // .fd-cb[data-mod="broken"]:checked —— 若在 innerHTML 赋值之前调用,
+    // 读到的还是上一轮扫描的旧 checkbox, 按钮会一直停留在旧数量。
+
+      filesUpdateSelectInfo('broken');
     return;
   }
   let html = '<div class="list-scroll"><table class="data-table"><thead><tr><th style="width:34px"><input type="checkbox" class="fd-cb-all" data-mod="broken" onchange="filesSelectAll(this)"></th><th style="width:46px">#</th><th>文件名</th><th style="width:14%">信息</th><th style="width:40%">位置</th></tr></thead><tbody>';
@@ -1888,8 +2039,10 @@ function filesCollect(mod) {
   const paths = [], keeps = [];
   let size = 0;
   boxes.forEach(el => {
-    if (mod === 'namematch') {
-      // 组粒度: data-paths 是 JSON 数组, data-keep 是保留的那一份
+    // 相似 / 重名 都是**组粒度**: 勾一个组 = 删该组除推荐/保留外的全部。
+    // 逐文件勾选时"全选"会把每组仅存的那份也删掉, 组粒度天然避免。
+    // 异常分区是文件粒度(空文件/死链/损坏文件都是独立项, 没有"留一份"的概念)。
+    if (mod === 'namematch' || mod === 'simdup') {
       try {
         const arr = JSON.parse(el.dataset.paths || '[]');
         arr.forEach(p => paths.push(p));
@@ -1903,8 +2056,6 @@ function filesCollect(mod) {
   });
   return { paths: Array.from(new Set(paths.filter(Boolean))), keeps, size };
 }
-
-/** 勾选状态变化 → 更新按钮文案/可用态 + 表头全选框半选态 */
 function filesUpdateSelectInfo(mod) {
   const { paths, size } = filesCollect(mod);
   const btn = $(mod + 'DeleteBtn');
@@ -1924,11 +2075,14 @@ function filesUpdateSelectInfo(mod) {
   }
 }
 
-/** 表头全选框 */
+/** 表头全选框(cb) 或「全选所有组」按钮(传 mod 字符串) */
 function filesSelectAll(cb) {
-  const mod = cb.dataset.mod;
+  const mod = (typeof cb === 'string') ? cb : cb.dataset.mod;
+  const on = (typeof cb === 'string') ? true : cb.checked;
   document.querySelectorAll('.fd-cb[data-mod="' + mod + '"]').forEach(el => {
-    if (!el.disabled) el.checked = cb.checked;
+    // 必须跳过 disabled —— 相似/重名里"只有一份"的组没有可删项,
+    // 勾上它会把仅存的那份加入待删, 全选反而变成"全删"。
+    if (!el.disabled) el.checked = on;
   });
   filesUpdateSelectInfo(mod);
 }

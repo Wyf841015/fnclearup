@@ -225,6 +225,10 @@ writeState(state);
         }
         return { path: f.path, name: f.path.split('/').pop(), size: f.size,
                  size_str: (f.size / 1048576).toFixed(1) + ' MB',
+                 // mtime 提取阶段就有(collect 里 statSync 拿的), 但一直没往组里输出。
+                 // 前端"推荐保留"要靠它打破平局: 同名同大小的情况下, 新的那份通常是
+                 // 用户后来整理/导出的, 保留它比保留旧的更符合直觉。
+                 mtime: f.mtime ?? null,
                  hash: f.hash?.toString() || null, minDist: md };
       }),
     };
