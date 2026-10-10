@@ -165,6 +165,12 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 .tab-btn.active{color:var(--color-primary);background:var(--color-primary-bg);font-weight:600}
 .tab-btn.active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--color-primary),var(--color-cyan));border-radius:2px;box-shadow:0 0 8px var(--color-cyan)}
 .tab-panel{display:none}
+/* tab-panel 被挂在 <body> 下（HTML 里 .tabs 提前闭合，见 README 记录），
+   宽度会撑满全屏而导航区只在 .container 的 1200px 内 —— 右侧对不齐。
+   这里给 tab-panel 复制一份 .container 的宽度约束, 让两者视觉对齐。
+   改 HTML 挪动面板是更彻底的修法, 但那要动大段嵌套结构, 风险高得多;
+   先用 CSS 把对齐问题解决。 */
+.tab-panel{max-width:1200px;margin-left:auto;margin-right:auto;padding-left:16px;padding-right:16px}
 .tab-panel.active{display:block;padding-top:16px}
 
 /* KPI */
@@ -508,6 +514,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 /* Responsive */
 @media(max-width:768px){
   .container{padding:16px 12px}
+  .tab-panel{padding-left:12px;padding-right:12px}
   .header{flex-direction:column;align-items:flex-start;gap:16px;padding:20px}
   .header-controls{width:100%;justify-content:flex-start}
   .kpi-card{padding:16px;gap:12px}

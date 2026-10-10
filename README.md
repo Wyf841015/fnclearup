@@ -57,6 +57,33 @@
 实测：扫整卷 /vol3 候选 36 → 17，跳过 20 个系统目录；对可删目录做删除，
 trash 与 permanent 两种模式均 **100% 成功**。
 
+### 子分区卡片右侧超出：HTML 嵌套错误，不是 CSS 写歪了
+
+用户报「去重、相似等卡片右侧超出了上面文件体检卡片」。实测（1280px 视口）：
+
+```
+.tabs（导航区）       left=51   right=1219   宽 1168
+.tab-panel.active  left=0    right=1270   宽 1270   ← 撑满全屏
+inner-tabs（在 panel 内） 16  ~  1254        ← 比导航区右侧多出 35px
+```
+
+根因在 `index.html`：`</div><!-- Panel: tmp -->` 这一行前面多了一个 `</div>`，
+`.tabs` 提前闭合，于是 `data-panel="scan"`（文件体检，去重/相似/异常/重名/空目录/大文件
+全在这一块）和 `data-panel="schedule"` 成了 `<body>` 的直接子元素。`<body>` 有
+`position:relative` 且无宽度约束，宽度就是整个视口。
+
+**修法（CSS 侧，治标）**：给 `.tab-panel` 复制一份 `.container` 的宽度约束 ——
+`max-width:1200px; margin-left/right:auto; padding-left/right:16px`，并在
+`max-width:768px` 媒体查询里同步 padding（12px），与 `.container` 保持一致。
+修后实测 `container` / `tab-panel` 均为 `35 ~ 1235`，完全对齐；`inner-tabs`
+为 `51 ~ 1219`，与导航区一致；全树扫描溢出项 0。
+
+**没动 HTML**：彻底修法是删掉那个多余的 `</div>` 把面板挪回 `.tabs` 内，但那要动
+1000+ 行的嵌套结构，`switchTab` / `switchInnerTab` 都靠 `data-panel` 属性定位
+（理论上不受父级影响，但值得实测一遍再动）。`tests/test_layout_panel_alignment.js`
+里有一条测试记录了「scan 面板挂在 body 下」这个现状，将来若修了 HTML 嵌套，
+它会提示可以清掉这条 CSS 约束。
+
 ### 只读卷：扫描时就说清「这个卷删不掉」
 
 用户报的「扫描后选中删除全部失败」，真根因是 **`/vol2` 以 btrfs (ro) 挂载**，
