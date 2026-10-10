@@ -1311,7 +1311,12 @@ async function doBigFilesScan(preserveStatus) {
       const skipNote = data.skipped_protected_dirs
         ? ` · 已跳过 ${data.skipped_protected_dirs} 个系统目录/回收站（应用安装文件与运行数据，不占用可清理空间）`
         : '';
-      status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${skipNote}${stoppedNote}，扫描了 ${(data.scanned_paths || 0).toLocaleString()} 个路径`;
+      // 只读卷: 卷以 ro 挂载时下面这些文件一个都删不掉。与其让用户勾完 57 个再
+      // 全部 EROFS 失败(显示出来就是"全部失败"), 不如在扫描结果时就讲清楚。
+      const roNote = (data.read_only_roots || []).length
+        ? ' · ⚠ ' + data.read_only_roots.map(a => `${a.root} 为只读卷(${a.reason})，其下文件无法删除`)
+        : '';
+      status.textContent = `🐘 在 ${rootLabel} 中找到 ${data.total_candidates} 个 ≥${formatBytes(data.min_size)} 的文件${partialLabel}${skipNote}${stoppedNote}，扫描了 ${(data.scanned_paths || 0).toLocaleString()} 个路径` + roNote;
     }
     renderBigFilesList(data.files || []);
     // preserveStatus: 删除后自动重扫时不要覆盖状态栏。
@@ -2297,6 +2302,13 @@ async function doBigFilesDelete() {
     let msg = `✅ ${modeLabel}完成：${deleted}/${paths.length} 个 (${fmtSize})`;
     if (skipped) msg += ` · 跳过 ${skipped}`;
     if (failures) msg += ` · 失败 ${failures}`;
+    // EROFS 是最常见的失败原因(卷以只读方式挂载), 直接把英文错误码翻译出来,
+    // 否则用户看到 "failed: EROFS: read-only file system" 会以为是程序坏了。
+    const roFailed = (data.failed || []).filter(f => /EROFS|read-only/i.test(f.reason || ''));
+    if (roFailed.length) {
+      msg = `⛔ ${roFailed.length} 个文件所在卷为只读，无法删除（EROFS）· 成功 ${deleted}/${paths.length}`
+        + (roFailed.length === paths.length ? '，本卷一个都删不掉' : '');
+    }
     if (fallbacks.length) {
       msg += ` · ${fallbacks.length} 个未能进回收站已直接删除（${escHtml(fallbacks[0])} 等）`;
     }

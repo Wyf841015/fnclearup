@@ -17,7 +17,7 @@
 // yield every N entries so /api/bigfiles/stop can interrupt within ~1s, same
 // pattern as empty_dir_scan.
 
-import { existsSync, statSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, unlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { sendJSON, formatBytes, isSafePath, partitionDeletable, parseBody, isProtectedPath } from '../lib/util.js';
 import { moveToTrash } from './trash.js';
@@ -46,6 +46,43 @@ export function cancelBigFilesJob() { if (activeJob) activeJob.stopped = true; }
 //   depth   — recursion depth limit (default 6)
 //
 // Returns: { files: [{path, name, size, size_str, mtime, depth}], total_candidates, scanned_paths, elapsed_ms, truncated }
+/**
+ * 探测目录所在卷是否真的可写。
+ *
+ * 不用 access(W_OK): fnOS 的 trimacl 会把目录 mode 显示成 000(实测 /vol2/1000
+ * 是 mode=0o0), 于是 access(W_OK) 对可写卷也返回 false, 完全不可信。
+ * 唯一可靠的办法是真的写一个临时文件再删掉 —— 每个扫描根试一次, 开销可忽略。
+ *
+ * 背景: /vol2 以 btrfs (ro) 挂载, 用户 82G 视频全在它上面。之前扫描照常列出 57 个
+ * "大文件", 用户勾选全删, 57 个全部 EROFS 失败 —— 显示出来就是"全部失败"。
+ * 扫描阶段就告知"这个卷只读、删不掉", 才是应用该做的事。
+ */
+function probeWritable(dir) {
+  const probe = join(dir, `.fnclearup_wtest_${process.pid}_${Date.now()}`);
+  let code = '', msg = '';
+  try {
+    writeFileSync(probe, '0');
+    code = '';
+  } catch (e) {
+    // EROFS = 卷以只读方式挂载, 这是用户需要知道的根因, 不是权限问题
+    code = e.code || 'EUNKNOWN';
+    msg = e.message || String(e);
+  }
+  // 写成功(或有残留)都要清掉探针, 但清理失败必须上报 —— 静默忽略会在用户
+  // 目录里留下一堆 .fnclearup_wtest_*, 那比"探测不准"更让人困惑。
+  let leftover = '';
+  try { if (existsSync(probe)) unlinkSync(probe); }
+  catch (e2) { leftover = `${dir} 下残留探测临时文件 ${basename(probe)}（${e2.code}）`; }
+  if (code) {
+    return { writable: false, code,
+      reason: code === 'EROFS' ? '卷以只读方式挂载，无法写入或删除任何文件'
+        : code === 'EACCES' ? '没有写入权限'
+        : msg.slice(0, 80),
+      ...(leftover ? { leftover } : {}) };
+  }
+  return leftover ? { writable: true, leftover } : { writable: true };
+}
+
 export async function handleBigFilesScan(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   // 多目录支持(2026-10-01): 与去重/相似/异常/重名统一, 前端可一次提交多个根目录。
@@ -176,6 +213,9 @@ export async function handleBigFilesScan(req, res) {
 
   for (const r of roots) await walk(r);
 
+  // 逐根探测可写性 —— 结果随响应回传, 让前端在用户勾选之前就告知
+  const rootAccess = roots.map(r => ({ root: r, ...probeWritable(r) }));
+
   candidates.sort((a, b) => b.size - a.size);
   const files = candidates.slice(0, topN);
   const elapsed = Date.now() - t0;
@@ -192,6 +232,9 @@ export async function handleBigFilesScan(req, res) {
     // 扫描阶段就跳过了多少个受保护目录 —— 让前端能如实告诉用户"这些不是你的,
     // 也不该你清", 而不是让用户白勾一遍再被删除端点拦。
     skipped_protected_dirs: skippedProtectedDirs,
+    // 只读根: [{ root, writable:false, code:'EROFS', reason:'...' }]
+    // 前端据此在扫描结果上方直接提示"这些删不掉", 而不是让用户勾完才发现。
+    read_only_roots: rootAccess.filter(a => !a.writable),
     // stat 失败(权限/断链)统计: 之前 catch 里连错误内容都不打, 日志里只有一行
     // 光秃秃的 "[bigfiles.js]", 排查时完全无从下手。
     stat_failures: statFailures,
