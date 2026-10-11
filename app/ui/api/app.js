@@ -67,7 +67,8 @@ export async function handleScan(req, res) {
   const allAppDirs = [];
   for (const vp of VOL_GLOBS) {
     if (existsSync(vp)) {
-      const entries = readdirSync(vp, { withFileTypes: true }).filter(e => e.name.startsWith('@app') && e.isDirectory());
+      // 忽略 @appshare：目录名可能无权限读，且删除时由 delete_appshare_residual 单独处理
+      const entries = readdirSync(vp, { withFileTypes: true }).filter(e => e.name.startsWith('@app') && e.name !== '@appshare' && e.isDirectory());
       for (const e of entries) allAppDirs.push(join(vp, e.name));
     }
   }
