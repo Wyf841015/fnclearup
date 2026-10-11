@@ -446,7 +446,8 @@ async function handleQuickSummary(req, res) {
     let orphanCount = 0, orphanSize = 0;
     for (const vp of VOL_GLOBS) {
       if (!existsSync(vp)) continue;
-      const entries = readdirSync(vp, { withFileTypes: true }).filter(e => e.name.startsWith('@app') && e.isDirectory());
+      // 忽略 @appshare：目录名可能无权限读，且删除时由 delete_appshare_residual 单独处理
+      const entries = readdirSync(vp, { withFileTypes: true }).filter(e => e.name.startsWith('@app') && e.name !== '@appshare' && e.isDirectory());
       for (const e of entries) {
         const appDir = join(vp, e.name);
         if (!existsSync(appDir)) continue;
