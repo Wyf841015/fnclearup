@@ -64,6 +64,22 @@ export async function handleScan(req, res) {
       }
     }
   }
+  // P0 fail-open 守卫: appcenter-cli 取不到已装列表时（权限被拒 / 命令不存在 /
+  // 超时 / 输出格式变化），installed 会是空数组，而下面的"已装集合"也随之为空
+  // —— 结果是**每一个已装应用都被判成残余**，UI 上全表可勾选，一键删除就是
+  // 整机应用目录全删（2026-10-10 /vol1 事故同一条路径）。
+  // 正确做法是拒绝出结论：宁可报错让用户重试，也不能给一份"全是残余"的假清单。
+  if (!installed.length) {
+    const why = result.code !== 0
+      ? `appcenter-cli 返回 code=${result.code}${result.stderr ? ' (' + result.stderr.trim().split('\n')[0] + ')' : ''}`
+      : 'appcenter-cli 输出无法解析（0 行）';
+    console.error('[app.js] handleScan fail-open 阻断:', why);
+    sendJSON(res, 500, {
+      success: false,
+      error: '无法读取已安装应用列表（' + why + '），已中止扫描以防误判残余。请检查应用中心是否正常后重试。',
+    });
+    return;
+  }
   const allAppDirs = [];
   for (const vp of VOL_GLOBS) {
     if (existsSync(vp)) {
@@ -115,13 +131,19 @@ export async function handleDelete(req, res) {
       if (existsSync(p)) {
         // If deleteAppshare, also remove sibling @appshare/.../app directory (always permanent — appshare is system)
         if (deleteAppshare) {
-          const m = p.match(/^(\/(?:mnt\/)?vol\d+\/[\w-]+)\/(.+)/);
-          if (m) {
-            const appsharePath = `${m[1]}/@appshare/${m[2]}`;
+          // 正则要匹配 /volN/@appcenter/baidu.netdisk 这种真实路径。
+          // 原式 [\w-]+ 匹配不到 "@appcenter"（@ 不在 \w 里），导致 appshare
+          // 分支永远不命中 —— 勾了「同时删除 appshare 残余」也什么都不删。
+          // 这里按段解析：/volN/<@xxx>/<app>[/<子路径>...] → /volN/@appshare/<app>[/...]
+          const segs = p.split('/').filter(Boolean);   // ['volN','@appcenter','baidu.netdisk',...]
+          if (segs.length >= 3 && /^vol\d+$/.test(segs[0]) && segs[1].startsWith('@app')) {
+            const appshareSegs = [segs[0], '@appshare', ...segs.slice(2)];
+            const appsharePath = '/' + appshareSegs.join('/');
             await execCmd('chattr', ['-i', appsharePath], 5000).catch(() => {});
             if (existsSync(appsharePath)) {
               const ra = await execCmd('rm', ['-rf', appsharePath], 60000);
               if (ra.code !== 0) failed.push(`${appsharePath} (appshare)`);
+              else deleted.push(appsharePath);
             }
           }
         }

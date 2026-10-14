@@ -441,6 +441,10 @@ async function doScanInner() {
   const si=$('select-info'); if(si)si.style.display='none';
   try {
     const data = await API.post('api/scan', {});
+    // 后端在 appcenter-cli 取不到已装列表时会返回 500（fail-open 守卫）。
+    // 不检查 __ok 的话 data.installed/orphan 都是 undefined → 渲染空表，
+    // 用户以为"扫描完成无残余"，实际是根本没扫成。这里显式抛错走错误分支。
+    if (data.__ok === false) throw new Error(data.__error || `HTTP ${data.__status}`);
     App.installedApps = data.installed||[];
     App.orphanData = {};
     if(Array.isArray(data.orphan)) {
@@ -571,11 +575,17 @@ async function doDelete() {
   }
   try {
     const r=await API.post('api/delete',{paths:allPaths,delete_users:delUsers,delete_appshare_residual:delAppshare});
-    const msg=`已删除 ${r.total||0} 个，失败 ${r.failures||0} 个`;
+    // let 而非 const: 勾选「删除用户」成功后下面要 += 追加用户列表。
+    // 原来是 const, 只要真删掉了用户就抛 TypeError: Assignment to constant
+    // variable, 且抛点在下方 await doScan() 之前 —— 于是既弹错误提示,
+    // 列表也不刷新（两个症状同一个根因）。
+    let msg=`已删除 ${r.total||0} 个，失败 ${r.failures||0} 个`;
+    if(r.skipped) msg+=`，跳过 ${r.skipped} 个`;
     if(r.users_deleted&&r.users_deleted.length) msg+=`，已删用户 ${r.users_deleted.join(',')}`;
+    if(r.users_failed&&r.users_failed.length) msg+=`，用户未删 ${r.users_failed.length} 个（受保护）`;
     showToast(msg,'success');
     await doScan();
-  } catch(e){showToast('删除失败: '+e.message,'error');}
+  } catch(e){showToast('删除失败: '+e.message,'error');await doScan();}
 }
 
 // ════════════════════════════════
