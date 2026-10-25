@@ -36,7 +36,7 @@ function declSrc(src, name) {
 
 const FNS = ['getUsersShowSystem', 'toggleUsersShowSystem', 'renderUsers', 'selectAllUsers',
   'selectedUserNames', 'updateUsersSelectInfo', 'showUsersDeleteModal', 'hideUsersDeleteModal',
-  'usersRefreshConfirmBtn', 'usersKindBadge', 'escHtml', 'confirmUsersDelete'];
+  'usersRefreshConfirmBtn', 'usersKindBadge', 'usersDockerBadge', 'escHtml', 'confirmUsersDelete'];
 const DECLS = ['USERS_SHOW_SYSTEM_KEY', '_usersCache', 'USERS_DELETE_BATCH'];
 
 const HTML = `
@@ -265,4 +265,40 @@ T('删除数 ≤20 时弹窗不显示分批提示', { skip }, () => {
   out.selectAllUsers({ checked: true });
   out.showUsersDeleteModal();
   assert.strictEqual($('usersDeleteBatchTip').style.display, 'none');
+});
+
+// Docker 占用：行上要有 Docker 标记 + 不可勾选；没被 Docker 用的行不能多出标记
+const DOCKER_USERS = [
+  { name: 'dockerused', uid: 953, gid: 901, home: '/home/dockerused', kind: 'app', deletable: false,
+    reason: 'Docker 容器「dockerapp」正在使用该账号，挂载目录 /vol3/docker/app/data', warn: '', home_removable: true,
+    docker: { container: 'dockerapp', via: '挂载目录 /vol3/docker/app/data' } },
+  { name: 'freeapp', uid: 952, gid: 901, home: '/home/freeapp', kind: 'app', deletable: true,
+    reason: '', warn: '', home_removable: true, docker: null },
+];
+
+T('Docker 占用的账号：显示 Docker 标记、勾选框禁用、原因写清容器与来源', { skip }, () => {
+  const { win, out } = build();
+  out.setUsers(DOCKER_USERS);
+  out.renderUsers();
+  const rowOf = (n) => [...win.document.querySelectorAll('#users-table tbody tr')]
+    .find(tr => tr.querySelector('.users-cb').value === n);
+
+  const dr = rowOf('dockerused');
+  assert.strictEqual(dr.querySelector('.users-cb').disabled, true, 'Docker 占用的账号必须 disabled');
+  assert.match(dr.textContent, /Docker/, '类型列要出现 Docker 标记');
+  assert.match(dr.textContent, /dockerapp/, '说明列要点出容器名');
+  assert.match(dr.textContent, /挂载目录/, '说明列要写清是被哪种方式占用');
+
+  const fr = rowOf('freeapp');
+  assert.strictEqual(fr.querySelector('.users-cb').disabled, false);
+  assert.doesNotMatch(fr.textContent, /Docker/, '没被 Docker 占用的账号不能多出标记');
+});
+
+T('Docker 占用的账号不会被全选勾上（否则用户以为能删）', { skip }, () => {
+  const { win, out } = build();
+  out.setUsers(DOCKER_USERS);
+  out.renderUsers();
+  out.selectAllUsers({ checked: true });
+  const checked = [...win.document.querySelectorAll('#users-table .users-cb:checked')].map(cb => cb.value);
+  assert.deepStrictEqual(checked, ['freeapp']);
 });

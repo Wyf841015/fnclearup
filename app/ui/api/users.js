@@ -41,16 +41,18 @@ export function parsePasswd(text) {
 /**
  * 账号分类 + 是否可删（服务端最终判据）。
  * @param {{name:string,uid:number,gid:number}} u
- * @param {{activeCount?:number, installedApp?:string, ownedDir?:string}} opts
+ * @param {{activeCount?:number, installedApp?:string, ownedDir?:string, dockerUse?:{container:string,via:string}|null}} opts
  *   activeCount  = 该 uid 当前运行的进程数
  *   installedApp = 该 uid 对应的「已安装应用名」（应用还在，账号不能删）
  *   ownedDir     = 仍属于该账号的 @app* 目录（仅提示，不阻止）
+ *   dockerUse    = Docker 容器正在使用该账号（运行用户或挂载目录 owner），不能删
  * @returns {{kind:'system'|'app'|'user', deletable:boolean, reason:string, warn:string}}
  */
 export function classifyUser(u, opts = {}) {
   const activeCount = opts.activeCount || 0;
   const installedApp = opts.installedApp || '';
   const ownedDir = opts.ownedDir || '';
+  const dockerUse = opts.dockerUse || null;
   const kind = u.uid < SYSTEM_UID_MAX ? 'system'
     : (u.uid >= APP_USER_UID_MIN && u.uid < APP_USER_UID_MAX) ? 'app'
     : 'user';
@@ -60,6 +62,12 @@ export function classifyUser(u, opts = {}) {
   if (PROTECTED_USERS.has(u.name)) return { kind: 'system', deletable: false, reason: '系统核心账号，禁止删除', warn };
   if (kind === 'system') return { kind, deletable: false, reason: `系统/服务账号（uid ${u.uid} < ${SYSTEM_UID_MAX}），不可删除`, warn };
   if (installedApp) return { kind, deletable: false, reason: `应用「${installedApp}」仍在安装中，请先在应用中心卸载`, warn };
+  // Docker 容器（含已停止的）用着这个账号：删掉后容器再也写不进它的数据目录，
+  // 且已停止的容器没有进程，靠 activeCount 拦不住 —— 必须单独判断。
+  if (dockerUse) {
+    const via = dockerUse.via ? `，${dockerUse.via}` : '';
+    return { kind, deletable: false, reason: `Docker 容器「${dockerUse.container}」正在使用该账号${via}`, warn };
+  }
   if (activeCount > 0) return { kind, deletable: false, reason: `有 ${activeCount} 个进程在运行，请先停止`, warn };
   if (kind === 'app' && u.gid !== APP_USER_GID) return { kind, deletable: false, reason: `gid ${u.gid} 不是应用账号组(${APP_USER_GID})`, warn };
   return { kind, deletable: true, reason: '', warn };
@@ -138,6 +146,82 @@ function ownedDirByUid() {
   return map;
 }
 
+/**
+ * Docker 容器 → 账号 uid 的占用关系（账号能不能删的关键判据之一）。
+ *
+ * 三条来源，任一命中即认为「该账号被 Docker 应用使用」：
+ *   1) 运行中容器的**真实进程 uid**（/proc/<pid>/status，最权威，能穿透镜像内用户名）
+ *   2) Config.User 里写的数字 uid（'1000' / '1000:1000'）
+ *   3) bind 挂载宿主目录 / named volume 挂载点的 owner（容器以该 uid 往这里写文件）
+ *
+ * 为什么不用「Config.User 写用户名 → 宿主 id -u 反查」当唯一依据：容器里的用户名是按
+ * **镜像内** /etc/passwd 解析的，宿主同名账号未必同一 uid，硬拦会误伤。运行中的容器
+ * 直接读 /proc 就没有这个问题；已停止的容器没法解，宁可漏判也不误判。
+ *
+ * @returns {Promise<{map:Map<number,{container:string,via:string}>, available:boolean, reason:string}>}
+ *   available=false 表示 docker 不可用/无权限，调用方应把这点透出给前端而不是静默当「没有占用」。
+ */
+export async function dockerUsageByUid() {
+  const map = new Map();
+  const unavailable = (reason) => ({ map, available: false, reason });
+  const rp = await execCmd('docker', ['ps', '-a', '--format', '{{.ID}}'], 10000);
+  if (rp.code !== 0) {
+    const why = (rp.stderr || '').trim().split('\n')[0] || ('docker ps code ' + rp.code);
+    return unavailable(why);
+  }
+  const ids = rp.stdout.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!ids.length) return { map, available: true, reason: '' };
+
+  const ri = await execCmd('docker', [
+    'inspect', '--type', 'container', '--format',
+    '{{.Name}}||{{.Config.User}}||{{.State.Running}}||{{.State.Pid}}||{{range .Mounts}}{{.Type}}={{.Source}};{{end}}',
+    ...ids,
+  ], 20000);
+  if (ri.code !== 0) {
+    const why = (ri.stderr || '').trim().split('\n')[0] || ('docker inspect code ' + ri.code);
+    return unavailable(why);
+  }
+
+  const put = (uid, container, via) => {
+    if (!Number.isInteger(uid) || uid < 0) return;
+    if (!map.has(uid)) map.set(uid, { container, via });
+  };
+
+  for (const line of ri.stdout.split('\n')) {
+    const [rawName, rawUser, rawRunning, rawPid, rawMounts] = line.split('||');
+    const container = String(rawName || '').replace(/^\//, '').trim();
+    if (!container) continue;
+
+    // 1) 运行中容器：/proc/<pid>/status 的 Uid 就是真实 uid
+    if (String(rawRunning || '').trim() === 'true') {
+      const pid = parseInt(String(rawPid || '').trim(), 10);
+      if (Number.isInteger(pid) && pid > 0) {
+        try {
+          const st = readFileSync(`/proc/${pid}/status`, 'utf8');
+          const m = st.match(/^Uid:\s*(\d+)/m);
+          if (m) put(parseInt(m[1], 10), container, '容器进程运行账号');
+        } catch { /* 容器刚退出或 /proc 不可读，退回下面的静态信息 */ }
+      }
+    }
+
+    // 2) Config.User 写死的数字 uid（带用户名的不猜，理由见函数头注释）
+    const who = String(rawUser || '').split(':')[0].trim();
+    if (/^\d+$/.test(who)) put(parseInt(who, 10), container, `容器指定 user=${who}`);
+
+    // 3) 挂载源 owner
+    for (const m of String(rawMounts || '').split(';')) {
+      const eq = m.indexOf('=');
+      if (eq < 0) continue;
+      const src = m.slice(eq + 1).trim();
+      if (!src.startsWith('/')) continue;
+      try {
+        put(statSync(src).uid, container, `挂载目录 ${src}`);
+      } catch { /* 挂载源已不存在（容器未启动且宿主目录被删）时跳过 */ }
+    }
+  }
+  return { map, available: true, reason: '' };
+}
+
 // 账号库路径。TRM_PASSWD_FILE 只为测试夹具而生（生产环境不设这个变量就是 /etc/passwd），
 // 否则「删除成功」这条路径无法在没有 root 的测试机上验证。
 function passwdFile() {
@@ -156,7 +240,7 @@ export async function handleListUsers(req, res) {
   } catch (e) {
     return sendJSON(res, 500, { success: false, error: '读不到 /etc/passwd：' + e.message });
   }
-  const [act, installed] = await Promise.all([activeByUid(), installedAppByUid()]);
+  const [act, installed, docker] = await Promise.all([activeByUid(), installedAppByUid(), dockerUsageByUid()]);
   const owned = ownedDirByUid();
 
   const list = users.map(u => {
@@ -164,11 +248,13 @@ export async function handleListUsers(req, res) {
       activeCount: act[u.uid] || 0,
       installedApp: installed.get(u.uid) || '',
       ownedDir: owned.get(u.uid) || '',
+      dockerUse: docker.map.get(u.uid) || null,
     });
     return {
       name: u.name, uid: u.uid, gid: u.gid, home: u.home, shell: u.shell,
       kind: c.kind, deletable: c.deletable, reason: c.reason, warn: c.warn,
       active: act[u.uid] || 0,
+      docker: docker.map.get(u.uid) || null,
       home_removable: isHomeSafeToRemove(u.home),
     };
   }).sort((a, b) => a.uid - b.uid);
@@ -180,7 +266,11 @@ export async function handleListUsers(req, res) {
     user: list.filter(x => x.kind === 'user').length,
     deletable: list.filter(x => x.deletable).length,
   };
-  return sendJSON(res, 200, { success: true, users: list, stats });
+  // docker_available=false 时把原因一并带给前端：不能让用户以为「没被 Docker 占用」
+  return sendJSON(res, 200, {
+    success: true, users: list, stats,
+    docker_available: docker.available, docker_error: docker.reason || '',
+  });
 }
 
 // POST /api/users/delete  { ack: true, users: [{ name, removeHome }] }
@@ -202,7 +292,7 @@ export async function handleDeleteUsers(req, res) {
     return sendJSON(res, 500, { success: false, error: '读不到 /etc/passwd：' + e.message });
   }
   const byName = new Map(users.map(u => [u.name, u]));
-  const [act, installed] = await Promise.all([activeByUid(), installedAppByUid()]);
+  const [act, installed, docker] = await Promise.all([activeByUid(), installedAppByUid(), dockerUsageByUid()]);
 
   const deleted = [], failed = [], skipped = [];
   for (const item of reqs) {
@@ -212,7 +302,11 @@ export async function handleDeleteUsers(req, res) {
     const u = byName.get(name);
     if (!u) { skipped.push({ name, reason: '账号不存在' }); continue; }
     // 服务端重新校验：前端标灰不是安全边界
-    const c = classifyUser(u, { activeCount: act[u.uid] || 0, installedApp: installed.get(u.uid) || '' });
+    const c = classifyUser(u, {
+      activeCount: act[u.uid] || 0,
+      installedApp: installed.get(u.uid) || '',
+      dockerUse: docker.map.get(u.uid) || null,
+    });
     if (!c.deletable) { failed.push({ name, reason: c.reason }); continue; }
 
     const useHome = removeHome && isHomeSafeToRemove(u.home);

@@ -187,6 +187,13 @@ export async function handleDelete(req, res) {
     } catch { failed.push(p); }
   }
   if (deleteUsers) {
+    // Docker 判据：容器（含已停止的）用着的账号不能删 —— 删了容器再也写不进它的数据目录。
+    // 动态 import 避免 app.js ↔ users.js 形成循环依赖。
+    let dockerUse = new Map();
+    try {
+      const mod = await import('./users.js');
+      dockerUse = (await mod.dockerUsageByUid()).map;
+    } catch (e) { console.error('[app.js] Docker 占用检测失败，跳过该判据:', e.message); }
     const seenUsers = new Set(); // 同一应用可能有多个残留目录，用户只删一次
     for (const p of paths) {
       const username = extractAppUsernameFromPath(p);
@@ -204,6 +211,11 @@ export async function handleDelete(req, res) {
       const verdict = canDeleteAppUser({ username, uid, gid });
       if (!verdict.ok) {
         usersFailed.push(`${username} (${verdict.reason})`);
+        continue;
+      }
+      const du = dockerUse.get(uid);
+      if (du) {
+        usersFailed.push(`${username} (Docker 容器「${du.container}」正在使用该账号${du.via ? '，' + du.via : ''})`);
         continue;
       }
       const dr = await execCmd('userdel', ['-r', username], 30000);
