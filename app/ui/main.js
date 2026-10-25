@@ -3508,6 +3508,9 @@ document.addEventListener('change', (e) => {
 // 判定（系统核心账号 / 应用仍在安装 / 有进程在运行），前端只负责把结果标灰并解释原因。
 const USERS_SHOW_SYSTEM_KEY = 'fnclearup.users.showSystem';
 let _usersCache = [];
+// docker 判据是否真的生效：false 时说明「没检出 Docker 占用」这个结论不可信，要在界面上讲清楚
+let _usersDockerAvailable = true;
+let _usersDockerError = '';
 
 function getUsersShowSystem() {
   try { return localStorage.getItem(USERS_SHOW_SYSTEM_KEY) === '1'; } catch { return false; }
@@ -3527,6 +3530,8 @@ async function loadUsers() {
     const d = await API.get('api/users');
     if (!d || !d.success) throw new Error((d && d.error) || '读取失败');
     _usersCache = d.users || [];
+    _usersDockerAvailable = d.docker_available !== false;
+    _usersDockerError = d.docker_error || '';
     const s = d.stats || {};
     if ($('users-total')) $('users-total').textContent = s.total ?? '-';
     if ($('users-app')) $('users-app').textContent = s.app ?? '-';
@@ -3535,7 +3540,13 @@ async function loadUsers() {
     const scb = $('usersShowSystemCb'); if (scb) scb.checked = getUsersShowSystem();
     // 成功时不写摘要：账号总数/应用/系统/可删除 已在上面 4 张 KPI 卡片里，
     // 再打一行「共 N 个账号…」是纯重复。这里只清掉上一次的错误文案。
-    if (status) { status.className = ''; status.textContent = ''; }
+    // 但 Docker 判据没跑起来必须说：否则「查不到 Docker 占用」会被误读成「没被占用」。
+    if (status) {
+      status.className = '';
+      status.textContent = _usersDockerAvailable ? ''
+        : `⚠️ Docker 未检测（${_usersDockerError || 'docker 命令不可用'}）：无法确认账号是否被 Docker 容器使用，请留意`;
+      if (!_usersDockerAvailable) status.className = 'warning';
+    }
     renderUsers();
   } catch (e) {
     if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
@@ -3548,6 +3559,13 @@ function usersKindBadge(kind) {
   if (kind === 'app') return '<span class="file-badge" style="background:#eef2ff;color:#6366f1">应用</span>';
   if (kind === 'system') return '<span class="file-badge" style="background:#f1f5f9;color:#64748b">系统</span>';
   return '<span class="file-badge" style="background:#f0fdf4;color:#059669">用户</span>';
+}
+
+// Docker 占用标记：容器在用它（运行账号 / 挂载目录 owner），删了容器就写不进数据目录
+function usersDockerBadge(u) {
+  if (!u || !u.docker || !u.docker.container) return '';
+  const tip = `Docker 容器「${u.docker.container}」${u.docker.via ? '：' + u.docker.via : ''}`;
+  return `<span class="file-badge" style="background:#e0f2fe;color:#0284c7;margin-left:4px" title="${escHtml(tip)}">Docker</span>`;
 }
 
 function renderUsers() {
@@ -3571,13 +3589,13 @@ function renderUsers() {
     '<th style="width:64px">类型</th><th style="width:22%">家目录</th><th>说明</th>' +
     '</tr></thead><tbody>';
   for (const u of rows) {
-    const tips = [u.reason, u.warn].filter(Boolean).join(' / ');
+    const tips = [u.reason, u.warn, u.docker ? `Docker 容器「${u.docker.container}」：${u.docker.via || ''}` : ''].filter(Boolean).join(' / ');
     html += `<tr${u.deletable ? '' : ' style="opacity:.55"'}>
       <td><input type="checkbox" class="users-cb" value="${escHtml(u.name)}" ${u.deletable ? '' : 'disabled'} onchange="updateUsersSelectInfo()"></td>
       <td><span title="${escHtml(u.name)}">${escHtml(u.name)}</span></td>
       <td style="font-family:var(--font-mono);font-size:13px">${u.uid}</td>
       <td style="font-family:var(--font-mono);font-size:13px">${u.gid}</td>
-      <td>${usersKindBadge(u.kind)}</td>
+      <td style="white-space:nowrap">${usersKindBadge(u.kind)}${usersDockerBadge(u)}</td>
       <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(u.home || '-')}">${escHtml(u.home || '-')}</td>
       <td style="font-size:12px;color:${u.deletable ? 'var(--color-text-secondary)' : 'var(--color-danger)'}" title="${escHtml(tips)}">${escHtml(u.deletable ? (u.warn || '可删除') : u.reason)}</td>
     </tr>`;

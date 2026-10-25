@@ -43,11 +43,25 @@ test('README 的当前版本段标题与 manifest 一致', () => {
     'README 首个版本段是 v' + m[1] + ', 但 manifest 是 ' + man);
 });
 
-test('已合并的版本号不再出现在 README 里', () => {
-  // v0.12.1 / v0.13.0 / v0.14.0 的说明已合并进 v0.12.0, 不该再有残留引用 ——
+test('已合并的版本号 / 尚未发布的版本号不再出现在 README 里', () => {
+  // e2f6d02 把 v0.12.1 / v0.14.0 的说明合并进 v0.12.0, 这两个号不该再有残留引用 ——
   // 留着会让读者以为能装到那些版本。
+  // 注意: v0.13.0 后被 9d102b0 正式发布, 是当前版本, 当然会出现在 README, 不能再列进来。
   const readme = read('README.md');
-  for (const v of ['0.12.1', '0.13.0', '0.14.0']) {
-    assert.ok(!readme.includes(v), 'README 仍提到已合并的版本 ' + v);
+  for (const v of ['0.12.1', '0.14.0']) {
+    assert.ok(!readme.includes(v), 'README 仍提到已合并/未发布的版本 ' + v);
   }
+});
+
+test('README 里不出现高于当前版本号的版本段（防止未发布版本混进来）', () => {
+  const man = /^version\s*=\s*(\S+)\s*$/m.exec(read('manifest'))[1];
+  const cur = man.split('.').map(Number);
+  const readme = read('README.md');
+  const higher = [];
+  for (const m of readme.matchAll(/^## v(\d+\.\d+\.\d+) /gm)) {
+    const v = m[1].split('.').map(Number);
+    const cmp = (v[0] - cur[0]) || (v[1] - cur[1]) || (v[2] - cur[2]);
+    if (cmp > 0) higher.push(m[1]);
+  }
+  assert.deepStrictEqual(higher, [], 'README 版本段高于 manifest(' + man + ')：' + higher.join(', '));
 });
