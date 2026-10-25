@@ -339,7 +339,7 @@ function selectAllHandler(tableId, checkboxClass) {
 // ── 导航分组 ──
 // 15 个 tab 按使用场景归为 4 组。这里只改导航层的呈现, tab / panel / 业务逻辑一律未动。
 const TAB_GROUPS = {
-  clean: ['app', 'disk', 'docker', 'sysjunk'],
+  clean: ['app', 'disk', 'docker', 'sysjunk', 'users'],
   find:  ['scan'],
   space: ['diskanalysis'],
   auto:  ['schedule'],
@@ -400,6 +400,7 @@ async function switchTab(tabName) {
     switchInnerTab(SCAN_TAB_TO_INNER[tabName]);
   }
   else if(tabName==='sysjunk') { switchInnerTab(panelInnerLastTab.sysjunk||'syscache'); }
+  else if(tabName==='users') { await loadUsers(); }
   // 旧 tab 名别名: 系统/临时文件/回收站 已并入「系统垃圾」的三个分区。
   // 保留这些分支是为了旧书签与历史调度任务 —— 它们至今仍写着这些名字。
   else if(tabName==='sysclean'||tabName==='trash'||tabName==='temp') {
@@ -3501,6 +3502,177 @@ document.addEventListener('change', (e) => {
 });
 
 // ════════════════════════════════
+// 用户清理（清理回收 → 用户）
+// ════════════════════════════════
+// 列出 /etc/passwd 账号，默认隐藏系统自带账号（uid < 900）。能否删除由**服务端**
+// 判定（系统核心账号 / 应用仍在安装 / 有进程在运行），前端只负责把结果标灰并解释原因。
+const USERS_SHOW_SYSTEM_KEY = 'fnclearup.users.showSystem';
+let _usersCache = [];
+
+function getUsersShowSystem() {
+  try { return localStorage.getItem(USERS_SHOW_SYSTEM_KEY) === '1'; } catch { return false; }
+}
+function toggleUsersShowSystem() {
+  const cb = $('usersShowSystemCb');
+  try { localStorage.setItem(USERS_SHOW_SYSTEM_KEY, cb && cb.checked ? '1' : '0'); } catch (e) { console.error('[main.js]', e); }
+  renderUsers();
+}
+
+async function loadUsers() {
+  const status = $('users-status');
+  const btn = $('usersRefreshBtn');
+  if (btn) btn.disabled = true;
+  if (status) { status.className = ''; status.textContent = '⏳ 正在读取账号列表...'; }
+  try {
+    const d = await API.get('api/users');
+    if (!d || !d.success) throw new Error((d && d.error) || '读取失败');
+    _usersCache = d.users || [];
+    const s = d.stats || {};
+    if ($('users-total')) $('users-total').textContent = s.total ?? '-';
+    if ($('users-app')) $('users-app').textContent = s.app ?? '-';
+    if ($('users-system')) $('users-system').textContent = s.system ?? '-';
+    if ($('users-deletable')) $('users-deletable').textContent = s.deletable ?? '-';
+    const scb = $('usersShowSystemCb'); if (scb) scb.checked = getUsersShowSystem();
+    if (status) {
+      status.className = 'success';
+      status.textContent = `✅ 共 ${s.total || 0} 个账号：应用 ${s.app || 0} · 真实用户 ${s.user || 0} · 系统 ${s.system || 0}，其中 ${s.deletable || 0} 个可删除`;
+    }
+    renderUsers();
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function usersKindBadge(kind) {
+  if (kind === 'app') return '<span class="file-badge" style="background:#eef2ff;color:#6366f1">应用</span>';
+  if (kind === 'system') return '<span class="file-badge" style="background:#f1f5f9;color:#64748b">系统</span>';
+  return '<span class="file-badge" style="background:#f0fdf4;color:#059669">用户</span>';
+}
+
+function renderUsers() {
+  const list = $('users-list'), empty = $('users-empty');
+  if (!list) return;
+  const showSystem = getUsersShowSystem();
+  const rows = _usersCache.filter(u => showSystem || u.kind !== 'system');
+  if (!rows.length) {
+    list.innerHTML = '';
+    if (empty) {
+      empty.style.display = '';
+      const h = empty.querySelector('h3'); if (h) h.textContent = _usersCache.length ? '系统自带账号已隐藏' : '没有读到任何账号';
+    }
+    updateUsersSelectInfo();
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  let html = '<div class="list-scroll"><table class="data-table" id="users-table"><thead><tr>' +
+    '<th style="width:36px"><input type="checkbox" class="users-cb-all" onchange="selectAllUsers(this)"></th>' +
+    '<th>用户名</th><th style="width:64px">UID</th><th style="width:64px">GID</th>' +
+    '<th style="width:64px">类型</th><th style="width:22%">家目录</th><th>说明</th>' +
+    '</tr></thead><tbody>';
+  for (const u of rows) {
+    const tips = [u.reason, u.warn].filter(Boolean).join(' / ');
+    html += `<tr${u.deletable ? '' : ' style="opacity:.55"'}>
+      <td><input type="checkbox" class="users-cb" value="${escHtml(u.name)}" ${u.deletable ? '' : 'disabled'} onchange="updateUsersSelectInfo()"></td>
+      <td><span title="${escHtml(u.name)}">${escHtml(u.name)}</span></td>
+      <td style="font-family:var(--font-mono);font-size:13px">${u.uid}</td>
+      <td style="font-family:var(--font-mono);font-size:13px">${u.gid}</td>
+      <td>${usersKindBadge(u.kind)}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(u.home || '-')}">${escHtml(u.home || '-')}</td>
+      <td style="font-size:12px;color:${u.deletable ? 'var(--color-text-secondary)' : 'var(--color-danger)'}" title="${escHtml(tips)}">${escHtml(u.deletable ? (u.warn || '可删除') : u.reason)}</td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+  updateUsersSelectInfo();
+}
+
+function selectAllUsers(el) {
+  document.querySelectorAll('#users-table .users-cb:not(:disabled)').forEach(cb => { cb.checked = !!el.checked; });
+  updateUsersSelectInfo();
+}
+
+function selectedUserNames() {
+  return [...document.querySelectorAll('#users-table .users-cb:checked')].map(cb => cb.value);
+}
+
+function updateUsersSelectInfo() {
+  const names = selectedUserNames();
+  const btn = $('usersDeleteBtn');
+  if (btn) btn.disabled = names.length === 0;
+  const si = $('users-select-info');
+  if (si) {
+    si.style.display = names.length ? '' : 'none';
+    si.textContent = `已选 ${names.length} 个账号`;
+  }
+}
+
+function showUsersDeleteModal() {
+  const names = selectedUserNames();
+  if (!names.length) { showToast('请先勾选要删除的账号', 'warning'); return; }
+  const byName = new Map(_usersCache.map(u => [u.name, u]));
+  if ($('usersDeleteCount')) $('usersDeleteCount').textContent = String(names.length);
+  if ($('usersDeleteNames')) {
+    $('usersDeleteNames').innerHTML = names.map(n => {
+      const u = byName.get(n) || {};
+      return `${escHtml(n)} <span style="color:var(--color-text-muted)">uid ${u.uid ?? '?'} · ${escHtml(u.home || '-')}</span>`;
+    }).join('<br>');
+  }
+  // 所选账号里有「家目录不能删」的（如 /home 之下只有一层或卷根）→ 禁用该勾选项
+  const anyUnsafe = names.some(n => !(byName.get(n) || {}).home_removable);
+  const homeCb = $('usersDeleteRemoveHome');
+  if (homeCb) {
+    homeCb.checked = false;
+    homeCb.disabled = anyUnsafe;
+    homeCb.title = anyUnsafe ? '所选账号里有家目录不允许删除，无法勾选' : '';
+  }
+  const ack = $('usersDeleteAck'); if (ack) ack.checked = false;
+  const ok = $('usersDeleteConfirmBtn'); if (ok) ok.disabled = true;
+  const m = $('usersDeleteModal'); if (m) m.classList.add('visible');
+}
+
+function hideUsersDeleteModal() {
+  const m = $('usersDeleteModal'); if (m) m.classList.remove('visible');
+}
+
+function usersRefreshConfirmBtn() {
+  const ack = $('usersDeleteAck');
+  const btn = $('usersDeleteConfirmBtn');
+  if (btn) btn.disabled = !(ack && ack.checked);
+}
+
+async function confirmUsersDelete() {
+  const names = selectedUserNames();
+  if (!names.length) { hideUsersDeleteModal(); return; }
+  const homeCb = $('usersDeleteRemoveHome');
+  const removeHome = !!(homeCb && homeCb.checked && !homeCb.disabled);
+  hideUsersDeleteModal();
+  try {
+    const d = await API.post('api/users/delete', {
+      ack: true,
+      users: names.map(name => ({ name, removeHome })),
+    });
+    const okN = (d.deleted || []).length;
+    const badN = (d.failed || []).length;
+    showToast(`已删除 ${okN} 个账号${badN ? `，${badN} 个失败` : ''}`, badN ? 'warning' : 'success');
+    const st = $('users-status');
+    if (badN && st) {
+      st.className = 'error';
+      st.textContent = '⚠️ 部分失败 — ' + (d.failed || []).map(f => `${f.name}: ${f.reason}`).join('；');
+    } else if (okN && st) {
+      st.className = 'success';
+      st.textContent = `✅ 已删除：${(d.deleted || []).map(x => x.name + (x.home_removed ? '(含家目录)' : '')).join('、')}`;
+    }
+    await loadUsers();
+  } catch (e) {
+    showToast('删除失败: ' + e.message, 'error');
+    const st = $('users-status');
+    if (st) { st.className = 'error'; st.textContent = '❌ ' + e.message; }
+  }
+}
+
+// ════════════════════════════════
 // Startup warning modal
 // ════════════════════════════════
 let _startupCountdownTimer = null;
@@ -4168,6 +4340,8 @@ function init() {
     updateSysCleanSelectInfo, showSysCleanDeleteModal, hideSysCleanDeleteModal, doSysCleanDelete,
     toggleSysCleanBackup, getSysCleanBackupEnabled, showSysCleanManifests, hideSysCleanManifests,
     downloadSysCleanManifest, viewSysCleanManifest,
+    loadUsers, renderUsers, toggleUsersShowSystem, selectAllUsers, updateUsersSelectInfo,
+    showUsersDeleteModal, hideUsersDeleteModal, usersRefreshConfirmBtn, confirmUsersDelete,
     showStartupWarning, closeStartupWarning, toggleStartupWarningAlways, syncStartupWarningChecks,
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
