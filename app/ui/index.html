@@ -564,6 +564,10 @@
               <input type="checkbox" id="syscleanBackupCb" onchange="toggleSysCleanBackup()">
               <span>📦 清理前写 manifest（审计/回溯用）</span>
             </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--color-text-secondary)">
+              <input type="checkbox" id="startupWarningSettingCb" onchange="toggleStartupWarningAlways()">
+              <span>⚠️ 每次进入应用弹风险提示</span>
+            </label>
           </div>
           <div id="sysclean-select-info" class="select-info" style="display:none"></div>
         </div>
@@ -808,6 +812,10 @@
       <p style="color:var(--color-text-muted);font-size:12px;margin:8px 0 0 0">
         本提示每次<strong>重新进入应用</strong>都会显示。点「我已知晓风险」后本次会话不再弹出。
       </p>
+      <label class="modal-checkbox" style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:13px;color:var(--color-text-secondary)">
+        <input type="checkbox" id="startupWarningAlwaysCb" onchange="toggleStartupWarningAlways()">
+        <span>每次进入应用都弹出这个提示（取消勾选后不再自动弹，可在「系统清理」页重新开启）</span>
+      </label>
       <div class="btn-row" style="margin-top:16px">
         <button type="button" class="btn btn-secondary" onclick="closeStartupWarning(false)">稍后再说</button>
         <button type="button" class="btn btn-danger" id="startupWarningConfirmBtn" onclick="closeStartupWarning(true)" disabled>
@@ -1060,7 +1068,9 @@
   </div>
 </div><!-- /.container -->
 <!-- 动效编排层: 必须先于 main.js 加载, init() 时会调 window.Motion.init() -->
-  <script src="motion.js"></script>
-  <script src="main.js"></script>
+  <!-- ?v= 缓存戳：server.js 对静态资源发 Cache-Control: immutable(7 天)，
+       改 JS 必须同时改这个戳，否则浏览器一直用旧的 main.js（表现为「新功能没反应」） -->
+  <script src="motion.js?v=20261025"></script>
+  <script src="main.js?v=20261025"></script>
 </body>
 </html>

@@ -3506,6 +3506,37 @@ document.addEventListener('change', (e) => {
 let _startupCountdownTimer = null;
 let _startupCountdownLeft = 3;
 
+// 是否每次都弹风险提示（localStorage，缺省 true = 每次都弹，安全默认）
+// 取消勾选后启动时不再弹；可在「系统清理」页的开关重新打开
+const STARTUP_ALWAYS_KEY = 'fnclearup.startup.warnAlways';
+function getStartupWarningAlways() {
+  try {
+    const v = localStorage.getItem(STARTUP_ALWAYS_KEY);
+    return v === null ? true : v === '1';
+  } catch { return true; }   // localStorage 不可用时按「该弹」处理
+}
+function syncStartupWarningChecks() {
+  const on = getStartupWarningAlways();
+  ['startupWarningAlwaysCb', 'startupWarningSettingCb'].forEach(id => {
+    const cb = $(id);
+    if (cb) cb.checked = on;
+  });
+}
+function toggleStartupWarningAlways() {
+  // 两个勾选框共用这一个处理函数：谁的值和存储的旧值不同，谁就是用户刚点的那个
+  const prev = getStartupWarningAlways();
+  const a = $('startupWarningAlwaysCb');
+  const b = $('startupWarningSettingCb');
+  let on = prev;
+  if (a && a.checked !== prev) on = a.checked;
+  else if (b && b.checked !== prev) on = b.checked;
+  else if (a) on = a.checked;
+  try { localStorage.setItem(STARTUP_ALWAYS_KEY, on ? '1' : '0'); } catch (e) { console.error('[main.js]', e); }
+  syncStartupWarningChecks();
+  showToast(on ? '✅ 已开启：每次进入应用都弹风险提示'
+               : '👍 已关闭：以后不再自动弹（「系统清理」页可重新开启）', on ? 'success' : 'info');
+}
+
 // ── Trash tab ──
 let _trashLastScan = null;
 let _trashCleanAge = 30;
@@ -3738,6 +3769,7 @@ function hideTrashBrowseModal() {
 function showStartupWarning() {
   const modal = $('startupWarningModal');
   if (!modal) return;
+  syncStartupWarningChecks();
   // Reset countdown
   _startupCountdownLeft = 3;
   const btn = $('startupWarningConfirmBtn');
@@ -4136,7 +4168,7 @@ function init() {
     updateSysCleanSelectInfo, showSysCleanDeleteModal, hideSysCleanDeleteModal, doSysCleanDelete,
     toggleSysCleanBackup, getSysCleanBackupEnabled, showSysCleanManifests, hideSysCleanManifests,
     downloadSysCleanManifest, viewSysCleanManifest,
-    showStartupWarning, closeStartupWarning,
+    showStartupWarning, closeStartupWarning, toggleStartupWarningAlways, syncStartupWarningChecks,
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
@@ -4207,8 +4239,9 @@ function init() {
   // 由 MutationObserver 驱动, 不改动任何既有渲染函数。
   if (window.Motion) window.Motion.init();
 
-  // Show startup warning modal on every app open (force user to acknowledge risk)
-  showStartupWarning();
+  // 启动风险提示：默认每次进入都弹；用户取消勾选「每次都弹」后不再自动弹
+  syncStartupWarningChecks();
+  if (getStartupWarningAlways()) showStartupWarning();
 }
 
 })();
