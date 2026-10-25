@@ -96,10 +96,39 @@ async function activeByUid() {
 }
 
 /**
+ * 已安装应用的 app 目录 → owner uid。
+ *
+ * 为什么需要它：fnOS 应用账号名**不一定等于**应用名（netease 应用用 docker-netease
+ * 账号、fnm3u8dl 的目录属于 package），只靠 `id -u <应用名>` 查不到，于是「应用还在装
+ * 着」这条拦不住，账号被误标成可删。app 目录的 owner 才是权威判据。
+ *
+ * @param {string[]} names 已安装应用名
+ * @param {string[]} roots 卷根（默认生产用 APP_DIR_ROOTS，测试可传夹具目录）
+ * @returns {Map<number, {name:string, dir:string}>}
+ */
+export function installedAppDirByUid(names, roots = APP_DIR_ROOTS) {
+  const map = new Map();
+  for (const name of names) {
+    if (!name || name.includes('/')) continue;   // 防拼路径穿越
+    for (const root of roots) {
+      const candidates = root === '/usr/local/apps'
+        ? [join(root, name)]
+        : [join(root, '@appcenter', name), join(root, name)];
+      for (const p of candidates) {
+        try {
+          const st = statSync(p);
+          if (st.isDirectory() && !map.has(st.uid)) map.set(st.uid, { name, dir: p });
+        } catch { /* 这个卷上没有该应用，继续 */ }
+      }
+    }
+  }
+  return map;
+}
+
+/**
  * 已安装应用 → 账号 uid。
- * 注意：fnOS 的应用账号名**不一定**等于应用名（例如应用 Emby-crack 用账号 Emby-crack，
- * 但历史安装可能留下 EmbyServer 这种同名不同号的账号），所以只做「名字能对上」的映射；
- * 对不上的靠 ownedDir（目录归属）提示，不去猜。
+ * 两条路子合并：先按名字查（`id -u <应用名>`），再用 app 目录 owner 兜住
+ * 「账号名 ≠ 应用名」的情况。都对不上就靠 ownedDir 提示，不去猜。
  */
 async function installedAppByUid() {
   const map = new Map();
@@ -115,6 +144,9 @@ async function installedAppByUid() {
     if (u.code !== 0) continue;
     const uid = parseInt(u.stdout.trim(), 10);
     if (Number.isInteger(uid)) map.set(uid, name);
+  }
+  for (const [uid, info] of installedAppDirByUid(names.slice(0, 120))) {
+    if (!map.has(uid)) map.set(uid, info.name);
   }
   return map;
 }

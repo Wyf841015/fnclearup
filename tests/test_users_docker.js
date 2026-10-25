@@ -32,7 +32,7 @@ const USERDEL_LOG = join(TMP, 'userdel.log');
 const PORT = 47946;
 const BASE = `http://127.0.0.1:${PORT}`;
 
-const { parsePasswd, classifyUser, dockerUsageByUid } = await import('../app/ui/api/users.js');
+const { parsePasswd, classifyUser, dockerUsageByUid, installedAppDirByUid } = await import('../app/ui/api/users.js');
 
 // 953 = 一个「没有被安装中心接管、没有进程、但被 Docker 容器用着」的账号
 // 这正是本次要拦住的场景：改动前它是 deletable=true。
@@ -375,5 +375,41 @@ describe('端到端：应用残余清理里顺手删用户，同样要过 Docker
       paths: [dir], mode: 'permanent', delete_users: true,
     });
     assert.strictEqual(r.data.users_deleted.length, 1, 'docker 查不到时不能把正常清理也卡死');
+  });
+});
+
+// ─────────────────── 5) 已安装应用 ≠ 账号名（app 目录 owner 兜底） ───────────────────
+// 真实案例：netease 应用（running）用的账号叫 docker-netease，`id -u netease` 查不到，
+// 于是「应用仍在安装中」这条拦不住，账号被误标成可删。app 目录 owner 才是权威判据。
+describe('installedAppDirByUid：账号名 ≠ 应用名时的兜底', () => {
+  const myUid = process.getuid ? process.getuid() : null;
+
+  it('按 <卷>/@appcenter/<应用名> 的 owner 反查 uid', { skip: myUid === null }, () => {
+    const root = join(TMP, 'fakevol');
+    mkdirSync(join(root, '@appcenter', 'netease'), { recursive: true });
+    const map = installedAppDirByUid(['netease'], [root]);
+    assert.ok(map.has(myUid), '应当按目录 owner 反查出 uid');
+    assert.strictEqual(map.get(myUid).name, 'netease');
+    assert.match(map.get(myUid).dir, /@appcenter\/netease$/);
+  });
+
+  it('没装的应用 / 不存在的卷不产出条目', { skip: myUid === null }, () => {
+    const root = join(TMP, 'fakevol');
+    const map = installedAppDirByUid(['not-installed-xxx'], [root]);
+    assert.strictEqual(map.size, 0);
+  });
+
+  it('应用名带 / 时跳过（防拼路径穿越）', { skip: myUid === null }, () => {
+    const root = join(TMP, 'fakevol');
+    const map = installedAppDirByUid(['../../etc'], [root]);
+    assert.strictEqual(map.size, 0, '含斜杠的应用名必须忽略');
+  });
+
+  it('多个应用同一 owner 时只记第一个（不覆盖）', { skip: myUid === null }, () => {
+    const root = join(TMP, 'fakevol');
+    mkdirSync(join(root, '@appcenter', 'appA'), { recursive: true });
+    mkdirSync(join(root, '@appcenter', 'appB'), { recursive: true });
+    const map = installedAppDirByUid(['appA', 'appB'], [root]);
+    assert.strictEqual(map.get(myUid).name, 'appA');
   });
 });
