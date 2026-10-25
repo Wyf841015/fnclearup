@@ -16,6 +16,9 @@ const statPromise = (p) => new Promise((res, rej) => stat(p, (e, s) => e ? rej(e
 const PORT = 47939; // Use different port to avoid conflict with running instance
 const BASE = `http://127.0.0.1:${PORT}`;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'app', 'ui');
+// 直接导入被测纯函数：路径→用户名的提取逻辑要按行为测，不能只 grep 源码文本
+// （源码里写成 /\/(@app[^/]+)\/([^/]+)$/ 带捕获括号，写死文本断言会假失败）
+const { extractAppUsernameFromPath } = await import('../app/ui/api/app.js');
 const TEST_TMP = '/tmp/fnclearup_test';
 
 // Allow bigfiles tests to scan a non-/vol tmp dir via env. We point this
@@ -107,6 +110,36 @@ function setupTestData() {
   process.env.TRM_DOCKER_BIN = mockDocker;
 }
 
+// ── mock appcenter-cli ────────────────────────────────────────────────────
+// POST /api/scan 必须拿到「已装应用列表」才肯出结论（否则 500 中止，防 fail-open
+// 把全部已装应用误判成残余）。测试机上 admin 跑真实 appcenter-cli 取不到列表，
+// 所以这里放一个假的到 PATH 前面，输出格式与 app.js 的解析器一致（│ 分列）。
+const TEST_BIN = join(TEST_TMP, 'bin');
+const APPCLI_FAIL_FLAG = join(TEST_TMP, 'appcli_fail');   // 存在时模拟 CLI 失败
+function setupMockAppcenterCli() {
+  mkdirSync(TEST_BIN, { recursive: true });
+  const cli = join(TEST_BIN, 'appcenter-cli');
+  writeFileSync(cli, [
+    '#!/bin/bash',
+    '# 模拟 fnOS appcenter-cli list 的输出（│ 分隔：APPNAME │ DISPLAY │ VERSION）',
+    'if [ -e "' + APPCLI_FAIL_FLAG + '" ]; then',
+    '  echo "permission denied" >&2',
+    '  exit 1',
+    'fi',
+    'if [ "$1" = "list" ]; then',
+    '  cat <<\'EOF\'',
+    'APPNAME            │ DISPLAY NAME   │ VERSION',
+    'fnclearup          │ 存储空间清理   │ 0.12.0',
+    'trim.media         │ 影视           │ 1.0.0',
+    'EOF',
+    '  exit 0',
+    'fi',
+    'exit 0',
+    '',
+  ].join('\n'));
+  try { chmodSync(cli, 0o755); } catch {}
+}
+
 function cleanupTestData() {
   // Best-effort recursive cleanup of TEST_TMP (incl. subdirs dup_test, exports, data)
   try { rmSync(TEST_TMP, { recursive: true, force: true }); } catch {}
@@ -115,8 +148,12 @@ function cleanupTestData() {
 // Start server
 before(async () => {
   setupTestData();
+  setupMockAppcenterCli();
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, PORT: String(PORT), TRM_PKGVAR: TEST_TMP, TRM_FNCLEARUP_TEST: '1' };
+    const env = {
+      ...process.env, PORT: String(PORT), TRM_PKGVAR: TEST_TMP, TRM_FNCLEARUP_TEST: '1',
+      PATH: TEST_BIN + ':' + (process.env.PATH || ''),   // mock appcenter-cli 优先
+    };
     server = spawn(process.execPath, ['app/ui/server.js'], { cwd: join(dirname(fileURLToPath(import.meta.url)), '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
     let started = false;
     const timeout = setTimeout(() => { if (!started) reject(new Error('Server start timeout')); }, 10000);
@@ -169,6 +206,27 @@ describe('API: App Scan & Delete', () => {
     assert.strictEqual(data.success, true);
     assert.ok(Array.isArray(data.installed));
     assert.ok(Array.isArray(data.orphan));
+    // 装配的 mock 列表必须被真正解析出来（│ 分列 + 表头跳过）
+    const names = data.installed.map(x => x.appname);
+    assert.ok(names.includes('fnclearup'), 'mock 里的 fnclearup 应出现在 installed: ' + JSON.stringify(names));
+    assert.ok(names.includes('trim.media'), 'mock 里的 trim.media 应出现在 installed');
+    const one = data.installed.find(x => x.appname === 'fnclearup');
+    assert.strictEqual(one.display_name, '存储空间清理');
+  });
+
+  it('POST /api/scan 在拿不到已装列表时 500 中止（fail-open 守卫）', async () => {
+    // 2026-10-10 事故路径：appcenter-cli 取不到列表 → installed=[] → 每个已装应用
+    // 都被判成残余 → 一键删就是整机应用目录全删。必须拒绝出结论。
+    writeFileSync(APPCLI_FAIL_FLAG, '1');
+    try {
+      const { status, data } = await httpRequest('POST', '/app/fnclearup/api/scan');
+      assert.strictEqual(status, 500, '拿不到已装列表时必须 500，不能返回「全是残余」的清单');
+      assert.strictEqual(data.success, false);
+      assert.match(data.error, /中止扫描/);
+      assert.ok(!data.installed && !data.orphan, '不能返回任何清单');
+    } finally {
+      try { unlinkSync(APPCLI_FAIL_FLAG); } catch {}
+    }
   });
 
   it('POST /api/delete with empty paths returns zero deletes', async () => {
@@ -1438,24 +1496,34 @@ describe('API: Quick Summary (coverage gap)', () => {
   });
 });
 
-// Regression: app cleanup "delete_users" must extract the username from real
-// fnOS @app* paths (@appcenter/@appstore with letters), NOT only numeric @app\d.
-// Old regex /(@app\d+)\/([^/]+)/ never matched -> user never deleted (fake cleanup).
-describe('API: app delete_users regex (regression)', () => {
-  // Source-level guard: the deleteUsers path regex must match letter dirs like
-  // @appcenter/@appstore, NOT only numeric @app\d. Old bug: /(@app\\d+)\/([^/]+)/
-  // never matched real paths -> user never deleted (fake cleanup).
-  it('app.js deleteUsers regex matches @appcenter/@appstore letter dirs', () => {
+// Regression: 应用残余清理勾了「删除用户」时，必须能从真实 fnOS @app* 路径
+// （@appcenter / @appstore，字母目录）取到用户名。旧正则 /(@app\d+)\/([^/]+)/
+// 永远匹配不到真实路径 → 用户从来没被删掉，表现为「勾了却没反应」的假清理。
+//
+// 按**行为**测纯函数，不再 grep 源码文本：源码里写成 /\/(@app[^/]+)\/([^/]+)$/
+// 带捕获括号，写死文本断言会假失败（本轮就是被这个坑住的）。
+describe('API: app delete_users 用户名提取 (regression)', () => {
+  it('@appcenter/@appstore 字母目录都能取到用户名', () => {
+    assert.strictEqual(extractAppUsernameFromPath('/vol3/@appcenter/fnclearup'), 'fnclearup');
+    assert.strictEqual(extractAppUsernameFromPath('/vol1/@appstore/SomeApp'), 'SomeApp');
+    assert.strictEqual(extractAppUsernameFromPath('/mnt/vol4/@appcenter/test'), 'test');
+    assert.strictEqual(extractAppUsernameFromPath('/vol3/@appcenter/baidu.netdisk'), 'baidu.netdisk');
+    // 数字后缀这条老形态仍然要支持（其它 fnOS 版本里出现过 @app1 之类）
+    assert.strictEqual(extractAppUsernameFromPath('/vol3/@app1/legacy'), 'legacy');
+  });
+
+  it('子路径 / 隐藏项 / 非 @app 路径不触发删除用户', () => {
+    assert.strictEqual(extractAppUsernameFromPath('/vol3/@appcenter/fnclearup/ui/server.js'), null);
+    assert.strictEqual(extractAppUsernameFromPath('/vol3/@appcenter/.hidden'), null);
+    assert.strictEqual(extractAppUsernameFromPath('/vol3/1000/video'), null);
+    assert.strictEqual(extractAppUsernameFromPath(''), null);
+    assert.strictEqual(extractAppUsernameFromPath(null), null);
+  });
+
+  it('app.js 里不得再出现「只有数字后缀」的旧正则', () => {
     const APP_JS = readFileSync(join(UI_DIR, 'api', 'app.js'), 'utf8');
-    // Must NOT have the old numeric-only pattern
-    assert.ok(!APP_JS.includes('p.match(/(@app\\d+)'), 'old @app\\d+ regex still present');
-    // Must match a literal @app dir (any name, not just digits)
-    assert.ok(/\/@app[^/]+\/[^/]+\$/m.test(APP_JS), '@app* regex missing in deleteUsers');
-    // Sanity: real fnOS paths are @appcenter/@appstore (letters)
-    for (const p of ['/vol3/@appcenter/fnclearup', '/vol1/@appstore/SomeApp', '/mnt/vol4/@appcenter/test']) {
-      const m = p.match(/\/(@app[^/]+)\/([^/]+)$/);
-      assert.ok(m, 'regex failed on ' + p);
-      assert.ok(m[2].length > 0);
-    }
+    // 只在「去掉注释的代码」上断言：文件头注释里还留着旧正则的历史说明
+    const codeOnly = APP_JS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(!/@app\\d\+/.test(codeOnly), 'old @app\\d+ regex still present in code');
   });
 });
