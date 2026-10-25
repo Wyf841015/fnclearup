@@ -35,6 +35,23 @@ const PROTECTED_USERS = new Set([
   'nodejs_v22', 'nodejs_v24', 'bunjs', 'python312', 'trim-media',
 ]);
 
+/**
+ * 从 @app* 目录路径中取出「应用系统用户名」——只有目录本身算，子路径不算。
+ *
+ * 旧实现用 /(@app\d+)\/([^/]+)/，只能匹配 @app1 这种数字后缀；而 fnOS 真实目录是
+ * @appcenter / @appstore（字母），旧正则**永远匹配不到** → 用户从来没被真正删除，
+ * 表现为「勾了删除用户却什么都没发生」（假清理）。这里用 [^/]+ 让字母数字都匹配。
+ *
+ * @param {string} p 目录路径，如 /vol3/@appcenter/fnclearup
+ * @returns {string|null} 用户名，或 null 表示这条路径不该触发删除用户
+ */
+export function extractAppUsernameFromPath(p) {
+  const m = String(p || '').match(/\/(@app[^/]+)\/([^/]+)$/);
+  if (!m) return null;                 // 不是 @app* 的直接子项
+  if (m[2].startsWith('.')) return null; // 隐藏文件/目录
+  return m[2];
+}
+
 // 返回 { ok: true } 或 { ok: false, reason: string }
 export function canDeleteAppUser({ username, uid, gid }) {
   if (!username || username.startsWith('-')) {
@@ -172,12 +189,8 @@ export async function handleDelete(req, res) {
   if (deleteUsers) {
     const seenUsers = new Set(); // 同一应用可能有多个残留目录，用户只删一次
     for (const p of paths) {
-      // Extract app system user from any @app* directory (e.g. /vol3/@appcenter/fnclearup).
-      // NOTE: @app\d+ would only match numeric suffixes (@app1); real dirs are
-      // @appcenter / @appstore — use [^/]+ so letters+digits both work.
-      const m = p.match(/\/(@app[^/]+)\/([^/]+)$/);
-      if (!m || m[2].startsWith('.')) continue;
-      const username = m[2];
+      const username = extractAppUsernameFromPath(p);
+      if (!username) continue;
       if (seenUsers.has(username)) continue; // dedupe
       seenUsers.add(username);
       // 三层守护: uid 区间 + gid==901 + 核心组件黑名单 (见 canDeleteAppUser)
