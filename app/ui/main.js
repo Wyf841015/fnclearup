@@ -3629,6 +3629,16 @@ function showUsersDeleteModal() {
   }
   const ack = $('usersDeleteAck'); if (ack) ack.checked = false;
   const ok = $('usersDeleteConfirmBtn'); if (ok) ok.disabled = true;
+  const tip = $('usersDeleteBatchTip');
+  if (tip) {
+    if (names.length > USERS_DELETE_BATCH) {
+      tip.style.display = '';
+      tip.textContent = `超过 ${USERS_DELETE_BATCH} 个会自动分批提交（每批 ${USERS_DELETE_BATCH} 个），全部完成后汇总结果`;
+    } else {
+      tip.style.display = 'none';
+      tip.textContent = '';
+    }
+  }
   const m = $('usersDeleteModal'); if (m) m.classList.add('visible');
 }
 
@@ -3642,34 +3652,73 @@ function usersRefreshConfirmBtn() {
   if (btn) btn.disabled = !(ack && ack.checked);
 }
 
+// 后端单次最多删 MAX_DELETE_PER_RUN(20) 个；「全选」可能有几十个账号，
+// 所以按批串行提交 —— 一批被拒（参数/鉴权问题）就停，不再继续，避免刷一堆同样的错误。
+const USERS_DELETE_BATCH = 20;
+
 async function confirmUsersDelete() {
   const names = selectedUserNames();
   if (!names.length) { hideUsersDeleteModal(); return; }
   const homeCb = $('usersDeleteRemoveHome');
   const removeHome = !!(homeCb && homeCb.checked && !homeCb.disabled);
   hideUsersDeleteModal();
-  try {
-    const d = await API.post('api/users/delete', {
-      ack: true,
-      users: names.map(name => ({ name, removeHome })),
-    });
-    const okN = (d.deleted || []).length;
-    const badN = (d.failed || []).length;
-    showToast(`已删除 ${okN} 个账号${badN ? `，${badN} 个失败` : ''}`, badN ? 'warning' : 'success');
-    const st = $('users-status');
-    if (badN && st) {
-      st.className = 'error';
-      st.textContent = '⚠️ 部分失败 — ' + (d.failed || []).map(f => `${f.name}: ${f.reason}`).join('；');
-    } else if (okN && st) {
-      st.className = 'success';
-      st.textContent = `✅ 已删除：${(d.deleted || []).map(x => x.name + (x.home_removed ? '(含家目录)' : '')).join('、')}`;
+
+  const st = $('users-status');
+  const deleted = [], failed = [], skipped = [];
+  let firstError = '';
+
+  for (let i = 0; i < names.length; i += USERS_DELETE_BATCH) {
+    const chunk = names.slice(i, i + USERS_DELETE_BATCH);
+    if (st && names.length > USERS_DELETE_BATCH) {
+      st.className = '';
+      st.textContent = `⏳ 正在删除 ${i + 1}-${Math.min(i + chunk.length, names.length)} / ${names.length} ...`;
     }
-    await loadUsers();
-  } catch (e) {
-    showToast('删除失败: ' + e.message, 'error');
-    const st = $('users-status');
-    if (st) { st.className = 'error'; st.textContent = '❌ ' + e.message; }
+    let d;
+    try {
+      d = await API.post('api/users/delete', {
+        ack: true,
+        users: chunk.map(name => ({ name, removeHome })),
+      });
+    } catch (e) {
+      firstError = e.message || String(e);
+      failed.push(...chunk.map(name => ({ name, reason: firstError })));
+      break;
+    }
+    // 注意: API.post 对 4xx **不抛异常**（见 parseFetchResponse），只带 __ok=false。
+    // 原来直接读 d.deleted 会得到空数组，界面上就成了「已删除 0 个账号」—— 真实原因被吃掉。
+    if (!d || d.__ok === false || d.success === false) {
+      firstError = (d && (d.__error || d.error)) || '请求被拒绝';
+      failed.push(...chunk.map(name => ({ name, reason: firstError })));
+      break;
+    }
+    deleted.push(...(d.deleted || []));
+    failed.push(...(d.failed || []));
+    skipped.push(...(d.skipped || []));
   }
+
+  const parts = [];
+  if (deleted.length) parts.push(`已删除 ${deleted.length} 个账号`);
+  if (failed.length) parts.push(`${failed.length} 个失败`);
+  if (skipped.length) parts.push(`${skipped.length} 个账号不存在`);
+  if (deleted.length) {
+    showToast(parts.join('，'), failed.length ? 'warning' : 'success');
+  } else {
+    // 一个都没删掉时必须说清原因，不能只报「删除 0 个」
+    showToast('删除失败：' + (firstError || (failed[0] && failed[0].reason) || '没有账号被删除'), 'error');
+  }
+
+  if (st) {
+    const problems = failed.filter(f => f.reason);
+    if (problems.length) {
+      st.className = 'error';
+      st.textContent = `⚠️ ${deleted.length ? '部分失败' : '删除失败'} — ` +
+        problems.map(f => `${f.name}: ${f.reason}`).join('；');
+    } else if (deleted.length) {
+      st.className = 'success';
+      st.textContent = `✅ 已删除：${deleted.map(x => x.name + (x.home_removed ? '(含家目录)' : '')).join('、')}`;
+    }
+  }
+  await loadUsers();
 }
 
 // ════════════════════════════════

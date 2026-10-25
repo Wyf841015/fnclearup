@@ -829,6 +829,7 @@
       <label class="modal-checkbox" style="margin-top:12px"><input type="checkbox" id="usersDeleteRemoveHome" onchange="usersRefreshConfirmBtn()"><span>同时删除家目录（<code>userdel -r</code>，家目录里的文件会一起删掉，不可恢复）</span></label>
       <label class="modal-checkbox" style="color:var(--color-danger)"><input type="checkbox" id="usersDeleteAck" onchange="usersRefreshConfirmBtn()"><span>⚠️ 我确认删除这些账号（删除后不可恢复）</span></label>
       <p style="color:var(--color-text-secondary);font-size:12px;margin:8px 0 0">服务端会再次校验：系统核心账号、仍在安装中的应用账号、有进程在运行的账号一律拒绝删除。</p>
+      <p id="usersDeleteBatchTip" style="color:var(--color-text-muted);font-size:12px;margin:4px 0 0;display:none"></p>
       <div class="btn-row" style="margin-top:14px">
         <button type="button" class="btn btn-secondary" onclick="hideUsersDeleteModal()">取消</button>
         <button type="button" class="btn btn-danger" id="usersDeleteConfirmBtn" onclick="confirmUsersDelete()" disabled>确认删除</button>
@@ -1116,7 +1117,7 @@
 <!-- 动效编排层: 必须先于 main.js 加载, init() 时会调 window.Motion.init() -->
   <!-- ?v= 缓存戳：server.js 对静态资源发 Cache-Control: immutable(7 天)，
        改 JS 必须同时改这个戳，否则浏览器一直用旧的 main.js（表现为「新功能没反应」） -->
-  <script src="motion.js?v=20261025b"></script>
-  <script src="main.js?v=20261025b"></script>
+  <script src="motion.js?v=20261025c"></script>
+  <script src="main.js?v=20261025c"></script>
 </body>
 </html>
