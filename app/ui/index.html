@@ -43,6 +43,7 @@
       <button type="button" class="tab-btn" data-tab="disk" onclick="switchTab('disk')" role="tab" aria-selected="false"><i data-lucide="disc-3"></i> 网盘</button>
       <button type="button" class="tab-btn" data-tab="docker" onclick="switchTab('docker')" role="tab" aria-selected="false"><i data-lucide="container"></i> Docker</button>
       <button type="button" class="tab-btn" data-tab="sysjunk" onclick="switchTab('sysjunk')" role="tab" aria-selected="false"><i data-lucide="broom"></i> 系统垃圾</button>
+      <button type="button" class="tab-btn" data-tab="users" onclick="switchTab('users')" role="tab" aria-selected="false"><i data-lucide="users"></i> 用户</button>
     </div>
 
     <!-- 分组: 文件清理 -->
@@ -633,6 +634,35 @@
         </div>
       </div>
     </div><!-- Panel: 回收站清理 -->
+    <!-- Panel: 用户清理 -->
+    <div class="tab-panel" data-panel="users">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="users"></i></div><div class="kpi-body"><div class="kpi-label">用户总数</div><div class="kpi-value" id="users-total">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="package"></i></div><div class="kpi-body"><div class="kpi-label">应用账号</div><div class="kpi-value" id="users-app">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="shield-off"></i></div><div class="kpi-body"><div class="kpi-label">系统账号</div><div class="kpi-value" id="users-system">-</div></div></div>
+        <div class="kpi-card"><div class="kpi-icon"><i data-lucide="trash-2"></i></div><div class="kpi-body"><div class="kpi-label">可删除</div><div class="kpi-value" id="users-deletable">-</div></div></div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2><span><i data-lucide="users"></i></span><span>用户清理</span></h2>
+          <div class="section-actions">
+            <button type="button" class="btn btn-primary" id="usersRefreshBtn" onclick="loadUsers()"><span><i data-lucide="refresh-cw"></i></span><span>刷新列表</span></button>
+            <button type="button" class="btn btn-danger" id="usersDeleteBtn" onclick="showUsersDeleteModal()" disabled><span><i data-lucide="trash-2"></i></span><span>删除选中</span></button>
+          </div>
+          <div class="section-options" style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--color-text-secondary)">
+              <input type="checkbox" id="usersShowSystemCb" onchange="toggleUsersShowSystem()">
+              <span>显示系统自带账号（uid &lt; 900，仅展示、不可删除）</span>
+            </label>
+          </div>
+          <div id="users-select-info" class="select-info" style="display:none"></div>
+        </div>
+        <div id="users-status"></div>
+        <div id="users-list"></div>
+        <div id="users-empty" class="dup-empty-state"><div class="dup-empty-icon">👥</div><h3>正在加载用户列表</h3><p>列出 /etc/passwd 里的账号：默认隐藏系统自带账号，只显示可用/残留的应用账号与真实用户。应用仍在安装中、或有进程在运行、或系统核心账号会被标灰不可删。</p></div>
+      </div>
+    </div>
+
     <!-- Panel: 定时清理 -->
     <div class="tab-panel" data-panel="schedule">
       <div class="kpi-row">
@@ -786,6 +816,22 @@
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="closeBigFilesDeleteModal()">取消</button>
         <button type="button" class="btn btn-danger" id="bigfilesDeleteConfirmBtn" onclick="doBigFilesDelete()" disabled>确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 用户删除确认弹窗 -->
+  <div class="modal-overlay" id="usersDeleteModal">
+    <div class="modal modal-md" style="max-width:560px">
+      <h3 style="color:var(--color-danger)"><span><i data-lucide="alert-triangle"></i></span><span>确认删除用户</span></h3>
+      <p style="margin:10px 0 6px">即将删除 <strong id="usersDeleteCount">0</strong> 个系统账号：</p>
+      <div id="usersDeleteNames" style="background:rgba(220,38,38,0.06);border-left:3px solid var(--color-danger);padding:8px 12px;border-radius:4px;font-family:var(--font-mono);font-size:13px;max-height:180px;overflow:auto;line-height:1.7"></div>
+      <label class="modal-checkbox" style="margin-top:12px"><input type="checkbox" id="usersDeleteRemoveHome" onchange="usersRefreshConfirmBtn()"><span>同时删除家目录（<code>userdel -r</code>，家目录里的文件会一起删掉，不可恢复）</span></label>
+      <label class="modal-checkbox" style="color:var(--color-danger)"><input type="checkbox" id="usersDeleteAck" onchange="usersRefreshConfirmBtn()"><span>⚠️ 我确认删除这些账号（删除后不可恢复）</span></label>
+      <p style="color:var(--color-text-secondary);font-size:12px;margin:8px 0 0">服务端会再次校验：系统核心账号、仍在安装中的应用账号、有进程在运行的账号一律拒绝删除。</p>
+      <div class="btn-row" style="margin-top:14px">
+        <button type="button" class="btn btn-secondary" onclick="hideUsersDeleteModal()">取消</button>
+        <button type="button" class="btn btn-danger" id="usersDeleteConfirmBtn" onclick="confirmUsersDelete()" disabled>确认删除</button>
       </div>
     </div>
   </div>
@@ -1070,7 +1116,7 @@
 <!-- 动效编排层: 必须先于 main.js 加载, init() 时会调 window.Motion.init() -->
   <!-- ?v= 缓存戳：server.js 对静态资源发 Cache-Control: immutable(7 天)，
        改 JS 必须同时改这个戳，否则浏览器一直用旧的 main.js（表现为「新功能没反应」） -->
-  <script src="motion.js?v=20261025"></script>
-  <script src="main.js?v=20261025"></script>
+  <script src="motion.js?v=20261025b"></script>
+  <script src="main.js?v=20261025b"></script>
 </body>
 </html>

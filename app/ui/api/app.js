@@ -27,7 +27,7 @@ export const APP_USER_UID_MIN = 900;
 export const APP_USER_UID_MAX = 1000;
 
 // 核心组件账号：删掉会破坏 fnOS 本身（应用商店/权限系统/包管理/运行时/网络）
-const PROTECTED_USERS = new Set([
+export const PROTECTED_USERS = new Set([
   'root', 'admin', 'nobody', 'daemon', 'bin', 'sys', 'sync', 'games', 'man',
   'polkitd', 'systemd-network', 'systemd-timesync', 'systemd-resolve',
   'systemd-journal', 'systemd-timesync1',

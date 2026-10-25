@@ -23,6 +23,7 @@ import { handleSimDupScan, handleSimDupStatus, handleSimDupStop, handleSimDupThu
 import { handleBrokenScan, handleBrokenStatus, handleBrokenStop, setBrokenPaths } from './api/broken.js';
 import { handleNamematchScan, handleNamematchStatus, handleNamematchStop, setNamematchPaths } from './api/namematch.js';
 import { handleDockerStopped, handleDockerStoppedRemove, handleDockerBuildCache, handleDockerBuildCachePrune } from './api/docker_cleanup.js';
+import { handleListUsers, handleDeleteUsers } from './api/users.js';
 
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
@@ -256,6 +257,9 @@ async function handle(req, res) {
       if (method === 'GET' && path === '/api/trash/scan') { handleTrashScan(req, res); return; }
       if (method === 'GET' && path === '/api/trash/browse') { handleTrashBrowse(req, res); return; }
       if (method === 'POST' && path === '/api/trash/clean') { await handleTrashClean(req, res); return; }
+      // 用户清理
+      if (method === 'GET' && path === '/api/users') { await handleListUsers(req, res); return; }
+      if (method === 'POST' && path === '/api/users/delete') { await handleDeleteUsers(req, res); return; }
       // Schedule
       if (path === '/api/schedule') { await handleSchedule(req, res); return; }
       if (method === 'POST' && path === '/api/schedule/trigger') { await handleScheduleTrigger(req, res); return; }
