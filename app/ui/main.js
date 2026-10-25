@@ -3533,10 +3533,9 @@ async function loadUsers() {
     if ($('users-system')) $('users-system').textContent = s.system ?? '-';
     if ($('users-deletable')) $('users-deletable').textContent = s.deletable ?? '-';
     const scb = $('usersShowSystemCb'); if (scb) scb.checked = getUsersShowSystem();
-    if (status) {
-      status.className = 'success';
-      status.textContent = `✅ 共 ${s.total || 0} 个账号：应用 ${s.app || 0} · 真实用户 ${s.user || 0} · 系统 ${s.system || 0}，其中 ${s.deletable || 0} 个可删除`;
-    }
+    // 成功时不写摘要：账号总数/应用/系统/可删除 已在上面 4 张 KPI 卡片里，
+    // 再打一行「共 N 个账号…」是纯重复。这里只清掉上一次的错误文案。
+    if (status) { status.className = ''; status.textContent = ''; }
     renderUsers();
   } catch (e) {
     if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
