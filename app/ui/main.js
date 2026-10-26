@@ -339,7 +339,7 @@ function selectAllHandler(tableId, checkboxClass) {
 // ── 导航分组 ──
 // 15 个 tab 按使用场景归为 4 组。这里只改导航层的呈现, tab / panel / 业务逻辑一律未动。
 const TAB_GROUPS = {
-  clean: ['app', 'disk', 'docker', 'sysjunk', 'users'],
+  clean: ['app', 'disk', 'docker', 'sysjunk', 'users', 'kernel'],
   find:  ['scan'],
   space: ['diskanalysis'],
   auto:  ['schedule'],
@@ -401,6 +401,7 @@ async function switchTab(tabName) {
   }
   else if(tabName==='sysjunk') { switchInnerTab(panelInnerLastTab.sysjunk||'syscache'); }
   else if(tabName==='users') { await loadUsers(); }
+  else if(tabName==='kernel') { await kernelScan(); }
   // 旧 tab 名别名: 系统/临时文件/回收站 已并入「系统垃圾」的三个分区。
   // 保留这些分支是为了旧书签与历史调度任务 —— 它们至今仍写着这些名字。
   else if(tabName==='sysclean'||tabName==='trash'||tabName==='temp') {
@@ -4367,6 +4368,217 @@ function init() {
     ['simdup','broken','name','bigfiles'].forEach(t => renderDupPaths(t));
 
   // Export all functions to window for inline onclick and event delegation
+// ══════════════════════════ 内核清理 ══════════════════════════
+// 数据全部来自后端 /api/kernel/scan（root 进程读 /boot + /lib/modules + dpkg），
+// 前端只负责展示与选择。删除走 /api/kernel/delete，后端会用 apt-get purge 整组清。
+let kernelState = { data: null, selected: new Set() };
+
+async function kernelScan() {
+  const status = $('kernel-status'), list = $('kernel-list'), empty = $('kernel-empty');
+  const btn = $('kernelScanBtn');
+  if (btn) btn.disabled = true;
+  if (status) { status.className = ''; status.textContent = '⏳ 正在扫描 /boot 与 /lib/modules…'; }
+  try {
+    const data = await API.get('api/kernel/scan', 60000);
+    if (!data || data.success === false) throw new Error((data && data.error) || '扫描失败');
+    kernelState.data = data;
+    kernelState.selected = new Set();
+    renderKernelList();
+    if (empty) empty.style.display = 'none';
+    if (status) {
+      status.className = 'success';
+      status.textContent = `✅ 找到 ${data.count} 套内核，建议清理 ${data.deletable_count} 套（约 ${data.reclaimable_str}）`;
+    }
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+    if (list) list.innerHTML = '';
+    if (empty) empty.style.display = '';
+  } finally {
+    if (btn) btn.disabled = false;
+    if (typeof lucide !== 'undefined') { try { lucide.createIcons(); } catch (err) { console.error('[main.js]', err); } }
+  }
+}
+
+function renderKernelList() {
+  const d = kernelState.data;
+  const list = $('kernel-list');
+  if (!d || !list) return;
+
+  // KPI
+  if ($('kernel-count')) $('kernel-count').textContent = d.count || 0;
+  if ($('kernel-running')) $('kernel-running').textContent = d.running || '-';
+  if ($('kernel-reclaim')) $('kernel-reclaim').textContent = d.reclaimable_str || '0 B';
+  if ($('kernel-aptcache')) $('kernel-aptcache').textContent = (d.apt_cache && d.apt_cache.size_str) || '0 B';
+
+  // 表格
+  let html = '<div class="list-scroll"><table class="data-table" id="kernel-table"><thead><tr>' +
+    '<th style="width:36px"><input type="checkbox" class="select-all-cb" onchange="selectAllKernel(this)"></th>' +
+    '<th>内核版本</th><th>状态</th><th>大小</th><th>安装包</th></tr></thead><tbody>';
+  for (const k of (d.kernels || [])) {
+    const badges = [];
+    if (k.running) badges.push('<span class="kernel-badge run">运行中</span>');
+    if (k.suggest_keep && !k.running) badges.push('<span class="kernel-badge keep">建议保留</span>');
+    if (k.grub_default) badges.push('<span class="kernel-badge grub">GRUB 默认启动</span>');
+    if (k.hold) badges.push('<span class="kernel-badge hold">hold</span>');
+    if (!k.deletable && !k.running) badges.push('<span class="kernel-badge hold">不可自动清理</span>');
+    const pkgTitle = (k.packages || []).join(' ') || k.reason || '';
+    html += `<tr class="${k.deletable ? '' : 'row-disabled'}">
+      <td><input type="checkbox" class="kernel-cb" value="${escHtml(k.version)}" ${k.deletable ? '' : 'disabled'} onchange="updateKernelSelectInfo()"></td>
+      <td style="font-family:var(--font-mono)">${escHtml(k.version)}</td>
+      <td>${badges.join('') || '<span style="color:var(--color-text-tertiary)">可清理</span>'}</td>
+      <td style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-secondary)">${escHtml(k.size_str)}</td>
+      <td><div class="kernel-pkgs" title="${escHtml(pkgTitle)}">${escHtml((k.packages || []).join('  ') || k.reason || '-')}</div></td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+
+  // 顺带可清（APT 缓存 + rc 残留）
+  const extras = $('kernel-extras'), card = $('kernel-extras-card');
+  if (extras && card) {
+    const ap = d.apt_cache || {};
+    const rc = d.rc_packages || [];
+    if ((ap.size || 0) > 0 || rc.length) {
+      let eh = '<div class="kernel-hint" style="margin-top:0">';
+      eh += `<span>📦</span><span>APT 下载缓存：<b>${escHtml(ap.size_str || '0 B')}</b>（${ap.files || 0} 个 .deb，清理后不影响已装软件）`;
+      if (rc.length) eh += `<br>残留配置包 <b>${rc.length}</b> 个：<code>${escHtml(rc.slice(0, 6).join(' '))}${rc.length > 6 ? ' …' : ''}</code>（<code>dpkg -l | grep ^rc</code> 可查，可手动 <code>dpkg --purge</code>）`;
+      eh += '</span></div>';
+      extras.innerHTML = eh;
+      card.style.display = '';
+    } else {
+      card.style.display = 'none';
+    }
+  }
+  updateKernelSelectInfo();
+}
+
+function updateKernelSelectInfo() {
+  const cbs = Array.from(document.querySelectorAll('.kernel-cb:checked'));
+  kernelState.selected = new Set(cbs.map(cb => cb.value));
+  const btn = $('kernelDeleteBtn');
+  if (btn) btn.disabled = cbs.length === 0;
+  const si = $('kernel-select-info');
+  if (si) {
+    if (cbs.length === 0) { si.style.display = 'none'; }
+    else {
+      let size = 0;
+      const d = kernelState.data;
+      for (const v of kernelState.selected) {
+        const k = (d && d.kernels || []).find(x => x.version === v);
+        if (k) size += k.size || 0;
+      }
+      si.style.display = '';
+      si.textContent = `已选 ${cbs.length} 套内核，约可释放 ${(size / 1073741824 >= 1 ? (size / 1073741824).toFixed(2) + ' GB' : Math.round(size / 1048576) + ' MB')}`;
+    }
+  }
+}
+
+function selectAllKernel(el) {
+  document.querySelectorAll('.kernel-cb:not(:disabled)').forEach(cb => { cb.checked = el.checked; });
+  updateKernelSelectInfo();
+}
+
+/** 推荐勾选：除「运行中」和「建议保留（最新一个备用）」之外的全部 */
+function selectAllKernelRecommended() {
+  const d = kernelState.data;
+  if (!d) { showToast('请先扫描', 'error'); return; }
+  let n = 0;
+  document.querySelectorAll('.kernel-cb:not(:disabled)').forEach(cb => {
+    const k = (d.kernels || []).find(x => x.version === cb.value);
+    const on = !!(k && k.deletable && !k.suggest_keep);
+    cb.checked = on;
+    if (on) n++;
+  });
+  updateKernelSelectInfo();
+  showToast(n > 0 ? `已勾选 ${n} 套可清理内核` : '没有可推荐清理的内核', n > 0 ? 'success' : 'info');
+}
+
+function showKernelDeleteModal() {
+  const d = kernelState.data;
+  const picked = Array.from(kernelState.selected);
+  if (!d || picked.length === 0) { showToast('请先选择要清理的内核', 'error'); return; }
+  const rows = picked.map(v => (d.kernels || []).find(x => x.version === v)).filter(Boolean);
+
+  const cnt = $('kernelDeleteCount'); if (cnt) cnt.textContent = rows.length;
+  const box = $('kernelDeleteList');
+  if (box) box.innerHTML = rows.map(k => `• ${escHtml(k.version)} — ${escHtml(k.size_str)}`).join('<br>');
+
+  // 特别提醒：选中的里面有 GRUB 默认启动的内核
+  const warn = $('kernelDeleteWarn');
+  if (warn) {
+    const grubOnes = rows.filter(k => k.grub_default);
+    if (grubOnes.length) {
+      warn.style.display = '';
+      warn.innerHTML = `⚠️ 你选中的 <b>${escHtml(grubOnes.map(k => k.version).join(', '))}</b> 是当前 <code>GRUB_DEFAULT</code> 指向的启动项。<br>` +
+        `删掉之后它从启动菜单消失，<b>下次开机会回退到启动菜单的第一条</b>（通常是当前正在运行的 ${escHtml(d.running)}）。这不会让系统无法启动，但请知悉。`;
+    } else { warn.style.display = 'none'; }
+  }
+
+  const ack = $('kernelAckCb'); if (ack) ack.checked = false;
+  const cacheCb = $('kernelCleanAptCb'); if (cacheCb) cacheCb.checked = ((d.apt_cache && d.apt_cache.size) || 0) > 0;
+  const cs = $('kernelAptCacheSize'); if (cs) cs.textContent = (d.apt_cache && d.apt_cache.size_str) || '0 B';
+  updateKernelConfirmBtn();
+  $('kernelDeleteModal')?.classList.add('visible');
+}
+
+function hideKernelDeleteModal() {
+  $('kernelDeleteModal')?.classList.remove('visible');
+}
+
+function updateKernelConfirmBtn() {
+  const ack = $('kernelAckCb');
+  const btn = $('kernelConfirmBtn');
+  if (btn) btn.disabled = !(ack && ack.checked);
+}
+
+async function confirmKernelDelete() {
+  const picked = Array.from(kernelState.selected);
+  if (picked.length === 0) { hideKernelDeleteModal(); return; }
+  const btn = $('kernelConfirmBtn');
+  const cleanCache = !!($('kernelCleanAptCb') && $('kernelCleanAptCb').checked);
+  if (btn) { btn.disabled = true; btn.textContent = '正在清理…'; }
+  const status = $('kernel-status');
+  if (status) { status.className = ''; status.textContent = '⏳ 正在执行 apt-get purge，可能需要一两分钟，请不要关闭页面…'; }
+  try {
+    const r = await API.post('api/kernel/delete', { versions: picked, confirm: 'PURGE', clean_apt_cache: cleanCache }, 320000);
+    if (!r || r.success === false) throw new Error((r && r.error) || '清理失败');
+    hideKernelDeleteModal();
+    const okN = r.removed || 0, badN = r.failed || 0;
+    let msg = `✅ 已清理 ${okN} 套内核，释放 ${r.freed_str || '0 B'}`;
+    if (r.cache_cleaned) msg += `；另清 APT 缓存 ${r.cache_cleaned_str || ''}`;
+    if (badN) {
+      const fails = (r.results || []).filter(x => !x.ok).map(x => `${x.version}: ${x.error || '失败'}`).slice(0, 3).join('；');
+      msg += `；${badN} 项失败（${fails}）`;
+    }
+    showToast(msg, badN ? 'error' : 'success');
+    if (status) { status.className = badN ? 'error' : 'success'; status.textContent = msg; }
+    await kernelScan();
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+    showToast('清理失败：' + e.message, 'error');
+  } finally {
+    const b2 = $('kernelConfirmBtn');
+    if (b2) { b2.disabled = false; b2.textContent = '确认清理'; }
+  }
+}
+
+async function cleanAptCache() {
+  const d = kernelState.data;
+  const btn = $('kernelAptCleanBtn');
+  if (btn) btn.disabled = true;
+  try {
+    // versions 传空 = 只清 APT 缓存（后端允许这种「不删内核只清缓存」的调用）
+    const r = await API.post('api/kernel/delete', { versions: [], confirm: 'PURGE', clean_apt_cache: true }, 180000);
+    if (!r || r.success === false) throw new Error((r && r.error) || '清理失败');
+    showToast(`已清理 APT 缓存 ${r.cache_cleaned_str || ''}`, 'success');
+    await kernelScan();
+  } catch (e) {
+    showToast('清理 APT 缓存失败：' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
   const exports = {
     toggleTheme, showSponsorModal, maybeShowSponsorReminder, showSponsorImgFull, showContactModal,
     showCleanupSummary, refreshCleanupSummary, filterTable, exportTableToCSV,
@@ -4422,6 +4634,9 @@ function init() {
     dcCheckAvailable, dcScan, renderDcStoppedList, dcSelectAll, dcUpdateSelectInfo, dcRemoveSelected, dcPruneCache,
     copyQQNumber,
         saveDupExcludeRules, resetDupExcludeRules,
+    kernelScan, renderKernelList, updateKernelSelectInfo, selectAllKernel,
+    selectAllKernelRecommended, showKernelDeleteModal, hideKernelDeleteModal,
+    updateKernelConfirmBtn, confirmKernelDelete, cleanAptCache,
   };
   Object.assign(window, exports);
 

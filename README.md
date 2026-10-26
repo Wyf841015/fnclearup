@@ -4,6 +4,64 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.14.0 更新
+
+新增「清理回收 → **内核清理**」tab：把 `apt` 装上的旧内核整组清掉。
+
+### 为什么需要它
+
+fnOS 每次系统升级都会装一整套新内核（`image` + `modules` + `headers`），**旧的不会自动清**。
+本机实测攒了 **10 套、共 3.0 GB**（`/boot` + `/lib/modules`）。旧内核堆着不只是浪费空间：
+`/boot` 往往是独立小分区，塞满之后系统更新会直接失败，而且只报「磁盘空间不足」，
+根本联想不到是旧内核。
+
+### 做了什么
+
+- 扫 `/lib/modules/<版本>` 与 `/boot/*<版本>*`，配合 `dpkg-query` 把每个版本的
+  `linux-image-* / linux-modules-* / linux-headers-*` **整组**找出来
+- 表格列出：版本 / 状态徽章 / 体积 / 关联包；体积 = modules 目录 + 该版本所有 `/boot` 文件
+- 「✅ 推荐清理」勾选除「正在运行」和「建议保留（最新一个备用）」之外的全部
+- 清理走 `apt-get purge`（带 `Dpkg::Options::=--force-conf*` 防交互卡住），
+  hold 住的包会先 `apt-mark unhold` 再删
+- 顺带给出 APT 下载缓存（`/var/cache/apt/archives`）体积与一键清理，以及 `rc` 残留配置包清单
+
+### 四条硬边界（不可绕过）
+
+1. **正在运行的内核永远不可删** —— 前端不给勾，后端删前再拦一次
+2. 只接受**扫描结果里真实存在**的版本；包名一律来自 `dpkg` 实测，
+   不接受前端传来的任意包名/路径（防命令注入），并且 `spawn` 数组参数调 apt，全程不过 shell
+3. 必须带 `confirm: 'PURGE'`；弹窗里还要勾选确认
+4. 同一时间只允许一个清理任务（`busy` 锁）
+
+### 一个容易踩的坑：GRUB 默认启动的可能不是你正在跑的内核
+
+本机实测 `GRUB_DEFAULT` 指向 `gnulinux-6.12.18-trim-advanced-…`，
+而正在运行的是 `6.18.18.c1126-trim`。所以表格里会给「GRUB 默认启动」单独打一个徽章，
+选中它时确认弹窗会明确提示：**删掉之后下次开机会回退到启动菜单第一条**（不会起不来）。
+
+### 顺手修掉的两个测量 bug（自己写测试时抓到的）
+
+- `dpkg` 的 `Status` 第三字段才是安装状态。用 `statusRaw.includes('installed')` 判断，
+  会把 `hold ok not-installed` 也算成已安装 —— 本机 345 个从未安装的候选内核包
+  因此被当成"已装内核"，列表瞬间变成 369 行
+- `du -sk` 读不了 `archives/partial`（属主 `_apt`）时退出码是 1，
+  按退出码判成败会把 175 MB 的 APT 缓存报成 0 B。只要 stdout 能解析就该采信
+
+### 怎么验证
+
+```bash
+# 看扫描结果（不删任何东西）
+curl -s http://127.0.0.1:<端口>/api/kernel/scan | python3 -m json.tool | head -40
+
+# 四条边界（都不该真的删）
+curl -s -X POST .../api/kernel/delete -d '{"versions":["x"]}'                                  # 缺 confirm → 拒绝
+curl -s -X POST .../api/kernel/delete -d '{"versions":[],"confirm":"PURGE"}'                   # 空选择 → 拒绝
+curl -s -X POST .../api/kernel/delete -d '{"versions":["<uname -r>"],"confirm":"PURGE"}'        # 运行中 → 拒绝
+curl -s -X POST .../api/kernel/delete -d '{"versions":["9.9.9"],"confirm":"PURGE"}'             # 不存在 → 拒绝
+```
+
+测试：`node --test tests/test_kernel_cleanup.js`（17 项，全程不执行任何真实删除）
+
 ## v0.13.1 更新
 
 本版只做一件事：**把「用户清理」删账号前的判据补严**。0.13.0 上线后真机上查出一处
