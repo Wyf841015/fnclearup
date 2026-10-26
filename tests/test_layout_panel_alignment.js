@@ -24,7 +24,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const html = fs.readFileSync(path.join(ROOT, 'app/ui/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(ROOT, 'app/ui/styles/style.css'), 'utf8');
 
-const EXPECTED = ['app', 'disk', 'docker', 'scan', 'sysjunk', 'users', 'schedule', 'diskanalysis'];
+const EXPECTED = ['app', 'disk', 'docker', 'scan', 'sysjunk', 'users', 'kernel', 'schedule', 'diskanalysis'];
 
 // 用 happy-dom 真解析一遍 —— 静态正则判断嵌套深度容易算错(只数 div 不数
 // header 之类), 而浏览器才是实际执行者。解析结果与预期不一致时立刻能看出。
@@ -49,7 +49,7 @@ test('.container 存在且包含 header/.tabs/.footer', () => {
   assert.ok(c.querySelector(':scope > .header'), '.header 必须在 .container 内');
 });
 
-test('全部 8 个 tab-panel 都在 .tabs 内, 一个都不能挂在 body 下', () => {
+test('全部 9 个 tab-panel 都在 .tabs 内, 一个都不能挂在 body 下', () => {
   const tabs = doc.querySelector('.tabs');
   assert.ok(tabs, '.tabs 应存在');
   const panels = [...doc.querySelectorAll('.tab-panel')];

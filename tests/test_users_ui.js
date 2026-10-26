@@ -180,7 +180,8 @@ T('index.html / main.js 结构在位（tab、panel、弹窗、switchTab 钩子�
   assert.match(html, /id="usersDeleteModal"/, '缺少删除确认弹窗');
   assert.match(html, /id="usersShowSystemCb"[^>]*toggleUsersShowSystem\(\)/, '缺少「显示系统账号」开关');
   assert.match(html, /id="usersDeleteAck"/, '缺少确认勾选');
-  assert.match(code, /clean: \['app', 'disk', 'docker', 'sysjunk', 'users'\]/, 'TAB_GROUPS 未登记 users');
+  // 分组里 app 之后还会继续加 tab（如 kernel），所以只断言 users 在这个组里、不强绑顺序尾部
+  assert.match(code, /clean: \[[^\]]*'users'[^\]]*\]/, 'TAB_GROUPS 未登记 users');
   assert.match(code, /tabName==='users'\) \{ await loadUsers\(\); \}/, 'switchTab 未挂 loadUsers');
 });
 

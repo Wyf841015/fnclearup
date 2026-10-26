@@ -25,7 +25,7 @@ const main = fs.readFileSync(path.join(ROOT, 'app', 'ui', 'main.js'), 'utf8');
 //   B-1: dockercleanup 并入 docker tab(容器/缓存分区)      -1
 //   B-2: sysclean + temp + trash 并入「系统垃圾」单 tab      -2
 const EXPECTED = {
-  clean: ['app', 'disk', 'docker', 'sysjunk', 'users'],
+  clean: ['app', 'disk', 'docker', 'sysjunk', 'users', 'kernel'],
   find:  ['scan'],
   space: ['diskanalysis'],
   auto:  ['schedule'],
@@ -54,15 +54,15 @@ test('导航分组: 4 组容器存在, 且 tab 归属与设计一致', () => {
   }
 });
 
-test('导航分组: 8 个 tab 无遗漏无重复(原 15 经方案 B 三轮合并 + 新增用户清理)', () => {
+test('导航分组: 9 个 tab 无遗漏无重复(原 15 经三轮合并 + 用户清理 + 内核清理)', () => {
   const all = Object.values(parseGroupTabs()).flat();
-  assert.strictEqual(all.length, 8, `应恰好 8 个 tab, 实际 ${all.length}: ${all}`);
-  assert.strictEqual(new Set(all).size, 8, `tab 有重复: ${all}`);
+  assert.strictEqual(all.length, 9, `应恰好 9 个 tab, 实际 ${all.length}: ${all}`);
+  assert.strictEqual(new Set(all).size, 9, `tab 有重复: ${all}`);
   // 每个 tab 都有对应 panel
   const panels = [...html.matchAll(/data-panel="(\w+)"/g)].map(x => x[1]);
   const missing = all.filter(t => !panels.includes(t));
   assert.strictEqual(missing.length, 0, `这些 tab 没有对应 panel: ${missing}`);
-  assert.strictEqual(panels.length, 8, `panel 应为 8 个, 实际 ${panels.length}`);
+  assert.strictEqual(panels.length, 9, `panel 应为 9 个, 实际 ${panels.length}`);
 });
 
 test('导航分组: 每组只默认展开一个, 且恰好一个组有 active', () => {
@@ -91,8 +91,8 @@ test('导航分组: main.js 的 TAB_GROUPS 与 HTML 分组一致', () => {
   }
   // 每个 tab 必须恰好属于一个组(漏一个 → 点不到; 重复 → 记忆会串)
   const all = [...body.matchAll(/'(\w+)'/g)].map(x => x[1]);
-  assert.strictEqual(all.length, 8, `TAB_GROUPS 应含 8 个 tab, 实际 ${all.length}`);
-  assert.strictEqual(new Set(all).size, 8, `TAB_GROUPS 有重复 tab`);
+  assert.strictEqual(all.length, 9, `TAB_GROUPS 应含 9 个 tab, 实际 ${all.length}`);
+  assert.strictEqual(new Set(all).size, 9, `TAB_GROUPS 有重复 tab`);
 });
 
 test('导航分组: switchGroup 已导出(否则 inline onclick 静默失效)', () => {
@@ -122,7 +122,7 @@ test('导航分组: 组按钮都绑定了 onclick', () => {
       `组按钮 ${gid} 未绑定 onclick`);
   }
   const tabs = [...html.matchAll(/<button[^>]*data-tab="(\w+)"([^>]*)>/g)];
-  assert.strictEqual(tabs.length, 8);
+  assert.strictEqual(tabs.length, 9);
   for (const [_, tid, attrs] of tabs) {
     assert.ok(/onclick="switchTab\('/.test(attrs), `tab 按钮 ${tid} 未绑定 onclick`);
   }
