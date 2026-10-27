@@ -3745,35 +3745,132 @@ async function confirmUsersDelete() {
 let _startupCountdownTimer = null;
 let _startupCountdownLeft = 3;
 
-// 是否每次都弹风险提示（localStorage，缺省 true = 每次都弹，安全默认）
-// 取消勾选后启动时不再弹；可在「系统清理」页的开关重新打开
+// ── 启动风险提示偏好 ─────────────────────────────────────────────────────
+//
+// 稳定性要求：这个开关以前只存 localStorage，结果是「有时生效、有时又弹」——
+// 因为应用会同时跑在「应用中心 iframe」和「CEF 独立新窗口」两种上下文，
+// 两者 localStorage 可能是不同存储分区，有的环境还直接禁用/清空。
+//
+// 现在：
+//   · 服务端 /api/prefs（<TRM_PKGVAR>/data/ui-prefs.json）是唯一真理源
+//   · localStorage 只当本地缓存，用于「首屏立刻决定弹不弹」的快速路径
+//   · 首屏本地没缓存（首次运行 / localStorage 被禁）时，等后端说了算再决定
+//   · 一次页面加载最多弹一次（_startupWarnShown），杜绝重复触发
 const STARTUP_ALWAYS_KEY = 'fnclearup.startup.warnAlways';
-function getStartupWarningAlways() {
+let _warnAlways = null;          // null = 还没从任何来源拿到
+let _startupWarnShown = false;   // 本次页面加载是否已经弹过
+
+function readLocalWarnAlways() {
   try {
     const v = localStorage.getItem(STARTUP_ALWAYS_KEY);
-    return v === null ? true : v === '1';
-  } catch { return true; }   // localStorage 不可用时按「该弹」处理
+    return v === null ? null : v === '1';
+  } catch { return null; }   // 读不了 ≠ 用户选了「弹」，返回 null 表示「不知道」
 }
+function writeLocalWarnAlways(on) {
+  try { localStorage.setItem(STARTUP_ALWAYS_KEY, on ? '1' : '0'); } catch { /* 存不了就算了，服务端才是真理源 */ }
+}
+
+/** 当前生效值：内存 > localStorage > 安全默认（弹） */
+function getStartupWarningAlways() {
+  if (typeof _warnAlways === 'boolean') return _warnAlways;
+  const local = readLocalWarnAlways();
+  if (local !== null) return local;
+  return true;
+}
+
+/** 从后端拉真值并覆盖本地缓存；后端不可达时回退到本地值。 */
+async function loadStartupWarningPref() {
+  try {
+    const r = await API.get('api/prefs', 2500);
+    if (r && r.prefs && typeof r.prefs.startup_warn_always === 'boolean') {
+      _warnAlways = r.prefs.startup_warn_always;
+      writeLocalWarnAlways(_warnAlways);
+      return _warnAlways;
+    }
+  } catch (e) {
+    console.error('[main.js] 读取偏好失败，回退本地缓存', e);
+  }
+  const local = readLocalWarnAlways();
+  _warnAlways = (local === null) ? true : local;
+  return _warnAlways;
+}
+
 function syncStartupWarningChecks() {
   const on = getStartupWarningAlways();
-  ['startupWarningAlwaysCb', 'startupWarningSettingCb'].forEach(id => {
+  for (const id of ['startupWarningAlwaysCb', 'startupWarningSettingCb']) {
     const cb = $(id);
-    if (cb) cb.checked = on;
-  });
+    // 只在真不一样时写，避免无谓地触发浏览器的 checked 变更
+    if (cb && cb.checked !== on) cb.checked = on;
+  }
 }
-function toggleStartupWarningAlways() {
-  // 两个勾选框共用这一个处理函数：谁的值和存储的旧值不同，谁就是用户刚点的那个
+
+/**
+ * 用户改开关。**显式传来源**（'modal' / 'setting'），
+ * 不再靠「谁的 checked 和旧值不同」来猜是哪只框被点了 ——
+ * 那种猜法在两只框状态不一致时会选错，也是「改了没生效」的来源之一。
+ */
+async function setStartupWarnFrom(source) {
+  const cbId = source === 'modal' ? 'startupWarningAlwaysCb' : 'startupWarningSettingCb';
+  const cb = $(cbId);
+  const on = !!(cb && cb.checked);
   const prev = getStartupWarningAlways();
+  if (on === prev) { syncStartupWarningChecks(); return; }
+
+  // 乐观更新：界面先跟手，再去落盘
+  _warnAlways = on;
+  syncStartupWarningChecks();
+  writeLocalWarnAlways(on);
+
+  try {
+    const r = await API.post('api/prefs', { prefs: { startup_warn_always: on } }, 8000);
+    if (!r || r.success === false) throw new Error((r && r.error) || '保存失败');
+    showToast(on ? '✅ 已开启：每次进入应用都弹风险提示'
+                 : '👍 已关闭：以后不再自动弹（「系统清理」页可重新开启）', on ? 'success' : 'info');
+  } catch (e) {
+    // 落盘失败必须回滚，否则界面显示「关了」、下次进来又弹 —— 正是用户遇到的现象
+    _warnAlways = prev;
+    syncStartupWarningChecks();
+    writeLocalWarnAlways(prev);
+    showToast('保存失败（' + e.message + '），设置没有生效', 'error');
+  }
+}
+
+/** 兼容旧调用点（HTML 已改成显式传来源，这里保留但不推荐用）。 */
+function toggleStartupWarningAlways() {
   const a = $('startupWarningAlwaysCb');
   const b = $('startupWarningSettingCb');
-  let on = prev;
-  if (a && a.checked !== prev) on = a.checked;
-  else if (b && b.checked !== prev) on = b.checked;
-  else if (a) on = a.checked;
-  try { localStorage.setItem(STARTUP_ALWAYS_KEY, on ? '1' : '0'); } catch (e) { console.error('[main.js]', e); }
+  // 取「当前真的和生效值不同」的那只；都一样就按 modal 那只处理
+  const cur = getStartupWarningAlways();
+  if (a && a.checked !== cur) return setStartupWarnFrom('modal');
+  if (b && b.checked !== cur) return setStartupWarnFrom('setting');
+  return setStartupWarnFrom('modal');
+}
+
+/** 一次页面加载最多弹一次。所有「可能想弹」的路径都走这里。 */
+function maybeShowStartupWarning() {
+  if (_startupWarnShown) return false;
   syncStartupWarningChecks();
-  showToast(on ? '✅ 已开启：每次进入应用都弹风险提示'
-               : '👍 已关闭：以后不再自动弹（「系统清理」页可重新开启）', on ? 'success' : 'info');
+  if (!getStartupWarningAlways()) return false;
+  _startupWarnShown = true;
+  showStartupWarning();
+  return true;
+}
+
+/**
+ * 首屏入口。
+ * 本地有缓存 → 立刻按本地值决定（不闪、不等网络）；
+ * 本地没缓存 → 等后端（这才是「从没设过 / localStorage 被禁」的机器）。
+ * 两种情况都会在后台跟服务端对齐一次，让缓存与勾选框保持一致。
+ */
+function initStartupWarning() {
+  // 一律先问服务端再决定。
+  //
+  // 为什么不「本地优先、再后台对齐」：那样在「本地缓存说弹、服务端说关」时会先弹一次
+  // 再对齐 —— 用户看到的就是"我明明关了，它又弹了一次"。宁可等这一次网络往返
+  // （同机 socket 通常 2~5ms），也不要弹出不该弹的东西。
+  // 后端不可达时 loadStartupWarningPref 会回退到本地缓存，最长等 2.5s。
+  loadStartupWarningPref().then(() => maybeShowStartupWarning())
+    .catch(() => maybeShowStartupWarning());
 }
 
 // ── Trash tab ──
@@ -4000,14 +4097,15 @@ function hideTrashBrowseModal() {
   $('trashBrowseModal')?.classList.remove('visible');
 }
 
-// Show the warning modal on every app open. The "我已知晓风险" button is
-// disabled for 3 seconds (forces user to actually read the message). "稍后再说"
-// closes the modal but does NOT mark anything — the warning re-appears the
-// next time the user clicks any delete button (we re-call showStartupWarning()
-// from there too, see _bumpStartupWarning()).
+// 风险提示弹窗。调用入口统一是 maybeShowStartupWarning()（内部带幂等 + 偏好判断）；
+// 本函数自己也幂等（已在显示就不重复初始化，否则倒计时会被重置成 3 秒，
+// 看起来就像"又弹了一次"）。"我已知晓风险"按钮禁用 3 秒，强制用户读完。
 function showStartupWarning() {
   const modal = $('startupWarningModal');
   if (!modal) return;
+  // 已经在显示就不重复初始化（否则倒计时会被重置成 3 秒，看起来像"又弹了一次"）
+  if (modal.classList.contains('visible')) return;
+  _startupWarnShown = true;
   syncStartupWarningChecks();
   // Reset countdown
   _startupCountdownLeft = 3;
@@ -4668,6 +4766,7 @@ async function cleanAptCache() {
     loadUsers, renderUsers, toggleUsersShowSystem, selectAllUsers, updateUsersSelectInfo,
     showUsersDeleteModal, hideUsersDeleteModal, usersRefreshConfirmBtn, confirmUsersDelete,
     showStartupWarning, closeStartupWarning, toggleStartupWarningAlways, syncStartupWarningChecks,
+    setStartupWarnFrom, loadStartupWarningPref, initStartupWarning, maybeShowStartupWarning,
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,
     trashBrowseList, hideTrashBrowseModal,
     loadSchedule, saveSchedule, toggleSchedule, triggerSchedule, loadScheduleHistory, viewScheduleReport,
@@ -4741,9 +4840,8 @@ async function cleanAptCache() {
   // 由 MutationObserver 驱动, 不改动任何既有渲染函数。
   if (window.Motion) window.Motion.init();
 
-  // 启动风险提示：默认每次进入都弹；用户取消勾选「每次都弹」后不再自动弹
-  syncStartupWarningChecks();
-  if (getStartupWarningAlways()) showStartupWarning();
+  // 启动风险提示：以服务端偏好为准，且一次页面加载最多弹一次
+  initStartupWarning();
 }
 
 })();

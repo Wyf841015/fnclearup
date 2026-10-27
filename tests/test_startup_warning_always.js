@@ -1,16 +1,25 @@
-// 首页风险弹窗「是否每次都弹」—— happy-dom 端到端执行真实函数
+// 首页风险弹窗「是否每次都弹」—— UI 契约测试（happy-dom 真跑整页）
 //
-// 为什么这么做: 这段逻辑跨三处(index.html 两个勾选框 + main.js 读写 localStorage),
-// 只做字符串断言看不出「取消勾选后另一个勾选框没同步」这类问题; 这里把
-// getStartupWarningAlways / syncStartupWarningChecks / toggleStartupWarningAlways /
-// showStartupWarning 真实跑一遍, 检查 localStorage 与 DOM 勾选状态是否一致。
+// 演变说明（重要）：
+// 这个测试原来把 localStorage 当唯一真理源，靠抽取函数源码 + 注入假 localStorage
+// 来验证。**2026-10-27 起设计变了**：偏好改存服务端 <TRM_PKGVAR>/data/ui-prefs.json，
+// localStorage 只当本地缓存。原因是应用会同时跑在「应用中心 iframe」和
+// 「CEF 独立新窗口」两种上下文，两者 localStorage 可能是不同存储分区，
+// 导致「关了又弹」—— 用户报的就是这个。
 //
-// happy-dom 是可选依赖(本机装在 fnlogpush/node_modules 下)。找不到时整文件跳过。
+// 所以这里改成**跑真实页面**（index.html + main.js + 假 fetch），验证的是
+// 「开关语义 + 两只勾选框始终同步」这条 UI 契约；
+// 「服务端优先 / 幂等」由 test_startup_warning_dom.js 覆盖，
+// 「/api/prefs 读写容错」由 test_startup_warning_pref.js 覆盖。
+//
+// happy-dom 是可选依赖（本机装在 fnlogpush/node_modules 下），找不到整文件跳过。
 import { test as T } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
+const code = fs.readFileSync(ROOT + '/app/ui/main.js', 'utf8');
+const html = fs.readFileSync(ROOT + '/app/ui/index.html', 'utf8');
 
 let Window = null;
 for (const c of ['happy-dom',
@@ -20,112 +29,113 @@ for (const c of ['happy-dom',
 }
 const skip = Window ? false : 'happy-dom 不可用';
 
-const code = fs.readFileSync(ROOT + '/app/ui/main.js', 'utf8');
-
-function fnSrc(src, name) {
-  const m = new RegExp('(?:async\\s+)?function\\s+' + name + '\\s*\\(').exec(src);
-  if (!m) return null;
-  let i = src.indexOf('{', src.indexOf(')', m.index));
-  let d = 0;
-  for (let x = i; x < src.length; x++) {
-    if (src[x] === '{') d++;
-    else if (src[x] === '}') { d--; if (d === 0) return src.slice(m.index, x + 1); }
-  }
-  return null;
-}
-function constSrc(src, name) {
-  // const / let / var 都认（倒计时状态是 let 声明的）
-  const m = new RegExp('^\\s*(?:const|let|var)\\s+' + name + '\\s*=\\s*[^;]+;', 'm').exec(src);
-  return m ? m[0] : null;
-}
-
-// 需要真实执行的函数
-const FNS = ['getStartupWarningAlways', 'syncStartupWarningChecks', 'toggleStartupWarningAlways', 'showStartupWarning'];
-const DECLS = ['STARTUP_ALWAYS_KEY', '_startupCountdownTimer', '_startupCountdownLeft'];
-
-function build(sandboxHtml, seed) {
-  const win = new Window({ url: 'http://localhost/' });
-  win.document.body.innerHTML = sandboxHtml;
-  const toasts = [];
-  const parts = [];
-  for (const d of DECLS) { const s = constSrc(code, d); assert.ok(s, `源码里找不到常量 ${d}`); parts.push(s); }
-  for (const f of FNS) { const s = fnSrc(code, f); assert.ok(s, `源码里找不到函数 ${f}`); parts.push(s); }
-  const factory = new Function(
-    'window', 'document', 'localStorage', '$', 'showToast', 'setInterval', 'clearInterval', '__out',
-    parts.join('\n') + '\n__out.getStartupWarningAlways = getStartupWarningAlways;' +
-    '\n__out.syncStartupWarningChecks = syncStartupWarningChecks;' +
-    '\n__out.toggleStartupWarningAlways = toggleStartupWarningAlways;' +
-    '\n__out.showStartupWarning = showStartupWarning;'
-  );
-  const out = {};
-  const $ = (id) => win.document.getElementById(id);
-  factory(win, win.document, win.localStorage, $, (m, t) => toasts.push({ m, t }),
-    setInterval, clearInterval, out);
-  if (seed) for (const [k, v] of Object.entries(seed)) win.localStorage.setItem(k, v);
-  return { win, $, toasts, out };
-}
-
-const HTML = `
-  <div class="modal-overlay" id="startupWarningModal"></div>
-  <button id="startupWarningConfirmBtn" disabled></button>
-  <span id="startupWarningCountdown">3</span>
-  <input type="checkbox" id="startupWarningAlwaysCb">
-  <input type="checkbox" id="startupWarningSettingCb">`;
-
 const KEY = 'fnclearup.startup.warnAlways';
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-T('默认（无存储）按「每次都弹」处理', { skip }, () => {
-  const { out } = build(HTML);
-  assert.strictEqual(out.getStartupWarningAlways(), true);
+/**
+ * 起一页真实应用。
+ * prefs     = /api/prefs GET 返回的 prefs（null 表示这个接口一直失败）
+ * saved     = 收集 POST /api/prefs 的请求体
+ */
+async function boot({ prefs = { startup_warn_always: true }, failGet = false, failPost = false } = {}) {
+  const win = new Window({ url: 'http://localhost/app/fnclearup/' });
+  win.document.write(html);
+  try { win.localStorage.clear(); } catch { /* ignore */ }
+
+  const saved = [];
+  win.fetch = async (url, opts) => {
+    const u = String(url || '');
+    const method = (opts && opts.method) || 'GET';
+    if (u.includes('api/prefs')) {
+      if (method === 'POST') {
+        if (failPost) return { ok: false, status: 500, json: async () => ({ success: false, error: '模拟失败' }), text: async () => '' };
+        let body = {};
+        try { body = JSON.parse((opts && opts.body) || '{}'); } catch { /* ignore */ }
+        saved.push(body);
+        const applied = (body.prefs || body);
+        return { ok: true, status: 200, json: async () => ({ success: true, prefs: { startup_warn_always: true, ...applied } }), text: async () => '' };
+      }
+      if (failGet) return { ok: false, status: 500, json: async () => ({ success: false }), text: async () => '' };
+      return { ok: true, status: 200, json: async () => ({ success: true, prefs }), text: async () => '' };
+    }
+    return { ok: true, status: 200, json: async () => ({ success: true, ok: true, results: {}, users: [], kernels: [] }), text: async () => '{}' };
+  };
+  win.eval(code);
+  await sleep(350);            // 等 init 的 async 分支
+  return { win, saved, $: (id) => win.document.getElementById(id) };
+}
+
+const visible = (win) => !!win.document.getElementById('startupWarningModal')
+  ?.classList.contains('visible');
+
+T('默认（服务端和本地都没有值）按「每次都弹」处理', { skip }, async () => {
+  const { win } = await boot({ prefs: {}, failGet: true });
+  assert.equal(visible(win), true, '拿不到任何偏好时必须走安全默认：弹');
 });
 
-T('存储 0 → 不再每次都弹；存储 1 → 每次都弹', { skip }, () => {
-  const a = build(HTML, { [KEY]: '0' }); assert.strictEqual(a.out.getStartupWarningAlways(), false);
-  const b = build(HTML, { [KEY]: '1' }); assert.strictEqual(b.out.getStartupWarningAlways(), true);
+T('服务端 false → 不弹；服务端 true → 弹', { skip }, async () => {
+  const a = await boot({ prefs: { startup_warn_always: false } });
+  assert.equal(visible(a.win), false, 'false 时首屏不该弹');
+  const b = await boot({ prefs: { startup_warn_always: true } });
+  assert.equal(visible(b.win), true, 'true 时应该弹');
 });
 
-T('在弹窗里取消勾选：写入 0，且两处勾选框都同步为未勾选', { skip }, () => {
-  const { out, $, win, toasts } = build(HTML, { [KEY]: '1' });
-  out.syncStartupWarningChecks();
-  assert.strictEqual($('startupWarningAlwaysCb').checked, true);
-  assert.strictEqual($('startupWarningSettingCb').checked, true);
+T('在弹窗里取消勾选：POST 出去 false，且两处勾选框都同步为未勾选', { skip }, async () => {
+  const { win, saved, $ } = await boot({ prefs: { startup_warn_always: true } });
+  assert.equal($('startupWarningAlwaysCb').checked, true);
+  assert.equal($('startupWarningSettingCb').checked, true);
 
-  // 模拟用户点掉弹窗里的勾选框
-  $('startupWarningAlwaysCb').checked = false;
-  out.toggleStartupWarningAlways();
+  $('startupWarningAlwaysCb').checked = false;      // 模拟用户点掉
+  await win.eval("window.setStartupWarnFrom('modal')");
+  await sleep(120);
 
-  assert.strictEqual(win.localStorage.getItem(KEY), '0');
-  assert.strictEqual($('startupWarningAlwaysCb').checked, false);
-  assert.strictEqual($('startupWarningSettingCb').checked, false, '系统清理页的开关必须同步');
-  assert.ok(toasts.length === 1 && /已关闭/.test(toasts[0].m), '应有「已关闭」提示');
+  assert.equal(saved.length, 1, '必须把选择写到服务端（否则换个上下文又弹）');
+  assert.equal(saved[0].prefs.startup_warn_always, false);
+  assert.equal($('startupWarningAlwaysCb').checked, false);
+  assert.equal($('startupWarningSettingCb').checked, false, '系统清理页的开关必须同步');
+  assert.equal(win.localStorage.getItem(KEY), '0', '本地缓存也要同步（首屏快速路径靠它）');
 });
 
-T('在系统清理页重新打开：写入 1，两处勾选框都变勾选', { skip }, () => {
-  const { out, $, win } = build(HTML, { [KEY]: '0' });
-  out.syncStartupWarningChecks();
-  assert.strictEqual($('startupWarningSettingCb').checked, false);
+T('在系统清理页重新打开：POST true，两处勾选框都变勾选', { skip }, async () => {
+  const { win, saved, $ } = await boot({ prefs: { startup_warn_always: false } });
+  assert.equal($('startupWarningSettingCb').checked, false);
 
   $('startupWarningSettingCb').checked = true;
-  out.toggleStartupWarningAlways();
+  await win.eval("window.setStartupWarnFrom('setting')");
+  await sleep(120);
 
-  assert.strictEqual(win.localStorage.getItem(KEY), '1');
-  assert.strictEqual($('startupWarningAlwaysCb').checked, true, '弹窗里的勾选框必须同步');
-  assert.strictEqual($('startupWarningSettingCb').checked, true);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].prefs.startup_warn_always, true);
+  assert.equal($('startupWarningAlwaysCb').checked, true, '弹窗里的勾选框必须同步');
+  assert.equal($('startupWarningSettingCb').checked, true);
 });
 
-T('弹窗打开时勾选状态跟随已存偏好（不会显示过期状态）', { skip }, () => {
-  const { out, $ } = build(HTML, { [KEY]: '0' });
-  $('startupWarningAlwaysCb').checked = true;   // 故意先放错
-  out.showStartupWarning();
-  assert.strictEqual($('startupWarningAlwaysCb').checked, false, '打开时应按存储值校正');
-  assert.ok($('startupWarningModal').classList.contains('visible'));
+T('保存失败必须回滚：界面不能显示「已关闭」而实际没存上', { skip }, async () => {
+  const { win, $ } = await boot({ prefs: { startup_warn_always: true }, failPost: true });
+  assert.equal($('startupWarningAlwaysCb').checked, true);
+
+  $('startupWarningAlwaysCb').checked = false;
+  await win.eval("window.setStartupWarnFrom('modal')");
+  await sleep(150);
+
+  assert.equal($('startupWarningAlwaysCb').checked, true, '保存失败要把勾选状态改回去');
+  assert.equal($('startupWarningSettingCb').checked, true, '另一处也要改回去');
+  assert.equal(win.localStorage.getItem(KEY), '1', '本地缓存也要回滚，不能留 false');
 });
 
-T('index.html 两处勾选框 / main.js 启动条件都在位', { skip }, () => {
-  const html = fs.readFileSync(ROOT + '/app/ui/index.html', 'utf8');
-  assert.match(html, /id="startupWarningAlwaysCb"[^>]*onchange="toggleStartupWarningAlways\(\)"/);
-  assert.match(html, /id="startupWarningSettingCb"[^>]*onchange="toggleStartupWarningAlways\(\)"/);
-  assert.match(code, /if \(getStartupWarningAlways\(\)\) showStartupWarning\(\);/,
-    'init 里必须按偏好决定是否弹');
-  assert.match(code, /toggleStartupWarningAlways, syncStartupWarningChecks,/, '必须导出到 window');
+T('弹窗打开时勾选状态按偏好校正（不显示过期状态）', { skip }, async () => {
+  const { win, $ } = await boot({ prefs: { startup_warn_always: false } });
+  $('startupWarningAlwaysCb').checked = true;        // 故意先放错
+  win.eval('window.syncStartupWarningChecks()');
+  assert.equal($('startupWarningAlwaysCb').checked, false, '应按偏好校正回来');
+  // 偏好为 false 时手动弹（例如用户主动查看）也不该把状态改乱
+  win.eval('window.showStartupWarning()');
+  assert.equal($('startupWarningAlwaysCb').checked, false);
+});
+
+T('index.html 两处勾选框 / main.js 启动入口都在位', { skip }, () => {
+  assert.match(html, /id="startupWarningAlwaysCb"[^>]*onchange="setStartupWarnFrom\('modal'\)"/);
+  assert.match(html, /id="startupWarningSettingCb"[^>]*onchange="setStartupWarnFrom\('setting'\)"/);
+  assert.match(code, /^\s*initStartupWarning\(\);\s*$/m, 'init 必须走统一入口');
+  assert.match(code, /initStartupWarning, maybeShowStartupWarning,/, '必须导出到 window');
 });
