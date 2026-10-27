@@ -397,10 +397,16 @@ export async function handleKernelDelete(req, res) {
   if (want.length === 0 && !data.clean_apt_cache) {
     return sendJSON(res, 400, { success: false, error: '没有选择要清理的内核' });
   }
-  if (kernelBusy) {
-    return sendJSON(res, 409, { success: false, error: '已有清理任务在执行，请等它结束' });
+  // 预演是只读的（apt-get -s 不写系统、不抢锁），**不能**占清理锁 ——
+  // 否则用户在多选后刚打开确认弹窗（后台正在预演 8 个版本）时点确认，
+  // 就会被自己刚才那次预演挡在门外，报「已有清理任务在执行」。
+  // 这正是用户遇到的多选清理失败。
+  if (!dryRun) {
+    if (kernelBusy) {
+      return sendJSON(res, 409, { success: false, error: '上一个清理任务还在执行，请等它结束' });
+    }
+    kernelBusy = true;
   }
-  kernelBusy = true;
   try {
     // 重新扫一遍拿权威包名 —— 绝不信任前端传来的包名
     const scan = await collectKernels();
@@ -428,22 +434,35 @@ export async function handleKernelDelete(req, res) {
         rejected.push({ version, error: '要删的包里混进了正在运行内核的包（' + overlap.join(', ') + '），已拒绝' });
         continue;
       }
-      // 交叉校验 ②：让 apt 自己说会删什么
-      const sim = await simulatePurge(k.packages);
-      if (!sim.ok) {
-        rejected.push({ version, error: 'apt 预演失败：' + (sim.error || '未知错误') });
-        continue;
-      }
-      const runningHit = sim.removed.filter(x => runningPkgs.has(x));
-      if (runningHit.length) {
-        rejected.push({ version, error: 'apt 预演显示会连带删掉运行中内核的包（' + runningHit.join(', ') + '），已拒绝' });
-        continue;
-      }
-      const extras = sim.removed.filter(x => !k.packages.includes(x));
-      plan.push({ version, k, removed: sim.removed, extras });
+      plan.push({ version, k, removed: [], extras: [] });
     }
 
-    const allExtras = Array.from(new Set(plan.flatMap(x => x.extras)));
+    // 交叉校验 ②：让 apt 自己说会删什么。
+    // 并行跑（限 3 个），8 个版本串行要 12s+，并行约 2s —— 用户在弹窗里等得起。
+    // apt-get -s 是纯模拟，不需要 dpkg 锁，并发安全。
+    const CONCURRENCY = 3;
+    for (let i = 0; i < plan.length; i += CONCURRENCY) {
+      const batch = plan.slice(i, i + CONCURRENCY);
+      const sims = await Promise.all(batch.map(x => simulatePurge(x.k.packages)));
+      batch.forEach((item, idx) => {
+        const sim = sims[idx];
+        if (!sim.ok) {
+          item.bad = 'apt 预演失败：' + (sim.error || '未知错误');
+          return;
+        }
+        const runningHit = sim.removed.filter(x => runningPkgs.has(x));
+        if (runningHit.length) {
+          item.bad = 'apt 预演显示会连带删掉运行中内核的包（' + runningHit.join(', ') + '），已拒绝';
+          return;
+        }
+        item.removed = sim.removed;
+        item.extras = sim.removed.filter(x => !item.k.packages.includes(x));
+      });
+    }
+    const planOk = plan.filter(x => !x.bad);
+    for (const x of plan) if (x.bad) rejected.push({ version: x.version, error: x.bad });
+
+    const allExtras = Array.from(new Set(planOk.flatMap(x => x.extras)));
 
     // ── 预演返回：只读，不改系统
     if (dryRun) {
@@ -451,7 +470,7 @@ export async function handleKernelDelete(req, res) {
         success: true,
         dry_run: true,
         running: runningVersion,
-        plan: plan.map(x => ({
+        plan: planOk.map(x => ({
           version: x.version,
           size_str: x.k.size_str,
           requested: x.k.packages,
@@ -487,41 +506,37 @@ export async function handleKernelDelete(req, res) {
       });
     }
 
-    const results = [];
-    let freed = 0;
-    for (const item of plan) {
-      const k = item.k;
-      let unheld = [];
-      try {
-        // hold 住的包 apt -y 会直接报 "Held packages were changed" 中止，先解除
-        if (k.hold_packages && k.hold_packages.length > 0) {
-          await execCmd('apt-mark', ['unhold', ...k.hold_packages], 30000);
-          unheld = k.hold_packages.slice();
+    // ── 一次 apt 事务删掉全部选中内核（不再逐个 purge）
+    //
+    // 为什么合并：实测单套约 29s（apt 24s，且**每次**都要跑一遍 update-grub）。
+    // 8 套串行 ≈ 200s+，直接顶到 fnOS 网关 `location /app/` 的
+    // proxy_read_timeout 300s 上限 → 浏览器收到 504 / 请求中断，
+    // 表现就是「全选清理等很久然后失败」。
+    // 合并成一次事务后 dpkg 只跑一轮、update-grub 只跑一次，8 套约 40~60s。
+    const allPkgs = [...new Set(planOk.flatMap(x => x.k.packages))];
+    const allHolds = [...new Set(planOk.flatMap(x => x.k.hold_packages || []))];
+    let purgeMs = 0, purgeCode = 0, purgeTimedOut = false, purgeErr = '';
+
+    if (allPkgs.length > 0) {
+      if (allHolds.length > 0) {
+        // hold 住的包 apt -y 会直接报 "Held packages were changed" 中止，先全部解除
+        const uh = await execCmd('apt-mark', ['unhold', ...allHolds], 60000);
+        console.log(`[kernel] apt-mark unhold ${allHolds.length} 个包 → code=${uh.code}`);
+      }
+      const r = await runUnkillable('apt-get', [
+        '-o', 'Dpkg::Options::=--force-confdef',
+        '-o', 'Dpkg::Options::=--force-confold',
+        '-y', 'purge', ...allPkgs,
+      ], 900000);
+      purgeCode = r.code; purgeMs = r.ms; purgeTimedOut = r.timedOut;
+      purgeErr = r.code === 0 ? '' : String(r.stderr || r.stdout || '').trim().slice(-600);
+      console.log(`[kernel] purge ${allPkgs.length} 包 / ${planOk.length} 套 → code=${r.code} ms=${r.ms}${r.timedOut ? ' (超时但未杀进程)' : ''}`);
+      if (r.code !== 0) {
+        console.log('[kernel] apt 错误: ' + purgeErr.replace(/\s*\n\s*/g, ' | ').slice(0, 600));
+        // 失败把 hold 还回去，别留下「本来锁着、现在能删」的状态
+        if (allHolds.length > 0) {
+          try { await execCmd('apt-mark', ['hold', ...allHolds], 60000); } catch { /* ignore */ }
         }
-        const r = await runUnkillable('apt-get', [
-          '-o', 'Dpkg::Options::=--force-confdef',
-          '-o', 'Dpkg::Options::=--force-confold',
-          '-y', 'purge', ...k.packages,
-        ], 600000);
-        const ok = r.code === 0;
-        // 失败时把 hold 还回去，别留下「本来锁着、现在能删」的状态
-        if (!ok && unheld.length > 0) {
-          await execCmd('apt-mark', ['hold', ...unheld], 30000);
-        }
-        if (ok) freed += k.size;
-        results.push({
-          version: k.version, ok,
-          packages: k.packages,
-          size: k.size, size_str: k.size_str,
-          ms: r.ms,
-          timed_out: r.timedOut,
-          error: ok ? '' : (r.timedOut
-            ? 'apt 超过 10 分钟仍在跑（没有杀进程，请勿重复操作；必要时手工 dpkg --configure -a）'
-            : String(r.stderr || r.stdout || '').slice(-400)),
-        });
-      } catch (e) {
-        if (unheld.length > 0) { try { await execCmd('apt-mark', ['hold', ...unheld], 30000); } catch { /* ignore */ } }
-        results.push({ version: k.version, ok: false, error: e.message });
       }
     }
 
@@ -531,14 +546,40 @@ export async function handleKernelDelete(req, res) {
       const before = (await collectKernels()).apt_cache.size;
       const r = await execCmd('apt-get', ['clean'], 120000);
       if (r.code === 0) cache_cleaned = before;
-      else results.push({ version: 'APT 缓存', ok: false, error: String(r.stderr || '').slice(-300) });
+      else console.log('[kernel] apt-get clean 失败: ' + String(r.stderr || '').slice(-300));
     }
 
-    // ── 删完复核：包删了但 /lib/modules 或 /boot 还在 = 半清理，必须报出来
+    // ── 删完复核（也是给每个版本下结论的唯一依据）
+    // 判定口径：看文件真没了没有，而不是只看 apt 退出码 ——
+    // apt 可能返回非 0（例如更新 initramfs 有 warning）但包其实已经删干净。
+    let after = { kernels: [], running: runningVersion };
+    let results = [];
+    let freed = 0;
+    try {
+      after = await collectKernels();
+    } catch { /* 复核失败就用空表，下面会全部标失败 */ }
+    const afterMap = new Map((after.kernels || []).map(k => [k.version, k]));
+    results = planOk.map(item => {
+      const left = afterMap.get(item.version);
+      const gone = !left || !left.has_files;
+      if (gone) freed += item.k.size;
+      return {
+        version: item.version,
+        ok: gone,
+        packages: item.k.packages,
+        size: item.k.size, size_str: item.k.size_str,
+        ms: purgeMs,
+        timed_out: purgeTimedOut,
+        error: gone ? '' : (purgeTimedOut
+          ? 'apt 超过 15 分钟仍在跑（没有杀进程，请勿重复操作；必要时手工 dpkg --configure -a）'
+          : (purgeErr || '包仍然存在，未删除成功')),
+      };
+    });
+
+    // ── 残留检查：包删了但 /lib/modules 或 /boot 还在 = 半清理，必须报出来
     let leftover = [];
     try {
-      const after = await collectKernels();
-      leftover = after.kernels
+      leftover = (after.kernels || [])
         .filter(k => want.includes(k.version) && k.has_files)
         .map(k => ({ version: k.version, size_str: k.size_str, packages: k.packages }));
     } catch { /* 复核失败不影响主结果 */ }
@@ -562,6 +603,6 @@ export async function handleKernelDelete(req, res) {
   } catch (e) {
     sendJSON(res, 500, { success: false, error: e.message });
   } finally {
-    kernelBusy = false;
+    if (!dryRun) kernelBusy = false;
   }
 }
