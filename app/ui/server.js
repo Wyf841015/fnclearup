@@ -11,6 +11,7 @@ import { handleMounts, handleVol02 } from './api/disk.js';
 import { handleVolumes, handleVolumesDelete, handleNetworks, handleNetworksDelete, handleImages, handleImagesDelete, handleSystem } from './api/docker.js';
 import { handleTempScan, handleTempDelete } from './api/temp.js';
 import { handleKernelScan, handleKernelDelete } from './api/kernel.js';
+import { handleGetPrefs, handleSavePrefs } from './api/prefs.js';
 import { handleDupScan, handleDupStatus, handleDupJobs, handleDupDelete, handleDupExport, handleDupStop, handleDupPause, handleDupResume, dupJobs, setDupPaths } from './api/dup.js';
 import { handleEmptyDirScan, handleEmptyDirStop, handleEmptyDirDelete, handleEmptyDirStatus, emptyDirJobs, setEmptyDirPaths } from './api/empty_dir.js';
 import { handleFilesDelete } from './api/files_delete.js';
@@ -222,6 +223,8 @@ async function handle(req, res) {
       if (method === 'GET' && path === '/api/networks') { await handleNetworks(req, res); return; }
       if (method === 'GET' && path === '/api/images') { await handleImages(req, res); return; }
       if (method === 'GET' && path === '/api/system') { await handleSystem(req, res); return; }
+      if (method === 'GET' && path === '/api/prefs') { handleGetPrefs(req, res); return; }
+      if (method === 'POST' && path === '/api/prefs') { await handleSavePrefs(req, res); return; }
       if (method === 'GET' && path === '/api/kernel/scan') { await handleKernelScan(req, res); return; }
       if (method === 'POST' && path === '/api/kernel/delete') { await handleKernelDelete(req, res); return; }
       if (method === 'GET' && path === '/api/temp/scan') { handleTempScan(req, res); return; }
