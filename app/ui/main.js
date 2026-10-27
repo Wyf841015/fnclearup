@@ -4506,7 +4506,13 @@ function renderKernelList() {
   if ($('kernel-count')) $('kernel-count').textContent = d.count || 0;
   if ($('kernel-running')) $('kernel-running').textContent = d.running || '-';
   if ($('kernel-reclaim')) $('kernel-reclaim').textContent = d.reclaimable_str || '0 B';
-  if ($('kernel-aptcache')) $('kernel-aptcache').textContent = (d.apt_cache && d.apt_cache.size_str) || '0 B';
+  // APT 缓存：只有 .deb 才是真能清掉的量。0 个 .deb 时界面上不要说还有缓存，
+  // 否则用户点了清理、数字纹丝不动（目录 inode 开销约 16K 清不掉），
+  // 看起来就像「清理根本没生效」。
+  const apc = d.apt_cache || {};
+  if ($('kernel-aptcache')) {
+    $('kernel-aptcache').textContent = (apc.files || 0) > 0 ? (apc.size_str || '0 B') : '0 B';
+  }
 
   // 表格
   let html = '<div class="list-scroll"><table class="data-table" id="kernel-table"><thead><tr>' +
@@ -4539,7 +4545,10 @@ function renderKernelList() {
     if ((ap.size || 0) > 0 || rc.length) {
       let eh = '<div class="kernel-hint" style="margin-top:0">';
       eh += `<span>📦</span><span>APT 下载缓存：<b>${escHtml(ap.size_str || '0 B')}</b>（${ap.files || 0} 个 .deb，清理后不影响已装软件）`;
-      if (rc.length) eh += `<br>残留配置包 <b>${rc.length}</b> 个：<code>${escHtml(rc.slice(0, 6).join(' '))}${rc.length > 6 ? ' …' : ''}</code>（<code>dpkg -l | grep ^rc</code> 可查，可手动 <code>dpkg --purge</code>）`;
+      if (rc.length) {
+        eh += `<br>残留配置包 <b>${rc.length}</b> 个：<code>${escHtml(rc.slice(0, 8).join(' '))}${rc.length > 8 ? ' …' : ''}</code>`
+          + `　<button type="button" class="btn btn-outline btn-xs" onclick="purgeRcPackages()"><span>🧹</span><span>清理残留配置包</span></button>`;
+      }
       eh += '</span></div>';
       extras.innerHTML = eh;
       card.style.display = '';
@@ -4716,15 +4725,50 @@ async function confirmKernelDelete() {
   }
 }
 
+// 清理「残留配置包」（dpkg 状态 rc：包已删，只剩 /etc 下的配置）
+async function purgeRcPackages() {
+  const d = kernelState.data;
+  const rc = (d && d.rc_packages) || [];
+  if (rc.length === 0) { showToast('没有残留配置包', 'info'); return; }
+  const ok = await new Promise(resolve => {
+    // 没有通用确认框就退化成浏览器原生确认（够用且不会误点）
+    const msg = `将清理 ${rc.length} 个残留配置包：\n\n${rc.join('\n')}\n\n`
+      + '这些包的本体早就删掉了，只剩 /etc 下的配置文件。清理只是去掉这些残留配置，不会影响已安装的软件。';
+    resolve(window.confirm(msg));
+  });
+  if (!ok) return;
+  const status = $('kernel-status');
+  if (status) { status.className = ''; status.textContent = `⏳ 正在执行 dpkg --purge（${rc.length} 个），请稍等…`; }
+  try {
+    const r = await API.post('api/kernel/purge-rc', { confirm: 'PURGE', packages: rc }, 320000);
+    if (!r || r.success === false) throw new Error((r && r.error) || '清理失败');
+    let msg = `✅ 已清理 ${r.purged_count} 个残留配置包`;
+    if (r.failed) msg += `；${r.failed} 个没清掉（${(r.failed_packages || []).slice(0, 3).join(' ')}）`;
+    if ((r.remaining || []).length) msg += `；还剩 ${r.remaining.length} 个`;
+    showToast(msg, r.failed ? 'error' : 'success');
+    if (status) { status.className = r.failed ? 'error' : 'success'; status.textContent = msg; }
+    await kernelScan();
+  } catch (e) {
+    if (status) { status.className = 'error'; status.textContent = '❌ ' + e.message; }
+    showToast('清理残留配置包失败：' + e.message, 'error');
+  }
+}
+
 async function cleanAptCache() {
   const d = kernelState.data;
+  const apc = (d && d.apt_cache) || {};
+  if ((apc.files || 0) === 0) {
+    showToast('APT 下载缓存已经是空的（没有 .deb 文件可清）', 'info');
+    return;
+  }
   const btn = $('kernelAptCleanBtn');
   if (btn) btn.disabled = true;
   try {
     // versions 传空 = 只清 APT 缓存（后端允许这种「不删内核只清缓存」的调用）
     const r = await API.post('api/kernel/delete', { versions: [], confirm: 'PURGE', clean_apt_cache: true }, 180000);
     if (!r || r.success === false) throw new Error((r && r.error) || '清理失败');
-    showToast(`已清理 APT 缓存 ${r.cache_cleaned_str || ''}`, 'success');
+    const freed = r.cache_cleaned || 0;
+    showToast(freed > 0 ? `✅ 已清理 APT 缓存，释放 ${r.cache_cleaned_str}` : 'APT 缓存本来就是空的，没有可释放空间', freed > 0 ? 'success' : 'info');
     await kernelScan();
   } catch (e) {
     showToast('清理 APT 缓存失败：' + e.message, 'error');
@@ -4774,6 +4818,7 @@ async function cleanAptCache() {
     downloadSysCleanManifest, viewSysCleanManifest,
     loadUsers, renderUsers, toggleUsersShowSystem, selectAllUsers, updateUsersSelectInfo,
     showUsersDeleteModal, hideUsersDeleteModal, usersRefreshConfirmBtn, confirmUsersDelete,
+    purgeRcPackages,
     showStartupWarning, closeStartupWarning, toggleStartupWarningAlways, syncStartupWarningChecks,
     setStartupWarnFrom, loadStartupWarningPref, initStartupWarning, maybeShowStartupWarning,
     trashScan, trashClean, hideTrashDeleteModal, doTrashClean,

@@ -293,6 +293,7 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
 .btn-secondary{background:var(--color-card-bg);color:var(--color-text);border-color:var(--color-border)}
 .btn-secondary:hover{background:var(--color-hover-bg);border-color:var(--color-primary)}
 .btn-secondary:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+.btn-xs{height:26px;padding:0 8px;font-size:12px;gap:4px}
 .btn-outline{background:transparent;color:var(--color-text-secondary);border-color:var(--color-border)}
 .btn-outline:hover{background:var(--color-hover-bg);color:var(--color-text);border-color:var(--color-primary)}
 .btn-outline:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}

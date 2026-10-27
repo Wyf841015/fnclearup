@@ -305,6 +305,70 @@ describe('内核清理：并发与超时（用户实际踩的两个坑）', () =
   });
 });
 
+describe('APT 缓存与残留配置包（用户报「点了没变化」）', () => {
+  // 用户报：点「清理 APT 缓存」后，界面一直显示 16.0 KB（0 个 .deb）。
+  // 根因：原来用 du 整个 /var/cache/apt/archives，把目录 inode 块(12K)+partial(4K)
+  // 也算成"缓存"了。真正能释放的只有 *.deb。
+  test('没有 .deb 时缓存量必须是 0，不能是目录开销', async () => {
+    const { body } = await http('GET', '/api/kernel/scan');
+    const ap = body.apt_cache || {};
+    assert.equal(typeof ap.files, 'number');
+    assert.equal(typeof ap.size, 'number');
+    if (ap.files === 0) {
+      assert.equal(ap.size, 0, `0 个 .deb 却报 ${ap.size} B —— 又把目录开销算进去了`);
+      assert.equal(ap.size_str, '0 B');
+    }
+    // 目录开销另存一个字段，只为透明，不参与"可清理"
+    assert.equal(typeof ap.dir_size, 'number', '缺 dir_size（目录开销要单独暴露）');
+    assert.ok(ap.dir_size >= ap.size, '目录开销不该小于 .deb 总量');
+  });
+
+  test('残留配置包要查全部包，不能只看 linux-*', async () => {
+    const { body } = await http('GET', '/api/kernel/scan');
+    const rc = body.rc_packages || [];
+    assert.ok(Array.isArray(rc));
+    // 只要系统里有非 linux 的 rc 包，就应该出现在列表里
+    const src = fs.readFileSync(ROOT + '/app/ui/api/kernel.js', 'utf8');
+    assert.match(src, /const all = await dpkgList\(null\)/, 'rc 包必须用全量 dpkg 查询');
+  });
+
+  test('purge-rc 缺 confirm 一律 400', async () => {
+    const { status, body } = await http('POST', '/api/kernel/purge-rc', { packages: ['fuse'] });
+    assert.equal(status, 400);
+    assert.match(body.error, /confirm/);
+  });
+
+  test('purge-rc 只认 rc 状态的包（防任意包名注入）', async () => {
+    const { status, body } = await http('POST', '/api/kernel/purge-rc', {
+      confirm: 'PURGE', packages: ['bash', 'coreutils', 'systemd'],
+    });
+    assert.equal(status, 400);
+    assert.match(body.error, /残留配置/);
+  });
+
+  test('purge-rc 传不存在的包也拒绝，不会瞎 purge', async () => {
+    const { status, body } = await http('POST', '/api/kernel/purge-rc', {
+      confirm: 'PURGE', packages: ['fnclearup-not-exist-xxx'],
+    });
+    assert.equal(status, 400);
+    assert.match(body.error, /残留配置/);
+  });
+
+  test('前端：0 个 .deb 时按钮点了只提示，不发请求；rc 有独立清理按钮', () => {
+    const js = fs.readFileSync(ROOT + '/app/ui/main.js', 'utf8');
+    assert.match(js, /if \(\(apc\.files \|\| 0\) === 0\) \{[\s\S]{0,120}?APT 下载缓存已经是空的/, '缺空缓存短路');
+    assert.match(js, /onclick="purgeRcPackages\(\)"/, 'rc 那行要能点（不能只给一句手动命令）');
+    assert.match(js, /function purgeRcPackages/, '缺 purgeRcPackages');
+    assert.match(js, /api\/kernel\/purge-rc/, '缺 purge-rc 调用');
+    assert.ok(/(^|[\s,{])purgeRcPackages\s*[,}]/m.test(js), 'purgeRcPackages 没导出 → inline onclick 调不到');
+  });
+
+  test('清理 APT 缓存报的是真实释放量（前-后），不是清理前大小', () => {
+    const src = fs.readFileSync(ROOT + '/app/ui/api/kernel.js', 'utf8');
+    assert.match(src, /cache_cleaned = Math\.max\(0, before\.size - after\.size\);/, '必须用前后差值');
+  });
+});
+
 describe('内核清理：前端接线', () => {
   const html = readFileSync(join(ROOT, 'app/ui/index.html'), 'utf8');
   const js = readFileSync(join(ROOT, 'app/ui/main.js'), 'utf8');
