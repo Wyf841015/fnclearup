@@ -4371,7 +4371,7 @@ function init() {
 // ══════════════════════════ 内核清理 ══════════════════════════
 // 数据全部来自后端 /api/kernel/scan（root 进程读 /boot + /lib/modules + dpkg），
 // 前端只负责展示与选择。删除走 /api/kernel/delete，后端会用 apt-get purge 整组清。
-let kernelState = { data: null, selected: new Set() };
+let kernelState = { data: null, selected: new Set(), dry: null };
 
 async function kernelScan() {
   const status = $('kernel-status'), list = $('kernel-list'), empty = $('kernel-empty');
@@ -4493,7 +4493,7 @@ function selectAllKernelRecommended() {
   showToast(n > 0 ? `已勾选 ${n} 套可清理内核` : '没有可推荐清理的内核', n > 0 ? 'success' : 'info');
 }
 
-function showKernelDeleteModal() {
+async function showKernelDeleteModal() {
   const d = kernelState.data;
   const picked = Array.from(kernelState.selected);
   if (!d || picked.length === 0) { showToast('请先选择要清理的内核', 'error'); return; }
@@ -4501,24 +4501,51 @@ function showKernelDeleteModal() {
 
   const cnt = $('kernelDeleteCount'); if (cnt) cnt.textContent = rows.length;
   const box = $('kernelDeleteList');
-  if (box) box.innerHTML = rows.map(k => `• ${escHtml(k.version)} — ${escHtml(k.size_str)}`).join('<br>');
-
-  // 特别提醒：选中的里面有 GRUB 默认启动的内核
-  const warn = $('kernelDeleteWarn');
-  if (warn) {
-    const grubOnes = rows.filter(k => k.grub_default);
-    if (grubOnes.length) {
-      warn.style.display = '';
-      warn.innerHTML = `⚠️ 你选中的 <b>${escHtml(grubOnes.map(k => k.version).join(', '))}</b> 是当前 <code>GRUB_DEFAULT</code> 指向的启动项。<br>` +
-        `删掉之后它从启动菜单消失，<b>下次开机会回退到启动菜单的第一条</b>（通常是当前正在运行的 ${escHtml(d.running)}）。这不会让系统无法启动，但请知悉。`;
-    } else { warn.style.display = 'none'; }
-  }
+  if (box) box.innerHTML = '<span style="color:var(--color-text-tertiary)">⏳ 正在让 apt 预演一遍（apt-get -s purge），不会改动系统…</span>';
 
   const ack = $('kernelAckCb'); if (ack) ack.checked = false;
+  const extraAck = $('kernelExtraAckCb'); if (extraAck) extraAck.checked = false;
+  const extraWrap = $('kernelExtraAckWrap'); if (extraWrap) extraWrap.style.display = 'none';
+  const warn = $('kernelDeleteWarn'); if (warn) warn.style.display = 'none';
   const cacheCb = $('kernelCleanAptCb'); if (cacheCb) cacheCb.checked = ((d.apt_cache && d.apt_cache.size) || 0) > 0;
   const cs = $('kernelAptCacheSize'); if (cs) cs.textContent = (d.apt_cache && d.apt_cache.size_str) || '0 B';
   updateKernelConfirmBtn();
   $('kernelDeleteModal')?.classList.add('visible');
+
+  // ── 关键一步：先用 apt-get -s purge 预演，把「apt 到底会删哪些包」摆给用户看
+  kernelState.dry = null;
+  try {
+    const r = await API.post('api/kernel/delete', { versions: picked, confirm: 'PURGE', dry_run: true }, 180000);
+    if (!r || r.success === false) throw new Error((r && r.error) || '预演失败');
+    kernelState.dry = r;
+    const plan = r.plan || [];
+    let html = '';
+    for (const p of plan) {
+      html += `<div style="margin-bottom:6px">• <b>${escHtml(p.version)}</b> — ${escHtml(p.size_str)}<br>`
+        + `<span style="color:var(--color-text-tertiary)">apt 会删：${escHtml((p.apt_removes || []).join(' '))}</span></div>`;
+    }
+    for (const rj of (r.rejected || [])) {
+      html += `<div style="color:var(--color-danger)">✗ ${escHtml(rj.version)} — ${escHtml(rj.error)}</div>`;
+    }
+    if (box) box.innerHTML = html || '<span style="color:var(--color-danger)">没有可执行的项</span>';
+
+    if ((r.extras || []).length > 0) {
+      if (extraWrap) extraWrap.style.display = '';
+      const et = $('kernelExtraAckText');
+      if (et) et.innerHTML = `我知道还会连带删除 <b>${r.extras.length}</b> 个范围外的包：<code>${escHtml(r.extras.slice(0, 6).join(' '))}${r.extras.length > 6 ? ' …' : ''}</code>（通常是依赖内核的元包）`;
+    }
+
+    // GRUB 默认启动项提醒
+    const grubOnes = rows.filter(k => k.grub_default);
+    if (warn && grubOnes.length) {
+      warn.style.display = '';
+      warn.innerHTML = `⚠️ 你选中的 <b>${escHtml(grubOnes.map(k => k.version).join(', '))}</b> 是当前 <code>GRUB_DEFAULT</code> 指向的启动项。<br>`
+        + `删掉之后它从启动菜单消失，<b>下次开机会回退到启动菜单的第一条</b>（通常是当前正在运行的 ${escHtml(d.running)}）。这不会让系统无法启动，但请知悉。`;
+    }
+  } catch (e) {
+    if (box) box.innerHTML = `<span style="color:var(--color-danger)">预演失败：${escHtml(e.message)}</span>`;
+  }
+  updateKernelConfirmBtn();
 }
 
 function hideKernelDeleteModal() {
@@ -4528,7 +4555,11 @@ function hideKernelDeleteModal() {
 function updateKernelConfirmBtn() {
   const ack = $('kernelAckCb');
   const btn = $('kernelConfirmBtn');
-  if (btn) btn.disabled = !(ack && ack.checked);
+  // 预演发现 apt 会连带删范围外的包时，必须再单独勾一次
+  const needExtra = !!(kernelState.dry && (kernelState.dry.extras || []).length > 0);
+  const extraCb = $('kernelExtraAckCb');
+  const extraOk = !needExtra || !!(extraCb && extraCb.checked);
+  if (btn) btn.disabled = !(ack && ack.checked && extraOk);
 }
 
 async function confirmKernelDelete() {
@@ -4540,11 +4571,27 @@ async function confirmKernelDelete() {
   const status = $('kernel-status');
   if (status) { status.className = ''; status.textContent = '⏳ 正在执行 apt-get purge，可能需要一两分钟，请不要关闭页面…'; }
   try {
-    const r = await API.post('api/kernel/delete', { versions: picked, confirm: 'PURGE', clean_apt_cache: cleanCache }, 320000);
-    if (!r || r.success === false) throw new Error((r && r.error) || '清理失败');
+    const needExtra = !!(kernelState.dry && (kernelState.dry.extras || []).length > 0);
+    const extraCb = $('kernelExtraAckCb');
+    const r = await API.post('api/kernel/delete', {
+      versions: picked,
+      confirm: 'PURGE',
+      clean_apt_cache: cleanCache,
+      allow_extra_removals: !!(needExtra && extraCb && extraCb.checked),
+    }, 620000);
+    if (!r || r.success === false) {
+      if (r && r.needs_extra_ack) {
+        if (status) { status.className = 'error'; status.textContent = '⚠ ' + r.error; }
+        showToast(r.error, 'error');
+        return;
+      }
+      throw new Error((r && r.error) || '清理失败');
+    }
     hideKernelDeleteModal();
     const okN = r.removed || 0, badN = r.failed || 0;
     let msg = `✅ 已清理 ${okN} 套内核，释放 ${r.freed_str || '0 B'}`;
+    if ((r.rejected || []).length) msg += `；${r.rejected.length} 套被安全校验拦下（${r.rejected[0].version}: ${r.rejected[0].error}）`;
+    if ((r.leftover || []).length) msg += `；⚠ ${r.leftover.length} 套包已删但文件仍在（${r.leftover.map(x => x.version + ' ' + x.size_str).join(', ')}）`;
     if (r.cache_cleaned) msg += `；另清 APT 缓存 ${r.cache_cleaned_str || ''}`;
     if (badN) {
       const fails = (r.results || []).filter(x => !x.ok).map(x => `${x.version}: ${x.error || '失败'}`).slice(0, 3).join('；');

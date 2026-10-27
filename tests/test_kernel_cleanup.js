@@ -29,6 +29,8 @@ const TMP = '/tmp/fnclearup_test/kernel';
 const PORT = 47947;
 const BASE = `http://127.0.0.1:${PORT}`;
 
+const { pkgBelongsToVersion } = await import('../app/ui/api/kernel.js');
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function http(method, path, body) {
@@ -136,8 +138,10 @@ describe('内核清理：删除边界（绝不落到 apt）', () => {
     assert.equal(status, 200);
     assert.equal(body.success, true);
     assert.equal(body.removed, 0, '运行中的内核不能被删掉');
-    assert.equal(body.failed, 1);
-    assert.match(body.results[0].error, /正在运行/);
+    // 现在在「预检阶段」就拦下（rejected），根本不会进 apt 执行队列
+    assert.equal((body.rejected || []).length, 1, '应被预检拦下');
+    assert.match(body.rejected[0].error, /正在运行/);
+    assert.equal((body.results || []).length, 0, '被拦下的不该进结果队列');
   });
 
   test('传不存在的版本 → 拒绝（防任意包名注入）', async () => {
@@ -147,8 +151,9 @@ describe('内核清理：删除边界（绝不落到 apt）', () => {
     });
     assert.equal(status, 200);
     assert.equal(body.removed, 0);
-    assert.equal(body.failed, 2);
-    for (const r of body.results) assert.match(r.error, /扫描结果里没有|正在运行/);
+    assert.equal((body.rejected || []).length, 2);
+    for (const r of body.rejected) assert.match(r.error, /扫描结果里没有|正在运行/);
+    assert.equal((body.results || []).length, 0);
   });
 
   test('只清 APT 缓存（versions 空 + clean_apt_cache）不报「没有选择」', async () => {
@@ -156,6 +161,81 @@ describe('内核清理：删除边界（绝不落到 apt）', () => {
     // clean_apt_cache=false 时应仍按「没有选择」拒绝；这里断言这个分支的判定顺序正确
     assert.equal(status, 400);
     assert.match(body.error, /没有选择/);
+  });
+});
+
+describe('内核清理：包名匹配（防子串误伤）', () => {
+  // 以前用 pkg.includes('-' + version + '-')，一旦同时存在 6.18.18 与 6.18.18-trim，
+  // 删前者会把后者的包一起带走。这里把这条边界锁死。
+  test('版本号必须完整匹配，不能被更短版本前缀吃掉', () => {
+    assert.equal(pkgBelongsToVersion('linux-image-6.18.18-trim', '6.18.18'), false,
+      '6.18.18-trim 的包不应该算进 6.18.18');
+    assert.equal(pkgBelongsToVersion('linux-image-6.18.18', '6.18.18'), true);
+    assert.equal(pkgBelongsToVersion('linux-image-6.18.18-trim', '6.18.18-trim'), true);
+  });
+
+  test('认识本机真实命名：linux-modules-trim-<ver>', () => {
+    // 实测本机模块包带 trim 中缀，按 linux-modules-<ver> 会漏
+    assert.equal(pkgBelongsToVersion('linux-modules-trim-6.18.18.c788-trim', '6.18.18.c788-trim'), true);
+  });
+
+  test('允许常见后缀包（-common / -dbg），但只能是包名末尾', () => {
+    assert.equal(pkgBelongsToVersion('linux-headers-6.18.18.c1107-trim-common', '6.18.18.c1107-trim'), true);
+    assert.equal(pkgBelongsToVersion('linux-image-6.1.0-16-amd64-dbg', '6.1.0-16-amd64'), true);
+  });
+
+  test('无关包一律不算（元包 / libc / 其它版本）', () => {
+    for (const p of ['linux-image-amd64', 'linux-headers-amd64', 'linux-libc-dev',
+      'linux-modules-trim-extra', 'linux-image-6.18.18.c1111-trim']) {
+      assert.equal(pkgBelongsToVersion(p, '6.18.18.c1107-trim'), false, p + ' 不该被算进去');
+    }
+  });
+});
+
+describe('内核清理：预演（dry_run）', () => {
+  test('预演返回 apt 真实会删的包，且绝不改动系统', async () => {
+    const before = await http('GET', '/api/kernel/scan');
+    const victim = before.body.kernels.find(k => k.deletable && !k.suggest_keep);
+    if (!victim) return;   // 机器上只有一套内核时跳过
+
+    const { status, body } = await http('POST', '/api/kernel/delete', {
+      versions: [victim.version], confirm: 'PURGE', dry_run: true,
+    });
+    assert.equal(status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.dry_run, true);
+    assert.equal(body.removed, undefined, '预演不该有 removed 字段（那是真删的）');
+    assert.ok(Array.isArray(body.plan) && body.plan.length === 1, '应有一项计划');
+    const p = body.plan[0];
+    assert.equal(p.version, victim.version);
+    assert.ok(Array.isArray(p.apt_removes) && p.apt_removes.length > 0, 'apt_removes 不该为空');
+    // 预演结果里绝不能出现正在运行内核的包
+    const runVer = before.body.running;
+    for (const pkg of p.apt_removes) {
+      assert.ok(!pkg.includes(runVer), '预演会删到运行中内核的包: ' + pkg);
+    }
+    assert.equal(body.needs_extra_ack, (body.extras || []).length > 0);
+
+    // 系统状态必须完全没变
+    const after = await http('GET', '/api/kernel/scan');
+    assert.equal(after.body.count, before.body.count, '预演不该改变内核数量');
+    assert.equal(after.body.reclaimable, before.body.reclaimable, '预演不该改变可释放体积');
+  });
+
+  test('预演里带运行中的内核 → 被 rejected，不进入 plan', async () => {
+    const scan = await http('GET', '/api/kernel/scan');
+    const { body } = await http('POST', '/api/kernel/delete', {
+      versions: [scan.body.running], confirm: 'PURGE', dry_run: true,
+    });
+    assert.equal(body.success, true);
+    assert.equal((body.plan || []).length, 0, '运行中内核不能进 plan');
+    assert.equal((body.rejected || []).length, 1);
+    assert.match(body.rejected[0].error, /正在运行/);
+  });
+
+  test('预演不给 confirm 也拒绝（预演同样要过闸门）', async () => {
+    const { status } = await http('POST', '/api/kernel/delete', { versions: ['x'], dry_run: true });
+    assert.equal(status, 400);
   });
 });
 

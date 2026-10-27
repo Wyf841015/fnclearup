@@ -13,6 +13,8 @@
 //   4. 同一时间只允许一个清理任务在跑（busy 锁）
 //   5. 必须带 confirm='PURGE' 才执行
 import { existsSync, readdirSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { basename } from 'node:path';
 import { join } from 'node:path';
 import { sendJSON, execCmd, parseBody, formatBytes } from '../lib/util.js';
 
@@ -121,6 +123,121 @@ function grubEntryIds() {
 }
 
 /**
+ * 内核相关的 dpkg 包名前缀。
+ *
+ * 注意本机实测的真实命名（跟 Debian 上游不完全一样）：
+ *   linux-image-6.18.18.c788-trim
+ *   linux-headers-6.18.18.c788-trim
+ *   linux-modules-**trim**-6.18.18.c788-trim     ← 带 trim 中缀！
+ * 所以不能只认 linux-modules-<ver>，否则会漏掉模块包 —— 那会留下 /lib/modules/<ver>
+ * 变成「包删了、文件还在」的半清理状态。
+ */
+const KERNEL_PKG_PREFIXES = [
+  'linux-image-unsigned', 'linux-image',
+  'linux-headers',
+  'linux-modules-trim-extra', 'linux-modules-trim', 'linux-modules-extra', 'linux-modules',
+  'linux-tools', 'linux-buildinfo', 'linux-source',
+];
+
+/**
+ * 这个包是不是属于某个内核版本。
+ *
+ * 以前用 pkg.includes('-' + version + '-')，是子串匹配 —— 一旦同时存在
+ * `6.18.18` 和 `6.18.18-trim` 两个版本，删前者会把后者的包一起带走。
+ * 这里改成「前缀 + 完整版本号」精确匹配，只允许版本号后面再跟 -common/-dbg 这类后缀。
+ */
+export const KERNEL_PKG_SUFFIXES = new Set([
+  'common', 'dbg', 'unsigned', 'signed-template', 'extra', 'source', 'buildinfo', 'tools',
+]);
+
+export function pkgBelongsToVersion(pkg, version) {
+  if (!pkg || !version) return false;
+  for (const p of KERNEL_PKG_PREFIXES) {
+    if (pkg === p + '-' + version) return true;
+    const rest = pkg.slice((p + '-' + version + '-').length);
+    // 只允许白名单后缀（-common / -dbg 等）。
+    // **不能**写成「版本号 + 任意后缀都算」—— 那样版本 6.18.18 会把
+    // linux-image-6.18.18-trim 也算进去，删一个内核连带删另一个。
+    if (pkg.startsWith(p + '-' + version + '-') && KERNEL_PKG_SUFFIXES.has(rest)) return true;
+  }
+  return false;
+}
+
+/** 系统里是否有 apt/dpkg 正在跑（此时 purge 会抢锁或把 dpkg 数据库搞一半）。 */
+function aptBusyProcesses() {
+  const hits = [];
+  let pids = [];
+  try { pids = readdirSync('/proc').filter(x => /^\d+$/.test(x)); } catch { return hits; }
+  const names = new Set(['apt', 'apt-get', 'dpkg', 'aptitude', 'unattended-upgrade', 'dpkg-deb']);
+  for (const pid of pids) {
+    try {
+      const cmd = readFileSync('/proc/' + pid + '/cmdline', 'utf8').split('\0')[0];
+      if (!cmd) continue;
+      if (names.has(basename(cmd))) hits.push(pid + ':' + basename(cmd));
+    } catch { /* 进程已退出 */ }
+  }
+  return hits;
+}
+
+/**
+ * 跑一个「绝对不能被 SIGKILL 打断」的长命令（apt/dpkg 这类）。
+ *
+ * execCmd 超时后会 SIGTERM + 5s 后 SIGKILL。对 apt-get purge 来说，
+ * dpkg 事务做到一半被 SIGKILL 会留下「包半配置」的坏状态，比不删更糟。
+ * 所以这里自己 spawn：只收集输出，超时只标记「可能仍在跑」，绝不杀进程。
+ */
+function runUnkillable(cmd, args, budgetMs = 600000) {
+  return new Promise((resolve2) => {
+    let stdout = '', stderr = '';
+    const t0 = Date.now();
+    const proc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; }, budgetMs);
+    proc.stdout.on('data', c => { stdout += c; });
+    proc.stderr.on('data', c => { stderr += c; });
+    proc.on('close', code => {
+      clearTimeout(timer);
+      resolve2({ code, stdout, stderr, timedOut, ms: Date.now() - t0 });
+    });
+    proc.on('error', e => {
+      clearTimeout(timer);
+      resolve2({ code: -1, stdout, stderr: e.message, timedOut, ms: Date.now() - t0 });
+    });
+  });
+}
+
+/**
+ * 用 `apt-get -s purge` 预演，看 apt 到底会动哪些包。
+ * -s 是只模拟、不写系统，随便调。
+ */
+async function simulatePurge(pkgList) {
+  if (!pkgList || pkgList.length === 0) return { ok: true, removed: [], extras: [], hitsRunning: [], raw: '' };
+  const r = await runUnkillable('apt-get', ['-s', 'purge', ...pkgList], 180000);
+  const out = (r.stdout || '') + '\n' + (r.stderr || '');
+  const removed = new Set();
+  // 优先用 Purg/Remv 行（最准），失败再退回 "will be REMOVED" 段落
+  for (const m of out.matchAll(/^(?:Purg|Remv) (\S+)/gm)) removed.add(m[1]);
+  if (removed.size === 0) {
+    let inBlock = false;
+    for (const ln of out.split('\n')) {
+      if (/^The following .*will be REMOVED/.test(ln)) { inBlock = true; continue; }
+      if (inBlock) {
+        if (!/^\s/.test(ln) && ln.trim()) { inBlock = false; continue; }
+        for (const tok of ln.trim().split(/\s+/)) if (tok) removed.add(tok.replace(/\*$/, ''));
+      }
+    }
+  }
+  const normalized = Array.from(removed).filter(Boolean).map(x => x.split(':')[0]);
+  return {
+    ok: r.code === 0,
+    error: r.code === 0 ? '' : (r.stderr || r.stdout || '').trim().slice(-400),
+    removed: Array.from(new Set(normalized)),
+    requested: pkgList.slice(),
+    raw: out,
+  };
+}
+
+/**
  * 收集内核信息。扫描与删除共用这一份逻辑 —— 删除时重新扫一遍拿权威包名，
  * 绝不信任前端传来的包名。
  */
@@ -177,12 +294,7 @@ async function collectKernels() {
       parts.push({ path: full, size: sz });
     }
 
-    // 例：版本 6.18.18.c1107-trim 对应
-    //   linux-image-6.18.18.c1107-trim / linux-headers-6.18.18.c1107-trim /
-    //   linux-modules-6.18.18.c1107-trim / linux-headers-6.18.18.c1107-trim-common
-    const own = pkgs.filter(r => r.installed && (
-      r.pkg.endsWith('-' + version) || r.pkg.includes('-' + version + '-')
-    )).map(r => r.pkg);
+    const own = pkgs.filter(r => r.installed && pkgBelongsToVersion(r.pkg, version)).map(r => r.pkg);
     const ownHold = pkgs.filter(r => own.includes(r.pkg) && (r.held || holds.has(r.pkg))).map(r => r.pkg);
 
     const isRunning = version === running;
@@ -261,13 +373,26 @@ export async function handleKernelScan(req, res) {
   }
 }
 
-// POST /api/kernel/delete  body: { versions: [...], confirm: 'PURGE', clean_apt_cache: bool }
+// POST /api/kernel/delete
+//
+// body:
+//   { versions: [...], confirm: 'PURGE', clean_apt_cache?: bool,
+//     dry_run?: bool,              // true = 只预演，绝不改动系统
+//     allow_extra_removals?: bool  // 允许 apt 连带删掉范围外的包（元包等）
+//   }
+//
+// 为什么要有预演这一步：实测 purge **正在运行的**内核时 apt 会连带删掉
+// linux-image-amd64 / linux-headers-amd64 / linux-modules-trim-extra 共 6 个包
+// （元包 + extra 模块），而老内核则恰好只删自己那 3 个。也就是说 apt 的连带范围
+// 不是固定的，必须先 `apt-get -s purge` 看一眼。前端在确认弹窗里就展示这份预演。
 export async function handleKernelDelete(req, res) {
   const data = await parseBody(req);
   if (String(data.confirm || '') !== 'PURGE') {
     return sendJSON(res, 400, { success: false, error: '缺少确认标记（confirm 必须是 PURGE）' });
   }
   const want = Array.isArray(data.versions) ? data.versions.filter(v => typeof v === 'string' && v) : [];
+  const dryRun = !!data.dry_run;
+  const allowExtra = !!data.allow_extra_removals;
   // 允许「只清 APT 缓存」：versions 为空但明确要求清缓存时不算错
   if (want.length === 0 && !data.clean_apt_cache) {
     return sendJSON(res, 400, { success: false, error: '没有选择要清理的内核' });
@@ -280,43 +405,123 @@ export async function handleKernelDelete(req, res) {
     // 重新扫一遍拿权威包名 —— 绝不信任前端传来的包名
     const scan = await collectKernels();
     const known = new Map(scan.kernels.map(k => [k.version, k]));
+    const runningVersion = scan.running;
+
+    // 正在运行内核的「包集合」：任何情况下都不允许出现在删除列表里
+    const pkgsAll = await dpkgList('linux-*');
+    const runningPkgs = new Set(
+      pkgsAll.filter(r => r.installed && pkgBelongsToVersion(r.pkg, runningVersion)).map(r => r.pkg)
+    );
+
+    const plan = [];
+    const rejected = [];
+    for (const version of want) {
+      const k = known.get(version);
+      if (!k) { rejected.push({ version, error: '扫描结果里没有这个内核（可能已删），请重新扫描' }); continue; }
+      if (k.running) { rejected.push({ version, error: '正在运行的内核，禁止删除' }); continue; }
+      if (!k.packages || k.packages.length === 0) {
+        rejected.push({ version, error: '找不到对应的 dpkg 包，已跳过（需要手工处理）' }); continue;
+      }
+      // 交叉校验 ①：这套内核的包与运行中内核的包不能有交集
+      const overlap = k.packages.filter(x => runningPkgs.has(x));
+      if (overlap.length) {
+        rejected.push({ version, error: '要删的包里混进了正在运行内核的包（' + overlap.join(', ') + '），已拒绝' });
+        continue;
+      }
+      // 交叉校验 ②：让 apt 自己说会删什么
+      const sim = await simulatePurge(k.packages);
+      if (!sim.ok) {
+        rejected.push({ version, error: 'apt 预演失败：' + (sim.error || '未知错误') });
+        continue;
+      }
+      const runningHit = sim.removed.filter(x => runningPkgs.has(x));
+      if (runningHit.length) {
+        rejected.push({ version, error: 'apt 预演显示会连带删掉运行中内核的包（' + runningHit.join(', ') + '），已拒绝' });
+        continue;
+      }
+      const extras = sim.removed.filter(x => !k.packages.includes(x));
+      plan.push({ version, k, removed: sim.removed, extras });
+    }
+
+    const allExtras = Array.from(new Set(plan.flatMap(x => x.extras)));
+
+    // ── 预演返回：只读，不改系统
+    if (dryRun) {
+      return sendJSON(res, 200, {
+        success: true,
+        dry_run: true,
+        running: runningVersion,
+        plan: plan.map(x => ({
+          version: x.version,
+          size_str: x.k.size_str,
+          requested: x.k.packages,
+          apt_removes: x.removed,
+          extras: x.extras,
+        })),
+        extras: allExtras,
+        needs_extra_ack: allExtras.length > 0,
+        rejected,
+        note: allExtras.length > 0
+          ? 'apt 预演显示除了这些内核包，还会连带删除 ' + allExtras.length + ' 个范围外的包（通常是依赖它们的元包）。'
+          : 'apt 预演显示只会删除所选内核自己的包，没有连带。',
+      });
+    }
+
+    // ── 真删前的最后一道闸：有没有「范围外」的连带删除
+    if (allExtras.length > 0 && !allowExtra) {
+      return sendJSON(res, 200, {
+        success: false,
+        needs_extra_ack: true,
+        extras: allExtras,
+        error: 'apt 预演发现会额外删除 ' + allExtras.length + ' 个包（' + allExtras.slice(0, 5).join(', ')
+          + '）。这些通常是依赖内核的元包；确认可以一并删除后重试。',
+      });
+    }
+
+    // ── apt/dpkg 正忙时不要抢锁（会把 dpkg 数据库搞成半配置状态）
+    const busy = aptBusyProcesses();
+    if (busy.length > 0) {
+      return sendJSON(res, 200, {
+        success: false,
+        error: '系统里已经有 apt/dpkg 在运行（' + busy.join(', ') + '），等它结束再试',
+      });
+    }
 
     const results = [];
     let freed = 0;
-    for (const version of want) {
-      const k = known.get(version);
-      if (!k) {
-        results.push({ version, ok: false, error: '扫描结果里没有这个内核（可能已删），请重新扫描' });
-        continue;
-      }
-      if (k.running) {
-        results.push({ version, ok: false, error: '正在运行的内核，禁止删除' });
-        continue;
-      }
-      if (!k.packages || k.packages.length === 0) {
-        results.push({ version, ok: false, error: '找不到对应的 dpkg 包，已跳过（需要手工处理）' });
-        continue;
-      }
+    for (const item of plan) {
+      const k = item.k;
+      let unheld = [];
       try {
-        // hold 住的包 apt 会拒绝，先解除
+        // hold 住的包 apt -y 会直接报 "Held packages were changed" 中止，先解除
         if (k.hold_packages && k.hold_packages.length > 0) {
           await execCmd('apt-mark', ['unhold', ...k.hold_packages], 30000);
+          unheld = k.hold_packages.slice();
         }
-        const r = await execCmd('apt-get', [
+        const r = await runUnkillable('apt-get', [
           '-o', 'Dpkg::Options::=--force-confdef',
           '-o', 'Dpkg::Options::=--force-confold',
           '-y', 'purge', ...k.packages,
-        ], 300000);
+        ], 600000);
         const ok = r.code === 0;
+        // 失败时把 hold 还回去，别留下「本来锁着、现在能删」的状态
+        if (!ok && unheld.length > 0) {
+          await execCmd('apt-mark', ['hold', ...unheld], 30000);
+        }
         if (ok) freed += k.size;
         results.push({
-          version, ok,
+          version: k.version, ok,
           packages: k.packages,
           size: k.size, size_str: k.size_str,
-          error: ok ? '' : String(r.stderr || r.stdout || '').slice(-400),
+          ms: r.ms,
+          timed_out: r.timedOut,
+          error: ok ? '' : (r.timedOut
+            ? 'apt 超过 10 分钟仍在跑（没有杀进程，请勿重复操作；必要时手工 dpkg --configure -a）'
+            : String(r.stderr || r.stdout || '').slice(-400)),
         });
       } catch (e) {
-        results.push({ version, ok: false, error: e.message });
+        if (unheld.length > 0) { try { await execCmd('apt-mark', ['hold', ...unheld], 30000); } catch { /* ignore */ } }
+        results.push({ version: k.version, ok: false, error: e.message });
       }
     }
 
@@ -329,17 +534,30 @@ export async function handleKernelDelete(req, res) {
       else results.push({ version: 'APT 缓存', ok: false, error: String(r.stderr || '').slice(-300) });
     }
 
+    // ── 删完复核：包删了但 /lib/modules 或 /boot 还在 = 半清理，必须报出来
+    let leftover = [];
+    try {
+      const after = await collectKernels();
+      leftover = after.kernels
+        .filter(k => want.includes(k.version) && k.has_files)
+        .map(k => ({ version: k.version, size_str: k.size_str, packages: k.packages }));
+    } catch { /* 复核失败不影响主结果 */ }
+
     const done = results.filter(r => r.ok).length;
     sendJSON(res, 200, {
       success: true,
       results,
+      rejected,
       removed: done,
       failed: results.length - done,
       freed,
       freed_str: formatBytes(freed),
       cache_cleaned,
       cache_cleaned_str: formatBytes(cache_cleaned),
-      reboot_hint: done > 0 ? '已清理的内核会从下次启动菜单里消失，当前运行的内核不受影响，无需立即重启。' : '',
+      leftover,
+      reboot_hint: done > 0
+        ? '已清理的内核会从启动菜单消失，当前运行的内核不受影响，无需立即重启。'
+        : '',
     });
   } catch (e) {
     sendJSON(res, 500, { success: false, error: e.message });

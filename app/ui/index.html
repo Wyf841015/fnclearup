@@ -975,6 +975,7 @@
       <p id="kernelDeleteWarn" class="kernel-del-warn" style="display:none"></p>
       <label class="kernel-ack"><input type="checkbox" id="kernelAckCb" onchange="updateKernelConfirmBtn()"><span>我已确认：这些内核会从启动菜单消失，重装需要重新下载包</span></label>
       <label class="kernel-ack"><input type="checkbox" id="kernelCleanAptCb" checked><span>同时清理 APT 下载缓存（<span id="kernelAptCacheSize">-</span>）</span></label>
+      <label class="kernel-ack" id="kernelExtraAckWrap" style="display:none"><input type="checkbox" id="kernelExtraAckCb" onchange="updateKernelConfirmBtn()"><span id="kernelExtraAckText"></span></label>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideKernelDeleteModal()">取消</button>
         <button type="button" class="btn btn-danger" id="kernelConfirmBtn" onclick="confirmKernelDelete()" disabled>确认清理</button>
@@ -1174,6 +1175,6 @@
   <!-- ?v= 缓存戳：server.js 对静态资源发 Cache-Control: immutable(7 天)，
        改 JS 必须同时改这个戳，否则浏览器一直用旧的 main.js（表现为「新功能没反应」） -->
   <script src="motion.js?v=20261026a"></script>
-  <script src="main.js?v=20261026a"></script>
+  <script src="main.js?v=20261026b"></script>
 </body>
 </html>
