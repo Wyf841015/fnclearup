@@ -18,6 +18,7 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { request } from 'node:http';
 import { readFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -236,6 +237,71 @@ describe('内核清理：预演（dry_run）', () => {
   test('预演不给 confirm 也拒绝（预演同样要过闸门）', async () => {
     const { status } = await http('POST', '/api/kernel/delete', { versions: ['x'], dry_run: true });
     assert.equal(status, 400);
+  });
+});
+
+describe('内核清理：并发与超时（用户实际踩的两个坑）', () => {
+  // 坑 1：多选后刚打开确认弹窗（后台在预演 8 个版本），用户点确认 → 报
+  //       「已有清理任务在执行」。根因是预演也占了清理锁。
+  test('预演不占清理锁：两个预演可以同时跑', async () => {
+    const scan = await http('GET', '/api/kernel/scan');
+    const victim = scan.body.kernels.find(k => k.deletable && !k.suggest_keep);
+    if (!victim) return;
+    const body = { versions: [victim.version], confirm: 'PURGE', dry_run: true };
+    const [a, b] = await Promise.all([
+      http('POST', '/api/kernel/delete', body),
+      http('POST', '/api/kernel/delete', body),
+    ]);
+    assert.equal(a.status, 200, '第一个预演不该被拒');
+    assert.equal(b.status, 200, '第二个预演也不该被拒（预演是只读的）');
+    assert.notEqual(a.body.error, '上一个清理任务还在执行，请等它结束');
+    assert.notEqual(b.body.error, '上一个清理任务还在执行，请等它结束');
+  });
+
+  test('锁只在真删时占：代码里 409 判断必须在 !dryRun 分支内', () => {
+    const src = fs.readFileSync(ROOT + '/app/ui/api/kernel.js', 'utf8');
+    const i = src.indexOf('kernelBusy');
+    assert.ok(i > 0);
+    // 409 的守卫要紧跟在 if (!dryRun) 之后
+    const m = src.match(/if \(!dryRun\) \{\s*\n\s*if \(kernelBusy\) \{[\s\S]{0,220}?409/);
+    assert.ok(m, '409 守卫必须写在 if (!dryRun) 里面，否则预演会挡住真删');
+    // 解锁也要只在真删时做（预演没加锁就不该解锁，否则会把别人的锁清掉）
+    assert.match(src, /if \(!dryRun\) kernelBusy = false;/, '预演不该清掉别人持有的锁');
+  });
+
+  // 坑 2：多选全选时逐套 apt-get purge，每套约 29s（每次都要跑 update-grub），
+  //       8 套 ≈ 200s+，顶到 fnOS 网关 `location /app/` 的 proxy_read_timeout 300s。
+  test('全部选中内核合并成一次 apt 事务（避免撞 300s 网关超时）', () => {
+    const src = fs.readFileSync(ROOT + '/app/ui/api/kernel.js', 'utf8');
+    assert.match(src, /const allPkgs = \[\.\.\.new Set\(planOk\.flatMap/, '缺合并后的包列表');
+    assert.match(src, /'-y', 'purge', \.\.\.allPkgs/, '必须一次 purge 传全部包');
+    // 不能再有「循环里每套各调一次 purge」
+    const inLoop = /for \(const item of planOk\)[\s\S]{0,800}?'purge'/.test(src);
+    assert.equal(inLoop, false, '不能在 per-version 循环里调 purge（那会 N 次 update-grub）');
+    // hold 也要一次性全部解除，否则 apt -y 会因 held 包中止
+    assert.match(src, /unhold', \.\.\.allHolds/, 'hold 包要一次性全解除');
+  });
+
+  test('结果以「删完再扫一遍」为准，而不是只看 apt 退出码', () => {
+    const src = fs.readFileSync(ROOT + '/app/ui/api/kernel.js', 'utf8');
+    assert.match(src, /const gone = !left \|\| !left\.has_files;/, '应按文件是否还在判定');
+    assert.match(src, /if \(gone\) freed \+= item\.k\.size;/, '释放量只算真删掉的');
+  });
+
+  test('前端预演期间禁用确认按钮（不给用户点出 409 的机会）', () => {
+    const js = fs.readFileSync(ROOT + '/app/ui/main.js', 'utf8');
+    assert.match(js, /dryLoading: false/, 'kernelState 缺 dryLoading');
+    assert.match(js, /kernelState\.dryLoading = true;/, '打开弹窗时要置位');
+    assert.match(js, /\} finally \{\s*\n\s*kernelState\.dryLoading = false;/, '预演结束要复位（含异常路径）');
+    assert.match(js, /btn\.disabled = !\(ack && ack\.checked && extraOk\) \|\| kernelState\.dryLoading/,
+      '按钮禁用条件必须含 dryLoading');
+    assert.match(js, /if \(kernelState\.dryLoading\) \{ showToast\('预演还没完成/, '确认时要兜底拦一下');
+  });
+
+  test('后端会记录每次 purge 的结果（以前零日志，排查全靠猜）', () => {
+    const src = fs.readFileSync(ROOT + '/app/ui/api/kernel.js', 'utf8');
+    assert.match(src, /\[kernel\] purge \$\{allPkgs\.length\} 包/, '缺 purge 结果日志');
+    assert.match(src, /\[kernel\] apt 错误:/, 'apt 失败时要把 stderr 记下来');
   });
 });
 

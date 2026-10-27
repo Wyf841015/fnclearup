@@ -4469,7 +4469,7 @@ function init() {
 // ══════════════════════════ 内核清理 ══════════════════════════
 // 数据全部来自后端 /api/kernel/scan（root 进程读 /boot + /lib/modules + dpkg），
 // 前端只负责展示与选择。删除走 /api/kernel/delete，后端会用 apt-get purge 整组清。
-let kernelState = { data: null, selected: new Set(), dry: null };
+let kernelState = { data: null, selected: new Set(), dry: null, dryLoading: false };
 
 async function kernelScan() {
   const status = $('kernel-status'), list = $('kernel-list'), empty = $('kernel-empty');
@@ -4607,6 +4607,9 @@ async function showKernelDeleteModal() {
   const warn = $('kernelDeleteWarn'); if (warn) warn.style.display = 'none';
   const cacheCb = $('kernelCleanAptCb'); if (cacheCb) cacheCb.checked = ((d.apt_cache && d.apt_cache.size) || 0) > 0;
   const cs = $('kernelAptCacheSize'); if (cs) cs.textContent = (d.apt_cache && d.apt_cache.size_str) || '0 B';
+  // 预演期间不允许点确认：后端预演虽然不占清理锁，但此时点确认没意义
+  // （结果还没出来，也拿不到「是否需要额外确认连带删除」的结论）
+  kernelState.dryLoading = true;
   updateKernelConfirmBtn();
   $('kernelDeleteModal')?.classList.add('visible');
 
@@ -4642,6 +4645,9 @@ async function showKernelDeleteModal() {
     }
   } catch (e) {
     if (box) box.innerHTML = `<span style="color:var(--color-danger)">预演失败：${escHtml(e.message)}</span>`;
+    kernelState.dry = null;
+  } finally {
+    kernelState.dryLoading = false;
   }
   updateKernelConfirmBtn();
 }
@@ -4657,17 +4663,20 @@ function updateKernelConfirmBtn() {
   const needExtra = !!(kernelState.dry && (kernelState.dry.extras || []).length > 0);
   const extraCb = $('kernelExtraAckCb');
   const extraOk = !needExtra || !!(extraCb && extraCb.checked);
-  if (btn) btn.disabled = !(ack && ack.checked && extraOk);
+  // 预演还没结束时不允许点（也避免用户在预演期间点出「有任务正在进行」）
+  if (btn) btn.disabled = !(ack && ack.checked && extraOk) || kernelState.dryLoading;
 }
 
 async function confirmKernelDelete() {
   const picked = Array.from(kernelState.selected);
   if (picked.length === 0) { hideKernelDeleteModal(); return; }
+  if (kernelState.dryLoading) { showToast('预演还没完成，请稍等一下再点确认', 'warn'); return; }
   const btn = $('kernelConfirmBtn');
   const cleanCache = !!($('kernelCleanAptCb') && $('kernelCleanAptCb').checked);
   if (btn) { btn.disabled = true; btn.textContent = '正在清理…'; }
   const status = $('kernel-status');
-  if (status) { status.className = ''; status.textContent = '⏳ 正在执行 apt-get purge，可能需要一两分钟，请不要关闭页面…'; }
+  const est = picked.length <= 2 ? '约 30 秒' : (picked.length <= 5 ? '约 1 分钟' : '约 1~2 分钟');
+  if (status) { status.className = ''; status.textContent = `⏳ 正在执行 apt-get purge（${picked.length} 套，${est}），请不要关闭页面…`; }
   try {
     const needExtra = !!(kernelState.dry && (kernelState.dry.extras || []).length > 0);
     const extraCb = $('kernelExtraAckCb');
