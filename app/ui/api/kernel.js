@@ -53,7 +53,9 @@ async function dirSize(path) {
 
 /** dpkg 包清单：返回 [{ pkg, statusOk, statusRaw }] */
 async function dpkgList(pattern = 'linux-*') {
-  const r = await execCmd('dpkg-query', ['-W', '-f=${Package}\t${Status}\n', pattern], 30000);
+  const args = ['-W', '-f=${Package}\t${Status}\n'];
+  if (pattern) args.push(pattern);   // 不传 = 列全部包
+  const r = await execCmd('dpkg-query', args, 60000);
   const out = String(r.stdout || '');
   const rows = [];
   for (const line of out.split('\n')) {
@@ -76,6 +78,23 @@ async function dpkgList(pattern = 'linux-*') {
     });
   }
   return rows;
+}
+
+/**
+ * APT 下载缓存 = /var/cache/apt/archives 下 *.deb 的总大小。
+ *
+ * 为什么不 du 整个目录：目录本身的 inode 块约 12K + partial/ 4K 会被算进去，
+ * 于是 apt-get clean 之后界面永远还挂着 16.0 KB，用户看到的就是
+ * 「点了清理，还是显示 16.0 KB」。真正能释放的只有 .deb 文件。
+ */
+function aptCacheStats() {
+  const dir = '/var/cache/apt/archives';
+  const debs = listDir(dir).filter(f => /\.deb$/.test(f));
+  let size = 0;
+  for (const f of debs) {
+    try { size += statSync(join(dir, f)).size; } catch { /* 正好被 apt 挪走 */ }
+  }
+  return { size, files: debs.length };
 }
 
 /** 当前挂起的包（apt-mark showhold） */
@@ -340,11 +359,19 @@ async function collectKernels() {
 
   // 5) APT 下载缓存
   const cacheDir = '/var/cache/apt/archives';
-  const cacheSize = await dirSize(cacheDir);
-  const cacheFiles = listDir(cacheDir).filter(f => /\.deb$/.test(f)).length;
+  const cs = aptCacheStats();
+  const cacheFiles = cs.files;
+  const cacheSize = cs.size;
+  const cacheDirSize = await dirSize(cacheDir);   // 目录开销，仅供参考，不计入可清理量
 
   // 6) rc 残留包（已删但留着配置）
-  const rcPackages = pkgs.filter(r => r.rc).map(r => r.pkg);
+  // 注意：不只是 linux-* —— 实测本机还有 fuse / openzfs-* / wsdd2 三个。
+  // 单独再查一遍全部包，这些也属于「可以清掉的垃圾」。
+  let rcPackages = pkgs.filter(r => r.rc).map(r => r.pkg);
+  try {
+    const all = await dpkgList(null);
+    rcPackages = all.filter(r => r.rc).map(r => r.pkg);
+  } catch { /* 查不到就退回只看 linux-* 的结果 */ }
 
   const reclaimable = kernels.filter(k => k.deletable && !k.suggest_keep).reduce((s, k) => s + k.size, 0);
 
@@ -357,7 +384,7 @@ async function collectKernels() {
     reclaimable_str: formatBytes(reclaimable),
     total_size: kernels.reduce((s, k) => s + k.size, 0),
     total_size_str: formatBytes(kernels.reduce((s, k) => s + k.size, 0)),
-    apt_cache: { dir: cacheDir, size: cacheSize, size_str: formatBytes(cacheSize), files: cacheFiles },
+    apt_cache: { dir: cacheDir, size: cacheSize, size_str: formatBytes(cacheSize), files: cacheFiles, dir_size: cacheDirSize, dir_size_str: formatBytes(cacheDirSize) },
     rc_packages: rcPackages,
     grub,
   };
@@ -543,10 +570,14 @@ export async function handleKernelDelete(req, res) {
     // 顺带清 APT 下载缓存（可选）
     let cache_cleaned = 0;
     if (data.clean_apt_cache) {
-      const before = (await collectKernels()).apt_cache.size;
+      const before = aptCacheStats();
       const r = await execCmd('apt-get', ['clean'], 120000);
-      if (r.code === 0) cache_cleaned = before;
-      else console.log('[kernel] apt-get clean 失败: ' + String(r.stderr || '').slice(-300));
+      const after = aptCacheStats();
+      // 报「真实释放了多少」= 前 - 后，而不是清理前的大小。
+      // 以前直接用 before，即使一个字节都没删掉也会说"已清理 16.0 KB"。
+      cache_cleaned = Math.max(0, before.size - after.size);
+      console.log(`[kernel] apt-get clean → code=${r.code} .deb ${before.files}→${after.files} 释放 ${cache_cleaned} B`);
+      if (r.code !== 0) console.log('[kernel] apt-get clean 失败: ' + String(r.stderr || '').slice(-300));
     }
 
     // ── 删完复核（也是给每个版本下结论的唯一依据）
@@ -604,5 +635,85 @@ export async function handleKernelDelete(req, res) {
     sendJSON(res, 500, { success: false, error: e.message });
   } finally {
     if (!dryRun) kernelBusy = false;
+  }
+}
+
+// POST /api/kernel/purge-rc
+//
+// body: { confirm: 'PURGE', packages?: string[] }
+//
+// 「残留配置包」= dpkg 状态 rc（deinstall ok config-files）：包本体早就删了，
+// 只剩 /etc 下几份配置。本机实测有 7 个，其中 4 个是老内核的
+// linux-image-6.1.0-*（那是 x86 时代的号，跟现在跑的 trim 内核无关），
+// 另外 3 个是 fuse / openzfs-zfs-modules-6.12.18-trim / wsdd2。
+//
+// 安全约束：
+//   · 只对**调用这一刻真的是 rc 状态**的包下手（客户端传的列表只用来取交集，
+//     不信任它，绝不解析客户端给的包名当命令参数）
+//   · confirm 必须是 PURGE
+//   · 与内核清理共用同一把 busy 锁
+//   · dpkg --purge 走 runUnkillable，超时只标记不 SIGKILL（不能把 dpkg 数据库搞坏）
+//   · 删完再查一遍 rc，用实测结果报成功/失败
+export async function handleKernelPurgeRc(req, res) {
+  const data = await parseBody(req);
+  if (String(data.confirm || '') !== 'PURGE') {
+    return sendJSON(res, 400, { success: false, error: '缺少确认标记（confirm 必须是 PURGE）' });
+  }
+  if (kernelBusy) {
+    return sendJSON(res, 409, { success: false, error: '上一个清理任务还在执行，请等它结束' });
+  }
+  kernelBusy = true;
+  try {
+    const all = await dpkgList(null);
+    const rcNow = all.filter(r => r.rc).map(r => r.pkg);
+    if (rcNow.length === 0) {
+      return sendJSON(res, 200, { success: true, purged: [], failed: 0, remaining: [], note: '没有残留配置包' });
+    }
+    // 客户端指定就取交集；不指定就全清
+    const asked = Array.isArray(data.packages) ? data.packages.filter(x => typeof x === 'string' && x) : [];
+    const want = asked.length > 0 ? rcNow.filter(p => asked.includes(p)) : rcNow.slice();
+    if (want.length === 0) {
+      return sendJSON(res, 400, { success: false, error: '指定的包都不是「残留配置」状态（rc），已拒绝' });
+    }
+    if (want.length > 200) {
+      return sendJSON(res, 400, { success: false, error: '一次最多清理 200 个，实际 ' + want.length });
+    }
+
+    const busy = aptBusyProcesses();
+    if (busy.length > 0) {
+      return sendJSON(res, 200, {
+        success: false,
+        error: '系统里已经有 apt/dpkg 在运行（' + busy.join(', ') + '），等它结束再试',
+      });
+    }
+
+    const r = await runUnkillable('dpkg', ['--purge', ...want], 300000);
+    const err = r.code === 0 ? '' : String(r.stderr || r.stdout || '').trim().slice(-400);
+    console.log(`[kernel] dpkg --purge ${want.length} 个 rc 包 → code=${r.code} ms=${r.ms}${r.timedOut ? ' (超时但未杀进程)' : ''}`);
+    if (r.code !== 0) console.log('[kernel] dpkg 错误: ' + err.replace(/\s*\n\s*/g, ' | ').slice(0, 400));
+
+    // 删完复核：还留在 rc 状态的就是没清掉
+    let stillRc = [];
+    try {
+      const after = await dpkgList(null);
+      stillRc = after.filter(x => x.rc).map(x => x.pkg);
+    } catch { /* 复核失败按全成功算，下面用 purged 反映 */ }
+    const purged = want.filter(p => !stillRc.includes(p));
+    const failed = want.filter(p => stillRc.includes(p));
+
+    sendJSON(res, 200, {
+      success: purged.length > 0,
+      purged,
+      failed_packages: failed,
+      purged_count: purged.length,
+      failed: failed.length,
+      remaining: stillRc,
+      ms: r.ms,
+      error: failed.length > 0 ? (err || '部分包仍在 rc 状态') : '',
+    });
+  } catch (e) {
+    sendJSON(res, 500, { success: false, error: e.message });
+  } finally {
+    kernelBusy = false;
   }
 }
