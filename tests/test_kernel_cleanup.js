@@ -339,19 +339,36 @@ describe('APT 缓存与残留配置包（用户报「点了没变化」）', () 
   });
 
   test('purge-rc 只认 rc 状态的包（防任意包名注入）', async () => {
+    // 注意：不能假设本机一定有 rc 包。用户点「清理残留配置包」后可能一个都不剩，
+    // 那时接口会走「没有残留配置包」分支（200 + note），这是正常的，不是漏洞。
+    const scan = await http('GET', '/api/kernel/scan');
+    const rcCount = (scan.body.rc_packages || []).length;
     const { status, body } = await http('POST', '/api/kernel/purge-rc', {
       confirm: 'PURGE', packages: ['bash', 'coreutils', 'systemd'],
     });
-    assert.equal(status, 400);
-    assert.match(body.error, /残留配置/);
+    if (rcCount === 0) {
+      assert.equal(status, 200);
+      assert.match(String(body.note || ''), /没有残留配置包/);
+      assert.equal((body.purged || []).length, 0, '没 rc 包时不能删任何东西');
+    } else {
+      assert.equal(status, 400, '有 rc 包时传非 rc 包必须拒绝');
+      assert.match(body.error, /残留配置/);
+    }
   });
 
-  test('purge-rc 传不存在的包也拒绝，不会瞎 purge', async () => {
+  test('purge-rc 传不存在的包也不会瞎 purge', async () => {
+    const scan = await http('GET', '/api/kernel/scan');
+    const rcCount = (scan.body.rc_packages || []).length;
     const { status, body } = await http('POST', '/api/kernel/purge-rc', {
       confirm: 'PURGE', packages: ['fnclearup-not-exist-xxx'],
     });
-    assert.equal(status, 400);
-    assert.match(body.error, /残留配置/);
+    if (rcCount === 0) {
+      assert.equal(status, 200);
+      assert.equal((body.purged || []).length, 0);
+    } else {
+      assert.equal(status, 400);
+      assert.match(body.error, /残留配置/);
+    }
   });
 
   test('前端：0 个 .deb 时按钮点了只提示，不发请求；rc 有独立清理按钮', () => {
