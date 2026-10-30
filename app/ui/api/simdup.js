@@ -13,6 +13,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { join, extname } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { sendJSON, parseBody, isSafePath, safeReadJSON } from '../lib/util.js';
+import { getPkgVar } from '../lib/pkgvar.js';
 
 let SIM_STATE_DIR = '';
 let SIM_SCAN_SCRIPT = '';
@@ -130,7 +131,7 @@ const VIDEO_EXTS = new Set([
 ]);
 
 function thumbCacheDir() {
-  const base = process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup';
+  const base = getPkgVar();
   const d = join(base, 'data', 'thumbs');
   try { mkdirSync(d, { recursive: true }); } catch (e) { /* 目录不可写则不缓存 */ }
   return d;

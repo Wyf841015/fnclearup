@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { existsSync, statSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { SAFE_PREFIXES } from './config.js';
+import { getPkgVar } from './pkgvar.js';
 
 export function formatBytes(b) {
   if (b === 0) return '0 B';
@@ -84,9 +85,12 @@ const FNOS_SYSTEM_DIRS = new Set([
   '@appmeta', '@appshare', '@apptemp', '@sysappmeta',
 ]);
 
-/** 应用自身数据目录(TRM_PKGVAR) —— 哈希缓存/manifest/导出都在这里, 豁免保护 */
+/** 应用自身数据目录(PKGVAR) —— 哈希缓存/manifest/导出都在这里, 豁免保护。
+ *  取值顺序见 lib/pkgvar.js：框架注入的 TRM_PKGVAR → 从安装路径反推 → 历史字面量兜底。
+ *  不能只读 process.env.TRM_PKGVAR：手动启动（调试 / 重启脚本）时没有该变量，
+ *  旧的写死兜底会让同一台机器出现「框架启用 @appdata、手动启用写死路径」两套数据目录。 */
 function pkgvarRoot() {
-  return resolve(process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup');
+  return resolve(getPkgVar());
 }
 
 /**
@@ -159,7 +163,7 @@ export function getManifestDir() {
   // Production: TRM_PKGVAR (fnOS standard; e.g. /vol3/@appcenter/fnclearup/) →
   // <PKGVAR>/data/manifests. This puts them alongside info.log and app.pid
   // (also under <PKGVAR>).
-  const pkgvar = process.env.TRM_PKGVAR;
+  const pkgvar = getPkgVar();
   if (pkgvar && pkgvar !== '/' && pkgvar.length > 1) {
     return join(pkgvar, 'data', 'manifests');
   }

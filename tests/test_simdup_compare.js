@@ -53,12 +53,14 @@ test('缩略图 API: 磁盘缓存键含 mtime+size, 内容变化即失效', () =
   assert.ok(/join\(thumbCacheDir\(\), key \+ '\.jpg'\)/.test(body), '缓存文件名未由 key 派生');
   assert.ok(/if \(existsSync\(out\)\)/.test(body), '未优先读缓存');
   // 缓存必须落在应用数据目录, 不能污染用户卷。
-  // 注意: thumbCacheDir() 定义在 buildThumb 之前, 必须单独切片,
-  // 且 TRM_PKGVAR 与 join(base,'data','thumbs') 分处两行, 正则要能跨行。
+  // 注意: thumbCacheDir() 定义在 buildThumb 之前, 必须单独切片。
+  // PKGVAR 统一由 lib/pkgvar.js 解析（env → 安装路径反推 → 兜底）,
+  // 所以这里断言「走 getPkgVar()」而不是直接读 process.env。
   const dirBody = apiSrc.slice(apiSrc.indexOf('function thumbCacheDir'),
     apiSrc.indexOf('/** 生成(或复用)缩略图'));
-  assert.ok(/process\.env\.TRM_PKGVAR/.test(dirBody), '缓存根目录未取自 TRM_PKGVAR');
-  assert.ok(/join\(base, 'data', 'thumbs'\)/.test(dirBody), "缓存目录应为 <TRM_PKGVAR>/data/thumbs");
+  assert.ok(/getPkgVar\(\)/.test(dirBody), '缓存根目录未取自 getPkgVar()（应用数据目录）');
+  assert.ok(!/process\.env\.TRM_PKGVAR\s*\|\|/.test(dirBody), '缓存根目录不得再写死兜底路径');
+  assert.ok(/join\(base, 'data', 'thumbs'\)/.test(dirBody), "缓存目录应为 <PKGVAR>/data/thumbs");
   assert.ok(!/join\('\/vol[123]'/.test(dirBody), '缓存目录不得直接写用户卷路径');
 });
 

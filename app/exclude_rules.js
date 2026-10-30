@@ -29,6 +29,7 @@
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
+import { getPkgVar } from './ui/lib/pkgvar.js';
 
 const RULE_FILE = 'scan_exclude.json';
 
@@ -61,7 +62,7 @@ export const DEFAULT_PATTERNS = [
 
 function rulesPath(stateDir) {
   if (stateDir) return join(stateDir, RULE_FILE);
-  const base = process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup';
+  const base = getPkgVar();
   return join(base, 'data', RULE_FILE);
 }
 
