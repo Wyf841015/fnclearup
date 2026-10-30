@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { sendJSON, parseBody } from '../lib/util.js';
+import { getPkgVar } from '../lib/pkgvar.js';
 
 // 默认值：风险提示「每次都弹」是安全默认，别偷偷帮用户关掉
 const DEFAULTS = {
@@ -32,8 +33,9 @@ const ALLOWED = {
 };
 
 function prefsFile() {
-  const base = process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup';
-  return join(base, 'data', 'ui-prefs.json');
+  // PKGVAR 解析见 lib/pkgvar.js（env → 安装路径反推 → 兜底），
+  // 避免「框架启动 / 手动启动」读到两份不同的 ui-prefs.json
+  return join(getPkgVar(), 'data', 'ui-prefs.json');
 }
 
 /** 读偏好；文件不存在/损坏/权限不足 一律回默认值，不抛错。 */

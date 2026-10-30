@@ -5,6 +5,7 @@ import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, isDeletablePath, partitionDeletable, protectedReason, parseQuery, safeReadJSON } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
+import { getPkgVar } from '../lib/pkgvar.js';
 import { loadPatterns, DEFAULT_PATTERNS } from '../../exclude_rules.js';
 import { getHashPool } from '../../dup_hash_pool.js';
 
@@ -518,7 +519,7 @@ export async function handleDupResume(req, res) {
 // POST /api/dup/exclude-rules { patterns: string[] } → 保存
 // 规则文件落在 <TRM_PKGVAR>/data/scan_exclude.json, 扫描子进程通过 TRM_PKGVAR 自读。
 function rulesFile() {
-  const base = process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup';
+  const base = getPkgVar();
   return join(base, 'data', 'scan_exclude.json');
 }
 

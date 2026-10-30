@@ -5,6 +5,7 @@ import { gzipSync, brotliCompressSync } from 'node:zlib';
 import { URL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { MIME, VERSION, VOL_GLOBS } from './lib/config.js';
+import { getPkgVar } from './lib/pkgvar.js';
 import { sendJSON, parseBody, isSafePath, CORS_ORIGINS, execCmd } from './lib/util.js';
 import { handleScan, handleDelete } from './api/app.js';
 import { handleMounts, handleVol02 } from './api/disk.js';
@@ -30,8 +31,11 @@ import { handleListUsers, handleDeleteUsers } from './api/users.js';
 // ── Paths ──
 const UI_DIR = dirname(fileURLToPath(import.meta.url));
 const TARGET_DIR = dirname(UI_DIR);
-const PKGVAR = process.env.TRM_PKGVAR || null;
-const DATA_DIR = PKGVAR ? join(PKGVAR, 'data') : join(TARGET_DIR, 'data');
+// PKGVAR 统一解析（env → 安装路径反推 → 兜底）。以前没有 env 时会退回
+// TARGET_DIR/data（即 <vol>/@appcenter/fnclearup/data），而 prefs/dup/exclude 走的是
+// 写死的 @appdata —— 手动启动就出现「计划任务在一个目录、排除规则在另一个目录」。
+const PKGVAR = getPkgVar();
+const DATA_DIR = join(PKGVAR, 'data');
 const PORT = parseInt(process.env.PORT || '47938', 10);
 const SOCK_PATH = join(TARGET_DIR, 'fnclearup.sock');
 const DUP_STATE_DIR = join(DATA_DIR, 'dup');

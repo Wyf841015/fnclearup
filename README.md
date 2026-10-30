@@ -4,6 +4,28 @@
 
 ![清理精灵 FnClearup](ICON_256.png)
 
+## v0.15.1 更新
+
+- 修复：应用数据目录（PKGVAR）以前写成 `process.env.TRM_PKGVAR || '/vol3/@appdata/fnclearup'`。
+  fnOS 框架启动会注入 TRM_PKGVAR（值跟着**安装卷**走），但手动 `node ui/server.js`
+  （调试、重启脚本、守护脚本）时没有该变量，于是掉回写死的 `/vol3` ——
+  同一台机器上就出现两套数据目录：界面开关（`ui-prefs.json`）在一处、
+  计划任务（`schedule.json`）和重复/空目录扫描状态在另一处，
+  表现为「开关设了又变回去 / 计划任务不见了 / 哈希缓存像丢了」。
+- 现在统一由 `app/ui/lib/pkgvar.js` 解析，顺序：框架注入的 `TRM_PKGVAR` →
+  从本文件真实路径反推（`<vol>/@appcenter/<app>/…` → `<vol>/@appdata/<app>`，
+  `/var/apps/<app>/target` 软链 realpath 后同样成立）→ 才用历史字面量兜底。
+  应用名从路径里取，不写死，换安装目录名也算得对。
+- 覆盖到的 6 个落盘位置：`util.pkgvarRoot()`、`getManifestDir()`、
+  `api/prefs.js`、`api/dup.js`、`api/simdup.js`、`exclude_rules.js`，
+  以及 `ui/server.js` 的 `PKGVAR / DATA_DIR`（原来无 env 时退回
+  `@appcenter/fnclearup/data`，与 prefs 等路径不一致）。
+- 升级说明：手动启动过的机器，`<vol>/@appcenter/fnclearup/data/` 下可能残留
+  `schedule.json`、`dup/`、`empty_dir/`、`schedule_reports/`，
+  这些已在本机迁移到 `<vol>/@appdata/fnclearup/data/`，原目录内容未删除。
+- 新增测试 `tests/test_pkgvar.js`（6 项）：路径反推、软链/非安装目录返回 null、
+  env 优先（含 trim 与空白 env）、无 env 时兜底、manifest 与 data 目录同源。
+
 ## v0.15.0 更新
 
 本次是**商店版本**（上一版 0.13.1）。中间 0.14.x 的改动全部收进这一版，下面是完整清单。
