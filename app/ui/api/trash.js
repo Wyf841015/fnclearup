@@ -6,13 +6,14 @@ import {
 } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { getManifestDir } from '../lib/util.js';
+import { moveToExtTrash, EXT_TRASH_DIR, listExternalVolumes } from '../lib/ext_trash.js';
 
 // fnOS 真实卷 + 网盘挂载根（vol1-10 + vol01-09 + vol02 fuse mount）
 const SAFE_VOL_PREFIXES = [
   '/vol1', '/vol2', '/vol3', '/vol4', '/vol5',
   '/vol6', '/vol7', '/vol8', '/vol9', '/vol10',
   '/vol01', '/vol02', '/vol03', '/vol04', '/vol05',
-  '/vol06', '/vol07', '/vol08', '/vol09',
+  '/vol06', '/vol07', '/vol08', '/vol09', '/vol00',
 ];
 const LOCAL_TRASH = '.@#local';
 const TRASH_SUBDIR = 'trash';
@@ -23,6 +24,10 @@ const TRASH_SUBDIR = 'trash';
  */
 export function isTrashPath(p) {
   if (typeof p !== 'string' || !p.startsWith('/vol')) return false;
+  // 外接盘（/vol00 /vol01 …）的同盘回收站: /vol0N[/<挂载名>]/_fnclearup_trash[/...]
+  if (/^\/vol0\d(\/|$)/.test(p) && p.split('/').includes(EXT_TRASH_DIR)) {
+    return !p.includes('..');
+  }
   const m = p.match(/^(\/vol\d+)\/(\d+)(\/.@#local\/trash)(\/.*)?$/);
   if (!m) return false;
   if (!SAFE_VOL_PREFIXES.includes(m[1])) return false;
@@ -47,6 +52,29 @@ export function getAllTrashDirs() {
       if (!existsSync(trashDir)) continue;
       out.push({ path: trashDir, vol, uid });
     }
+  }
+  // 外接盘（/vol00 /vol01 …）：回收站在 <挂载根>/_fnclearup_trash，
+  // 而挂载点可能比卷根更深（如 /vol00/USB_NAME），所以往下找两层。
+  for (const vol of listExternalVolumes()) {
+    for (const tp of findExtTrashRoots(vol)) {
+      out.push({ path: tp, vol, uid: EXT_TRASH_DIR });
+    }
+  }
+  return out;
+}
+
+/** 在 /vol0N 下最多两层找 _fnclearup_trash（外接盘挂载点可能不在卷根） */
+function findExtTrashRoots(dir, depth = 0) {
+  const out = [];
+  if (!existsSync(dir)) return out;
+  const self = join(dir, EXT_TRASH_DIR);
+  if (existsSync(self)) out.push(self);
+  if (depth >= 2) return out;
+  let entries = [];
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name === EXT_TRASH_DIR) continue;
+    out.push(...findExtTrashRoots(join(dir, e.name), depth + 1));
   }
   return out;
 }
@@ -152,7 +180,9 @@ export function scanTrash() {
   // 排序：按 vol 字母序，vol 内按 uid 数字序
   trashList.sort((a, b) => {
     if (a.vol !== b.vol) return a.vol.localeCompare(b.vol);
-    return Number(a.uid) - Number(b.uid);
+    const na = Number(a.uid), nb = Number(b.uid);
+    if (Number.isNaN(na) || Number.isNaN(nb)) return String(a.uid).localeCompare(String(b.uid));
+    return na - nb;
   });
 
   return {
@@ -287,6 +317,14 @@ export function cleanTrash(ageDays, withManifest = true) {
 // empty_dir.js (handleEmptyDirDelete). Keeping a single implementation
 // ensures all callers share the same /vol02 fallback semantics.
 export function moveToTrash(p) {
+  // 外接盘（/vol00 /vol01 …，多为 exFAT/NTFS）没有 .@#local/trash，
+  // 走同盘 _fnclearup_trash/ 回收站；写不进去（只读 NTFS 等）返回 false 交由调用方报错。
+  try {
+    if (moveToExtTrash(p)) return true;
+  } catch (e) {
+    console.error('[trash] 外接盘回收站失败', p, e && e.message);
+    return false;
+  }
   // /volN/UID/... or /vol02/<mount-id>/... — UID/mount-id may contain digits,
   // letters, dashes (e.g. /vol02/1000-1-c96f264a).
   const m = p.match(/^(\/(?:mnt\/)?vol\d+\/[\w-]+)\/(.+)/);

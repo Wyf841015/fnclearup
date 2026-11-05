@@ -5,6 +5,7 @@ import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, isDeletablePath, partitionDeletable, protectedReason, parseQuery, safeReadJSON } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
+import { moveToExtTrash } from '../lib/ext_trash.js';
 import { getPkgVar } from '../lib/pkgvar.js';
 import { loadPatterns, DEFAULT_PATTERNS } from '../../exclude_rules.js';
 import { getHashPool } from '../../dup_hash_pool.js';
@@ -351,7 +352,11 @@ export async function handleDupDelete(req, res) {
         linked.push(fp);
       } else {  // trash
         const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/(\d+)\/(.+)/);
-        if (m) {
+        // 外接盘（/vol00 /vol01 …，多为 exFAT/NTFS）：没有 .@#local/trash，
+        // 走同盘 _fnclearup_trash/ 回收站，可恢复且不跨设备复制。
+        const extDest = moveToExtTrash(fp);
+        if (extDest) { deleted++; }
+        else if (m) {
           const trashDir = `/${m[1]}/${m[2]}/.@#local/trash`;
           const dest = join(trashDir, m[3]);
           mkdirSync(dirname(dest), { recursive: true });

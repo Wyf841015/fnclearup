@@ -22,7 +22,7 @@
 import { statSync, statfsSync, readdirSync, existsSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
 import { sendJSON, formatBytes, parseBody, isSafePath } from '../lib/util.js';
-import { VOL_GLOBS } from '../lib/config.js';
+import { VOL_GLOBS, listScanRoots } from '../lib/config.js';
 
 const DEFAULT_MAX_DEPTH = 3;
 const YIELD_INTERVAL = 200;
@@ -58,7 +58,8 @@ export function cancelDiskAnalysisJob() { if (activeJob) activeJob.stopped = tru
 // Resolve a /vol* root or validated sub-path into one root directory.
 function resolveRoot(path) {
   if (path === '/vol*' || path === '/vol*/' || !path || path === '/') {
-    return { roots: VOL_GLOBS.filter(v => existsSync(v)), isSet: true };
+    // 默认根含外接设备（/vol00 等）；网盘不在 listScanRoots 里（fuse 逐文件 stat 太慢）
+    return { roots: listScanRoots(), isSet: true };
   }
   if (isSafePath(path) && existsSync(path)) return { roots: [path], isSet: false };
   return null;
@@ -72,7 +73,8 @@ function resolveRoot(path) {
 // st_blocks stat() reports file bytes which undercounts (sparse) — statfs
 // f_bavail/f_blocks is the authoritative mount usage, so we use that.
 export async function handleDiskVolumes(req, res) {
-  const roots = VOL_GLOBS.filter(v => existsSync(v));
+  const roots = [...VOL_GLOBS.filter(v => existsSync(v)),
+                     ...listScanRoots().filter(v => !VOL_GLOBS.includes(v))];
   const volumes = [];
 
   for (const vol of roots) {

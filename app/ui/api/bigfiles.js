@@ -21,7 +21,7 @@ import { existsSync, statSync, readdirSync, unlinkSync, rmSync, writeFileSync } 
 import { join, basename, resolve } from 'node:path';
 import { sendJSON, formatBytes, isSafePath, partitionDeletable, parseBody, isProtectedPath } from '../lib/util.js';
 import { moveToTrash } from './trash.js';
-import { VOL_GLOBS, SAFE_PREFIXES } from '../lib/config.js';
+import { VOL_GLOBS, SAFE_PREFIXES, listScanRoots } from '../lib/config.js';
 
 const DEFAULT_DEPTH = 6;
 const DEFAULT_TOPN = 100;
@@ -108,8 +108,9 @@ export async function handleBigFilesScan(req, res) {
     if (path === '/vol*' || path === '/vol*/') {
       // By default also include /vol2 (the most common media mount on fnOS)
       // — skip /vol02 (netdisk fuse) which can be huge and slow.
-      for (const r of VOL_GLOBS.filter(x => existsSync(x) && !x.startsWith('/vol0'))) {
-        if (r !== '/vol02' && !roots.includes(r)) roots.push(r);
+      // listScanRoots() = 内置卷 + 外接设备（/vol00 等），已排除网盘 /vol02
+      for (const r of listScanRoots()) {
+        if (!roots.includes(r)) roots.push(r);
       }
       if (extraRoots.length) {
         for (const r of extraRoots.filter(x => existsSync(x))) {
@@ -128,7 +129,9 @@ export async function handleBigFilesScan(req, res) {
       // 这里改成"必须是某个卷的前缀", 且先 resolve 消掉 .. 与 // 再判定 ——
       // 直接 startsWith 会被 '/vol3/../etc' 绕过(它确实以 '/vol3/' 开头)。
       const resolved = resolve(path);
-      const inSomeVol = VOL_GLOBS.some(v => resolved === v || resolved.startsWith(v + '/'));
+      // 允许内置卷、网盘、外接设备（/vol0N）下的任意子目录
+      const inSomeVol = VOL_GLOBS.some(v => resolved === v || resolved.startsWith(v + '/'))
+        || /^\/vol0\d(\/|$)/.test(resolved);
       if (!inSomeVol && !extraRoots.includes(resolved)) {
         sendJSON(res, 403, { error: `path must be under /vol*: ${resolved}` });
         return;

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { existsSync, statSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { SAFE_PREFIXES } from './config.js';
+import { EXT_TRASH_DIR } from './ext_trash.js';
 import { getPkgVar } from './pkgvar.js';
 
 export function formatBytes(b) {
@@ -60,6 +61,10 @@ export function isSafePath(p) {
   const n = resolve(p);
   // Standard whitelist: /vol* paths (allow the dir itself like /vol2 or any subdir like /vol2/foo)
   if ([...SAFE_PREFIXES].some(pre => n === pre.slice(0, -1) || n.startsWith(pre))) return true;
+  // 外接存储：/vol00 /vol01 /vol03 …（fnOS 把 U 盘/移动硬盘挂到两位零前缀的 /vol0N）。
+  // 这里按前缀放行而不是写死常量：插拔随时发生，写死会导致插上后必须重启应用才认。
+  // /vol02 是网盘，本来就在 SAFE_PREFIXES 里，这里不额外特殊处理。
+  if (/^\/vol0\d(\/|$)/.test(n)) return true;
   // Test fixture allowlist: when TRM_FNCLEARUP_TEST=1, allow /tmp/fnclearup_test paths
   if (process.env.TRM_FNCLEARUP_TEST === '1' && (n === '/tmp/fnclearup_test' || n.startsWith('/tmp/fnclearup_test/'))) return true;
   return false;
@@ -120,6 +125,9 @@ export function protectedReason(p, opts = {}) {
     }
     if (seg.startsWith('.@#')) {
       return `回收站目录受保护（${seg}）：直接删除将绕过回收站，无法二次恢复`;
+    }
+    if (seg === EXT_TRASH_DIR) {
+      return `外接盘回收站受保护（${EXT_TRASH_DIR}）：请在「回收站」页统一清理，避免绕过二次恢复`;
     }
   }
   return null;

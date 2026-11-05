@@ -2,6 +2,7 @@ import { readdirSync, lstatSync, rmSync, existsSync, mkdirSync, renameSync, cpSy
 import { join, basename, dirname, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { sendJSON, isSafePath, partitionDeletable, parseQuery } from '../lib/util.js';
+import { moveToExtTrash } from '../lib/ext_trash.js';
 
 export const emptyDirJobs = new Map();
 let EMPTY_STATE_DIR = '';
@@ -302,7 +303,10 @@ export async function handleEmptyDirDelete(req, res) {
         rmSync(fp, { recursive: true, force: true });
       } else {
         const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/(\d+)\/(.+)/);
-        if (m) {
+        // 外接盘（/vol00 /vol01 …）：没有 .@#local/trash，走同盘 _fnclearup_trash/
+        const extDest = moveToExtTrash(fp);
+        if (extDest) { deleted++; }
+        else if (m) {
           const trashDir = `/${m[1]}/${m[2]}/.@#local/trash`;
           const dest = join(trashDir, m[3]);
           mkdirSync(dirname(dest), { recursive: true });

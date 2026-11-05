@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
 import { URL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { MIME, VERSION, VOL_GLOBS } from './lib/config.js';
+import { MIME, VERSION, VOL_GLOBS, listBrowseRoots } from './lib/config.js';
 import { getPkgVar } from './lib/pkgvar.js';
 import { sendJSON, parseBody, isSafePath, CORS_ORIGINS, execCmd } from './lib/util.js';
 import { handleScan, handleDelete } from './api/app.js';
@@ -65,10 +65,12 @@ function handleBrowse(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const dirPath = url.searchParams.get('path') || '/';
   if (dirPath === '/') {
-    // Show only safe volumes at root instead of exposing system directories
-    const entries = VOL_GLOBS.filter(v => existsSync(v)).map(v => {
-      const st = statSync(v);
-      return { name: v.slice(1), path: v, type: 'dir', isDirectory: true, size: st.size, mtime: st.mtimeMs };
+    // Show only safe volumes at root instead of exposing system directories.
+    // 外接设备（/vol00、/vol01 …）由 listBrowseRoots() 动态列出：插上即出现，不用重启。
+    const entries = listBrowseRoots().map(r => {
+      let size = 0, mtime = 0;
+      try { const st = statSync(r.path); size = st.size; mtime = st.mtimeMs; } catch { /* ignore */ }
+      return { name: r.name, path: r.path, label: r.label, kind: r.kind, type: 'dir', isDirectory: true, size, mtime };
     });
     sendJSON(res, 200, { success: true, path: '/', entries, parent: null });
     return;

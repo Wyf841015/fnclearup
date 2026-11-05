@@ -20,6 +20,7 @@ import {
 } from 'node:fs';
 import { join, basename, dirname, extname } from 'node:path';
 import { sendJSON, partitionDeletable, parseBody } from '../lib/util.js';
+import { moveToExtTrash } from '../lib/ext_trash.js';
 
 /** 把 /volN/UID/rest 映射到该卷回收站下的目标路径; 非 /volN/UID/ 形状返回 null */
 function trashTarget(fp) {
@@ -65,6 +66,11 @@ function deleteOne(fp, mode) {
   }
 
   // trash 模式
+  // 外接盘（U 盘 / 移动硬盘，/vol00 /vol01 …）没有 .@#local/trash，
+  // 走同盘 _fnclearup_trash/ 回收站：可恢复，且不跨设备复制。
+  const extDest = moveToExtTrash(fp);
+  if (extDest) return 'deleted';
+
   const dest = trashTarget(fp);
   if (!dest) {
     throw new Error('路径格式不支持回收站: ' + fp + ' (需 /volN/UID/... 格式)');
