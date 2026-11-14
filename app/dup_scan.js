@@ -19,6 +19,25 @@ const POLL_MS = 1000;
 // 本机双核 + 机械盘 RAID1, 固定 4 既超订 CPU 又造成寻道竞争。
 let WORKER_COUNT = 4;      // main() 内按 storage_profile 覆盖
 const PARTIAL_BYTES = 4096;   // 仅作小文件快速路径的参考值, 实际值见 dup_hash_worker.js
+
+// ── P0-2: 快照路径识别 ──
+// btrfs 快照（含 fnOS 的自动快照）与主卷共享同一批 extent，快照里的"重复文件"
+// 删除后并不释放空间。把它们算进"可释放"会让用户删完发现 df 毫无变化。
+// 只做路径判断，不依赖 btrfs 命令（无需 root，任何文件系统都安全）。
+const SNAPSHOT_MARKERS = [
+  '/.snapshots/', '/@snapshots/', '/.snapshot/',
+  '/@snapshot/', '/snapshots/', '/__snapshot__/',
+  '/.@#local/snapshot/', '/.recycle_snapshots/',
+];
+function isSnapshotPath(p) {
+  const s = '/' + String(p || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  const lower = s.toLowerCase();
+  for (const m of SNAPSHOT_MARKERS) {
+    if (lower.includes(m)) return true;
+  }
+  return false;
+}
+
 const HASH_CACHE_FILE = 'dup_hash_cache.json';   // key: path → {size, mtimeMs, hash, ext, id3}
 
 // ── Hash cache (persistent across runs, mirrors jdupes -y/--hash-db) ──
@@ -143,7 +162,15 @@ async function main() {
           let st;
           try { st = statSync(fp); } catch { continue; }
           if (minSize > 0 && st.size < minSize) continue;   // min-size filter
-          allFiles.push({ path: fp, size: st.size, mtimeMs: st.mtimeMs });
+          // P0-1/P0-2: 采集 nlink/ino/dev 与"是否位于快照内"。
+          //  - (dev,ino) 相同 = 同一 inode 的多个硬链接，删其中一个不释放任何空间
+          //  - nlink > 1     = 还有别的硬链接指向同一数据块，删它同样不释放空间
+          //  - 快照副本      = btrfs 快照与主卷共享 extent，报"可释放"是假账
+          allFiles.push({
+            path: fp, size: st.size, mtimeMs: st.mtimeMs,
+            nlink: st.nlink || 1, ino: st.ino, dev: st.dev,
+            snapshot: isSnapshotPath(fp),
+          });
           state.progress.total = allFiles.length;
           state.progress.currentFile = e.name;
           if (allFiles.length % 50 === 0) writeState(stateDir, jobId, state);
@@ -172,6 +199,18 @@ async function main() {
   for (const [size, group] of sizeMap) {
     if (group.length >= 2) candidates.push(...group);
   }
+
+  // P0-1/P0-2: 把 stat 采集到的硬链接/快照信息按路径索引起来。
+  // 后续 partial → full → group 各阶段都会重建精简对象（只带 path/size/hash），
+  // 用这个 Map 在最后算账时补齐真实的可释放空间。
+  const metaByPath = new Map();
+  let snapshotFileCount = 0, hardlinkedFileCount = 0;
+  for (const f of allFiles) {
+    metaByPath.set(f.path, { nlink: f.nlink || 1, ino: f.ino, dev: f.dev, snapshot: !!f.snapshot });
+    if (f.snapshot) snapshotFileCount++;
+    if ((f.nlink || 1) > 1) hardlinkedFileCount++;
+  }
+
   const skippedCount = allFiles.length - candidates.length;
   if (skippedCount > 0) state.stats.sizeSkipped = skippedCount;
   // P1-1: 记录被排除规则跳过的条目数与实际收集到的文件数
@@ -345,30 +384,115 @@ async function main() {
 
   const duplicates = [];
   let dupFiles = 0, wastedBytes = 0;
+  // P0-1/P0-2 汇总量：让界面能解释"为什么算出来的可释放比文件总大小小"
+  let hardlinkSaving = 0;      // 因硬链接而无法释放的字节
+  let snapshotSaving = 0;      // 因快照共享而无法释放的字节
+  let meta = { hardlinked: hardlinkedFileCount || 0, snapshot: snapshotFileCount || 0 };
+
   for (const [hash, files] of groups) {
     if (files.length >= 2) {
       // Smart keep: order files so files[0] is the file to KEEP (never deleted).
-      // first   = path sort ascending → keep lowest path (backwards compatible)
-      // newest  = keep the most recently modified file
-      // deepest = keep the file with the deepest path (most likely the intentional copy)
+      // P0-2 修正: 快照副本绝不能当"保留的那份" —— 否则会建议删除主卷原文件，
+      // 而删掉主卷后快照里那份是历史状态，等于丢数据。所以先把候选按
+      // 「非快照优先」分层，再在各层内应用 keepMode。
+      const isSnap = (f) => {
+        const m = metaByPath.get(f.path);
+        return !!(m && m.snapshot);
+      };
+      const nonSnapFiles = files.filter(f => !isSnap(f));
+      // 全组都在快照里 → 没有"真实"副本可保留，整组不产生可释放空间（下面会处理）
+      const keepCandidates = nonSnapFiles.length ? nonSnapFiles : files;
       let kept;
       if (keepMode === 'newest') {
-        kept = files.slice().sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0))[0];
+        kept = keepCandidates.slice().sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0))[0];
       } else if (keepMode === 'deepest') {
-        kept = files.slice().sort((a, b) => b.path.split('/').length - a.path.split('/').length)[0];
+        kept = keepCandidates.slice().sort((a, b) => b.path.split('/').length - a.path.split('/').length)[0];
       } else {
-        kept = files.slice().sort((a, b) => a.path.localeCompare(b.path))[0];
+        kept = keepCandidates.slice().sort((a, b) => a.path.localeCompare(b.path))[0];
       }
       const rest = files.filter(f => f.path !== kept.path)
         .sort((a, b) => a.path.localeCompare(b.path));
       const ordered = [kept, ...rest];
-      const wasted = rest.reduce((s, f) => s + (f.size || 0), 0);
-      duplicates.push({ hash, count: ordered.length, files: ordered, wasted, keepMode });
+
+      // ── P0-1/P0-2: 真实可释放空间 ──
+      // 旧实现 `rest.reduce((s,f) => s + f.size)` 假设"删掉一个副本 = 省一份大小"，
+      // 这在两种情况下是假账：
+      //   ① 硬链接：组内多个路径指向同一 inode（或 nlink>1 说明组外还有链接），
+      //      删掉其中一个后数据块仍被引用，实际释放 0 字节
+      //   ② btrfs 快照：快照与主卷共享 extent，删快照里的副本同样不释放空间
+      // 判定方法：对该 inode 计算「组内副本数」与「内核 nlink」的较大值即总引用数，
+      // 删掉这一个后若仍剩 ≥1 个引用 → 数据块不会释放。
+      const inodeRefs = new Map();   // "dev:ino" → 组内出现次数
+      for (const f of files) {
+        const m = metaByPath.get(f.path);
+        if (m && m.ino !== undefined && m.ino !== null) {
+          const k = `${m.dev}:${m.ino}`;
+          inodeRefs.set(k, (inodeRefs.get(k) || 0) + 1);
+        }
+      }
+
+      let wasted = 0;
+      let reclaimable = 0;
+      let groupHardlinkBlocked = 0;
+      let groupSnapshotBlocked = 0;
+      for (const f of rest) {
+        const m = metaByPath.get(f.path) || { nlink: 1, snapshot: false };
+        const k = (m.ino !== undefined && m.ino !== null) ? `${m.dev}:${m.ino}` : null;
+        const inGroup = k ? (inodeRefs.get(k) || 1) : 1;
+        const totalRefs = Math.max(inGroup, Number(m.nlink) || 1);
+        const remainingRefs = totalRefs - 1;      // 删掉这一个之后的剩余引用数
+
+        if (m.snapshot) {
+          // 快照副本：删除不释放空间（与主卷共享 extent），且不应被建议删除
+          groupSnapshotBlocked += f.size || 0;
+          continue;
+        }
+        if (remainingRefs >= 1) {
+          // 还有硬链接指向同一数据块 → 删这份不省空间
+          groupHardlinkBlocked += f.size || 0;
+          continue;
+        }
+        wasted += f.size || 0;
+        reclaimable += 1;
+      }
+      hardlinkSaving += groupHardlinkBlocked;
+      snapshotSaving += groupSnapshotBlocked;
+
+      const hasSnapshotMember = files.some(f => {
+        const m = metaByPath.get(f.path);
+        return m && m.snapshot;
+      });
+      const hasHardlinkMember = files.some(f => {
+        const m = metaByPath.get(f.path);
+        return m && (Math.max(inodeRefs.get(`${m.dev}:${m.ino}`) || 1, Number(m.nlink) || 1) > 1);
+      });
+
+      duplicates.push({
+        hash, count: ordered.length, files: ordered, wasted, keepMode,
+        // P0 附加信息：界面用来解释"为什么可释放比总大小少"
+        reclaimableFiles: reclaimable,
+        hardlinkBlocked: groupHardlinkBlocked,
+        snapshotBlocked: groupSnapshotBlocked,
+        hasSnapshot: hasSnapshotMember,
+        hasHardlink: hasHardlinkMember,
+        // 附带每个文件的硬链接/快照标记，供前端逐条展示
+        fileMeta: ordered.map(f => {
+          const m = metaByPath.get(f.path) || {};
+          const k2 = (m.ino !== undefined && m.ino !== null) ? `${m.dev}:${m.ino}` : null;
+          return {
+            path: f.path,
+            nlink: Number(m.nlink) || 1,
+            snapshot: !!m.snapshot,
+            shared: k2 ? ((inodeRefs.get(k2) || 1) > 1 || (Number(m.nlink) || 1) > 1) : false,
+          };
+        }),
+      });
       dupFiles += ordered.length;
       wastedBytes += wasted;
     }
   }
   duplicates.sort((a, b) => b.wasted - a.wasted);
+
 
   state.status = 'complete';
   state.files = fileHashes;
@@ -377,6 +501,11 @@ async function main() {
   state.stats.duplicateGroups = duplicates.length;
   state.stats.duplicateFiles = dupFiles;
   state.stats.wastedBytes = wastedBytes;
+  // P0-1/P0-2: 解释性字段 —— 界面据此说明"报告的可释放空间已扣除硬链接/快照"
+  state.stats.hardlinkBlockedBytes = hardlinkSaving;
+  state.stats.snapshotBlockedBytes = snapshotSaving;
+  state.stats.hardlinkedFiles = meta.hardlinked;
+  state.stats.snapshotFiles = meta.snapshot;
   state.stats.hashed = toHash.length;
   state.stats.cacheHits = cacheHits.length;
   state.stats.cacheHitRate = (cacheHits.length + toHash.length)
