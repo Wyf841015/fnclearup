@@ -2,7 +2,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { listExternalVolumes } from './ext_trash.js';
 
-export const VERSION = '0.15.2';
+export const VERSION = '0.16.0';
 
 // 内置存储空间（用户卷）。这几个卷有 btrfs 的 /volN/<UID>/.@#local/trash 回收站。
 export const USER_VOL_GLOBS = ['/vol1','/vol2','/vol3','/vol4','/vol5','/vol6','/vol7','/vol8','/vol9','/vol10'];
