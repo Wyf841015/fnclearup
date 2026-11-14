@@ -1035,3 +1035,38 @@ body.theme-midnight .dup-badge-hardlink {
   .dup-file-path-ellipsis { max-width: 150px; }
   .dup-table-wrap .data-table { font-size: 12px; }
 }
+
+/* ── 扫描面板的路径行（扩展名 / 文件名）──
+   这两个面板的路径列表原先塞在 .section-actions 里和按钮抢宽度：
+   容器只剩 343px（可用 696px），单个 280px 的标签就占满一整行，
+   三个路径堆成三行把标题区撑到 94px，按钮则被挤在右下方悬空。
+   拆成独立一行后路径区拿满宽度，一行能放多个标签。 */
+.scan-path-row {
+  margin-top: 10px;
+  flex: 0 0 auto;
+  width: 100%;
+  max-height: 76px;        /* 约两行高度，再多就滚动，避免把标题区无限撑高 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  align-items: flex-start;
+  align-content: flex-start;
+  scrollbar-width: thin;
+}
+/* 标签自身不再吃满整行；留出删按钮的位置 */
+.scan-path-row .dup-path-tag {
+  max-width: 100%;
+  min-width: 0;
+}
+/* 比默认的 280px 窄一些：全宽容器里一行能并排 2~3 个 */
+.scan-path-row .dup-path-tag-text {
+  max-width: 210px;
+}
+@media (max-width: 768px) {
+  .scan-path-row {
+    max-height: 60px;
+    padding: 5px 8px;
+  }
+  .scan-path-row .dup-path-tag-text {
+    max-width: 130px;      /* 窄屏下让标签更短，避免一条占满 */
+  }
+}

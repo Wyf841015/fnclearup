@@ -86,3 +86,58 @@ test('两个面板的「添加目录」按钮调用 showDupBrowseModal 时传的
     );
   }
 });
+
+test('扫描面板的路径列表不能塞在 .section-actions 里', () => {
+  // 路径列表和按钮同处一个 flex 行时会互相抢宽度：路径框只拿到 343px
+  // （可用 696px），单个标签就占满一行，三个路径堆三行把标题区撑到 94px，
+  // 按钮被挤到右下方悬空。路径列表必须独立成行（.scan-path-row）。
+  for (const tab of ['badext', 'badname']) {
+    const idIdx = HTML.indexOf(`id="${tab}PathList"`);
+    assert.ok(idIdx > 0, `缺 id="${tab}PathList"`);
+
+    // 截出这个元素所在行的标签
+    const lineStart = HTML.lastIndexOf('\n', idIdx) + 1;
+    const lineEnd = HTML.indexOf('\n', idIdx);
+    const line = HTML.slice(lineStart, lineEnd);
+
+    assert.ok(line.includes('scan-path-row'),
+      `${tab}PathList 缺少 class="scan-path-row"，会被和按钮挤在同一行`);
+
+    // 向上找最近的 .section-actions 开标签，确认它不在里面
+    const before = HTML.slice(0, lineStart);
+    const lastActions = before.lastIndexOf('class="section-actions"');
+    const lastActionsClose = before.lastIndexOf('</div>');
+    // 如果 section-actions 在最近一个 </div> 之后还没闭合，说明当前元素仍在里面
+    assert.ok(lastActions === -1 || lastActions < lastActionsClose,
+      `${tab}PathList 仍在 .section-actions 内部，会和按钮抢宽度`);
+  }
+});
+
+test('CSS 缓存版本号必须随样式改动推进', () => {
+  // style.css 通过 ?v=N 做缓存控制。改了样式不推进 N，浏览器会一直用旧缓存，
+  // 表现为「明明改了 CSS 但界面没变」。
+  const m = HTML.match(/styles\/style\.css\?v=(\d+)/);
+  assert.ok(m, '未找到 style.css 的版本号引用');
+  const v = parseInt(m[1], 10);
+  assert.ok(v >= 7, `style.css 版本号应 >= 7（scan-path-row 是 v7 引入的），当前 v${v}`);
+});
+
+test('.scan-path-row 的关键约束都在 CSS 里', () => {
+  const CSS = readFileSync(join(PROJ, 'app/ui/styles/style.css'), 'utf8');
+  const idx = CSS.indexOf('.scan-path-row {');
+  assert.ok(idx > 0, 'CSS 里缺少 .scan-path-row 规则');
+  // 取该规则块
+  const block = CSS.slice(idx, CSS.indexOf('}', idx));
+  assert.ok(/max-height:\s*\d+px/.test(block), '.scan-path-row 需要 max-height 限制高度，否则路径多了会把标题区无限撑高');
+  assert.ok(/overflow-y:\s*auto/.test(block), '.scan-path-row 需要 overflow-y:auto，超出时滚动而不是撑高');
+  assert.ok(/width:\s*100%/.test(block), '.scan-path-row 需要 width:100% 占满整行');
+
+  // 标签文字宽度要收窄，否则单个标签就吃满一行
+  const tidx = CSS.indexOf('.scan-path-row .dup-path-tag-text');
+  assert.ok(tidx > 0, '缺 .scan-path-row .dup-path-tag-text 规则');
+  const tblock = CSS.slice(tidx, CSS.indexOf('}', tidx));
+  const mw = tblock.match(/max-width:\s*(\d+)px/);
+  assert.ok(mw, '标签文字需要 max-width');
+  assert.ok(parseInt(mw[1], 10) <= 210, `标签文字 max-width 应 <=210px（实际 ${mw && mw[1]}px），否则一行放不下第二个`);
+});
+

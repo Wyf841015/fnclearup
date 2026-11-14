@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles/style.css?v=6">
+  <link rel="stylesheet" href="styles/style.css?v=7">
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
   <title>清理精灵-FnOS系统清理工具</title>
 </head>
@@ -518,13 +518,13 @@
               <div class="section-header">
                 <h2><span><i data-lucide="file-warning"></i></span><span>扩展名与内容不符</span></h2>
                 <div class="section-actions">
-                  <div class="dup-path-list" id="badextPathList" style="flex:1 1 260px;min-width:0"></div>
                   <button type="button" class="btn btn-outline" onclick="showDupBrowseModal('badext')">📁 添加目录</button>
                   <button type="button" class="btn btn-primary" onclick="beScan()" id="beBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
                   <button type="button" class="btn btn-ghost" onclick="beStop()" id="beStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
                   <button type="button" class="btn btn-outline" onclick="beFixSelected()" id="beFixBtn" disabled title="按识别出的真实类型改名（只改扩展名，不动内容）"><span>✏️</span><span>修正扩展名</span></button>
                 </div>
               </div>
+              <div class="dup-path-list scan-path-row" id="badextPathList"></div>
               <div id="be-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
                 只读文件头 32 字节判定真实类型，不读全文件、不解码，10 万文件也是秒级。
               </div>
@@ -542,13 +542,13 @@
               <div class="section-header">
                 <h2><span><i data-lucide="type"></i></span><span>不规范文件名</span></h2>
                 <div class="section-actions">
-                  <div class="dup-path-list" id="badnamePathList" style="flex:1 1 260px;min-width:0"></div>
                   <button type="button" class="btn btn-outline" onclick="showDupBrowseModal('badname')">📁 添加目录</button>
                   <button type="button" class="btn btn-primary" onclick="bnScan()" id="bnBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
                   <button type="button" class="btn btn-ghost" onclick="bnStop()" id="bnStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
                   <button type="button" class="btn btn-outline" onclick="bnFixSelected()" id="bnFixBtn" disabled title="按建议名重命名（只改名，不动内容、不移动目录）"><span>✏️</span><span>重命名</span></button>
                 </div>
               </div>
+              <div class="dup-path-list scan-path-row" id="badnamePathList"></div>
               <div id="bn-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
                 Windows 保留字符 &lt; &gt; : " | ? * 和保留名（CON/PRN/COM1…）在 SMB 共享里会打不开。
               </div>
