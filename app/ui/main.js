@@ -700,6 +700,8 @@ function switchInnerTab(tabName) {
   // 临时文件分区: 懒加载逻辑从原 switchTab('temp') 搬过来
   else if(tabName==='tmpfiles'&&!App.tempScanned){App.tempScanned=true;doTempScan();}
   // 空目录分区: 每次进入都重置到未扫描态(原 switchTab('empty') 的逻辑)
+  else if(tabName==='badext'){ /* 扩展名检查：不自动扫，用户主动点（要全盘 walk） */ }
+  else if(tabName==='badname'){ /* 文件名检查：同上 */ }
   else if(tabName==='emptydirs'){ EmptyDirState.items=[]; $('empty-empty').style.display=''; $('empty-results').style.display='none'; $('empty-list').innerHTML=''; $('empty-status').textContent=''; $('empty-count').textContent='-'; $('empty-pending').textContent='-'; $('empty-elapsed').textContent='-'; }
 }
 
@@ -996,6 +998,9 @@ const DupState = {
   broken:  { paths: ['/vol1/1000'] },
   name:    { paths: ['/vol1/1000'] },
   bigfiles:{ paths: [] },
+  // ↓ 扩展名与文件名检查（纯 fs walk，不读内容）
+  badext:  { paths: ['/vol1/1000'] },
+  badname: { paths: ['/vol1/1000'] },
 };
 
 function getDupIds(tab) {
@@ -4840,6 +4845,261 @@ async function cleanAptCache() {
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════════
+// Bad Extensions —— 扩展名与内容不符
+// Bad Names      —— 不规范文件名
+// 两个扫描器都已在后端实现（app/badext_scan.js、app/badname_scan.js），
+// 这里只做启动/轮询/渲染/修复。
+// ══════════════════════════════════════════════════════════════════
+
+let _beScanning = false, _beJob = null, _beResult = null;
+let _bnScanning = false, _bnJob = null, _bnResult = null;
+
+function _fmtSize(b) {
+  const n = Number(b) || 0;
+  if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
+function _emptyState(icon, title, text) {
+  return '<div class="dup-empty-state"><div class="dup-empty-icon">' + icon + '</div><h3>' + title + '</h3><p>' + text + '</p></div>';
+}
+
+// ─────────── Bad Extensions ───────────
+
+async function beScan() {
+  if (_beScanning) return;
+  const paths = (DupState.badext.paths || []).slice();
+  if (!paths.length) { showToast('请先点击「添加目录」选择至少一个目录', 'error'); return; }
+
+  _beScanning = true;
+  const btn = $('beBtn'), stopBtn = $('beStopBtn'), status = $('be-status'), list = $('be-list');
+  if (btn) btn.disabled = true;
+  if (stopBtn) stopBtn.style.display = '';
+  if (status) status.textContent = '⏳ 正在扫描 ' + paths.length + ' 个目录 …';
+  if (list) list.innerHTML = '';
+  ['be-mismatch', 'be-noext', 'be-unknown', 'be-scanned'].forEach(id => { const e = $(id); if (e) e.textContent = '-'; });
+
+  try {
+    const r = await API.post('api/badext/scan', { paths });
+    if (!r.success) throw new Error(r.error || '启动失败');
+    _beJob = r.jobId;
+    while (_beScanning) {
+      await new Promise(res => setTimeout(res, 800));
+      const s = await API.get('api/badext/status?job=' + encodeURIComponent(_beJob));
+      if (s.status === 'complete') {
+        _beResult = s;
+        if (status) status.textContent = `✅ 扫描 ${s.stats.scanned} 个文件：${s.stats.mismatch} 个扩展名不符、${s.stats.no_ext} 个缺扩展名、${s.stats.unknown} 个无法识别`;
+        $('be-mismatch') && ($('be-mismatch').textContent = s.stats.mismatch || 0);
+        $('be-noext') && ($('be-noext').textContent = s.stats.no_ext || 0);
+        $('be-unknown') && ($('be-unknown').textContent = s.stats.unknown || 0);
+        $('be-scanned') && ($('be-scanned').textContent = s.stats.scanned || 0);
+        beRender(s);
+        break;
+      }
+      if (s.status === 'aborted') { if (status) status.textContent = '⏹ 已停止'; break; }
+      if (s.status === 'error') throw new Error(s.error || '扫描出错');
+      if (status) status.textContent = `⏳ 扫描中… 已检查 ${s.progress?.scanned || 0} 个文件`;
+    }
+  } catch (e) {
+    if (status) status.textContent = '❌ ' + e.message;
+    if (list) list.innerHTML = _emptyState('⚠️', '扫描失败', escHtml(e.message));
+  } finally {
+    _beScanning = false;
+    if (btn) btn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+async function beStop() {
+  if (!_beJob) return;
+  _beScanning = false;
+  try { await API.post('api/badext/stop?job=' + encodeURIComponent(_beJob), {}); } catch (e) { console.error(e); }
+  const status = $('be-status'); if (status) status.textContent = '⏹ 已停止';
+  const btn = $('beBtn'), stopBtn = $('beStopBtn');
+  if (btn) btn.disabled = false;
+  if (stopBtn) stopBtn.style.display = 'none';
+}
+
+function beRender(state) {
+  const list = $('be-list'); if (!list) return;
+  const items = (state.items || []);
+  if (!items.length) {
+    list.innerHTML = _emptyState('✅', '没有发现问题', '所有文件的扩展名都与实际内容一致。');
+    return;
+  }
+  const kindCls = k => 'dup-badge dup-badge-hardlink';
+  let html = '<div class="dup-table-wrap"><table class="data-table"><thead><tr>'
+    + '<th style="width:36px"><input type="checkbox" id="beCheckAll" onchange="beToggleAll(this.checked)"></th>'
+    + '<th>文件</th><th style="width:90px">实际类型</th><th style="width:110px">当前扩展名</th>'
+    + '<th style="width:90px">建议</th><th style="width:90px">大小</th></tr></thead><tbody>';
+  items.forEach((it, i) => {
+    const cur = it.ext ? '.' + it.ext : '（无）';
+    html += '<tr>'
+      + '<td><input type="checkbox" class="be-cb" data-idx="' + i + '"></td>'
+      + '<td title="' + escHtml(it.path) + '"><span class="dup-file-path-ellipsis">' + escHtml(it.path) + '</span></td>'
+      + '<td><span class="' + kindCls(it.actualKind) + '">' + escHtml(it.actualKind) + '</span></td>'
+      + '<td>' + escHtml(cur) + '</td>'
+      + '<td><code>.' + escHtml(it.suggest || '') + '</code></td>'
+      + '<td>' + _fmtSize(it.size) + '</td>'
+      + '</tr>';
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+  const fixBtn = $('beFixBtn'); if (fixBtn) fixBtn.disabled = false;
+}
+
+function beToggleAll(checked) {
+  document.querySelectorAll('.be-cb').forEach(cb => { cb.checked = checked; });
+}
+
+async function beFixSelected() {
+  const cbs = [...document.querySelectorAll('.be-cb:checked')];
+  if (!cbs.length) { showToast('请先勾选要修正的文件', 'warning'); return; }
+  const items = cbs.map(cb => {
+    const it = (_beResult?.items || [])[Number(cb.dataset.idx)];
+    return it ? { path: it.path, suggest: it.suggest } : null;
+  }).filter(Boolean);
+  if (!items.length) { showToast('没有可修正的条目', 'warning'); return; }
+  if (!confirm(`将把 ${items.length} 个文件的扩展名改成识别出的真实类型（只改扩展名，不动文件内容）。\n\n同名冲突会自动加序号，不会覆盖已有文件。继续？`)) return;
+
+  try {
+    const r = await API.post('api/badext/fix', { items });
+    const okN = r.fixed || 0, failN = r.failed || 0;
+    showToast(`已修正 ${okN} 个` + (failN ? `，失败 ${failN} 个` : ''), failN ? 'warning' : 'success');
+    if (failN && r.failures?.length) {
+      console.warn('[badext] 失败明细:', r.failures);
+    }
+    await beScan();   // 重新扫一遍刷新列表
+  } catch (e) {
+    showToast('修正失败: ' + e.message, 'error');
+  }
+}
+
+// ─────────── Bad Names ───────────
+
+const BN_CODE_LABEL = {
+  win_reserved_char: 'Windows 保留字符',
+  control_char: '控制字符',
+  win_reserved_name: 'Windows 保留名',
+  leading_trailing: '首尾空格/点',
+  too_long: '文件名超长',
+  zero_width: '零宽字符',
+  bidi_control: '双向控制符',
+};
+const BN_SEV_LABEL = { high: '严重', medium: '警告', low: '提示' };
+
+async function bnScan() {
+  if (_bnScanning) return;
+  const paths = (DupState.badname.paths || []).slice();
+  if (!paths.length) { showToast('请先点击「添加目录」选择至少一个目录', 'error'); return; }
+
+  _bnScanning = true;
+  const btn = $('bnBtn'), stopBtn = $('bnStopBtn'), status = $('bn-status'), list = $('bn-list');
+  if (btn) btn.disabled = true;
+  if (stopBtn) stopBtn.style.display = '';
+  if (status) status.textContent = '⏳ 正在扫描 ' + paths.length + ' 个目录 …';
+  if (list) list.innerHTML = '';
+  ['bn-high', 'bn-medium', 'bn-low', 'bn-scanned'].forEach(id => { const e = $(id); if (e) e.textContent = '-'; });
+
+  try {
+    const r = await API.post('api/badname/scan', { paths });
+    if (!r.success) throw new Error(r.error || '启动失败');
+    _bnJob = r.jobId;
+    while (_bnScanning) {
+      await new Promise(res => setTimeout(res, 800));
+      const s = await API.get('api/badname/status?job=' + encodeURIComponent(_bnJob));
+      if (s.status === 'complete') {
+        _bnResult = s;
+        if (status) status.textContent = `✅ 扫描 ${s.stats.scanned} 项：${s.stats.high} 个严重、${s.stats.medium} 个警告、${s.stats.low} 个提示`;
+        $('bn-high') && ($('bn-high').textContent = s.stats.high || 0);
+        $('bn-medium') && ($('bn-medium').textContent = s.stats.medium || 0);
+        $('bn-low') && ($('bn-low').textContent = s.stats.low || 0);
+        $('bn-scanned') && ($('bn-scanned').textContent = s.stats.scanned || 0);
+        bnRender(s);
+        break;
+      }
+      if (s.status === 'aborted') { if (status) status.textContent = '⏹ 已停止'; break; }
+      if (s.status === 'error') throw new Error(s.error || '扫描出错');
+      if (status) status.textContent = `⏳ 扫描中… 已检查 ${s.progress?.scanned || 0} 项`;
+    }
+  } catch (e) {
+    if (status) status.textContent = '❌ ' + e.message;
+    if (list) list.innerHTML = _emptyState('⚠️', '扫描失败', escHtml(e.message));
+  } finally {
+    _bnScanning = false;
+    if (btn) btn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+}
+
+async function bnStop() {
+  if (!_bnJob) return;
+  _bnScanning = false;
+  try { await API.post('api/badname/stop?job=' + encodeURIComponent(_bnJob), {}); } catch (e) { console.error(e); }
+  const status = $('bn-status'); if (status) status.textContent = '⏹ 已停止';
+  const btn = $('bnBtn'), stopBtn = $('bnStopBtn');
+  if (btn) btn.disabled = false;
+  if (stopBtn) stopBtn.style.display = 'none';
+}
+
+function bnRender(state) {
+  const list = $('bn-list'); if (!list) return;
+  const items = (state.items || []);
+  if (!items.length) {
+    list.innerHTML = _emptyState('✅', '没有不规范文件名', '所有文件名都能在 Windows/SMB 下正常访问。');
+    return;
+  }
+  let html = '<div class="dup-table-wrap"><table class="data-table"><thead><tr>'
+    + '<th style="width:36px"><input type="checkbox" id="bnCheckAll" onchange="bnToggleAll(this.checked)"></th>'
+    + '<th>名称</th><th style="width:80px">级别</th><th>问题</th><th style="width:150px">建议名</th></tr></thead><tbody>';
+  items.forEach((it, i) => {
+    const sevCls = it.severity === 'high' ? 'dup-badge-snapshot' : (it.severity === 'medium' ? 'dup-badge-hardlink' : '');
+    const probs = it.issues.map(x => BN_CODE_LABEL[x.code] || x.code).join('、');
+    const fixable = it.issues.find(x => x.fixable && x.suggest);
+    html += '<tr>'
+      + '<td><input type="checkbox" class="bn-cb" data-idx="' + i + '"' + (fixable ? '' : ' disabled title="该项无法自动修复"') + '></td>'
+      + '<td title="' + escHtml(it.path) + '"><span class="dup-file-path-ellipsis">' + escHtml(it.name) + (it.isDir ? ' 📁' : '') + '</span></td>'
+      + '<td><span class="dup-badge ' + sevCls + '">' + (BN_SEV_LABEL[it.severity] || it.severity) + '</span></td>'
+      + '<td>' + escHtml(probs) + '</td>'
+      + '<td>' + (fixable ? '<code>' + escHtml(fixable.suggest) + '</code>' : '<span style="color:var(--color-text-tertiary)">—</span>') + '</td>'
+      + '</tr>';
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+  const fixBtn = $('bnFixBtn'); if (fixBtn) fixBtn.disabled = false;
+}
+
+function bnToggleAll(checked) {
+  document.querySelectorAll('.bn-cb:not(:disabled)').forEach(cb => { cb.checked = checked; });
+}
+
+async function bnFixSelected() {
+  const cbs = [...document.querySelectorAll('.bn-cb:checked:not(:disabled)')];
+  if (!cbs.length) { showToast('请先勾选要重命名的文件', 'warning'); return; }
+  const items = cbs.map(cb => {
+    const it = (_bnResult?.items || [])[Number(cb.dataset.idx)];
+    if (!it) return null;
+    const fixable = it.issues.find(x => x.fixable && x.suggest);
+    return fixable ? { path: it.path, newName: fixable.suggest } : null;
+  }).filter(Boolean);
+  if (!items.length) { showToast('选中的条目没有可自动修复的方案', 'warning'); return; }
+  if (!confirm(`将重命名 ${items.length} 个文件/目录（只改名，不动内容、不移动位置）。\n\n同名冲突会自动加序号，不会覆盖已有文件。继续？`)) return;
+
+  try {
+    const r = await API.post('api/badname/fix', { items });
+    const okN = r.fixed || 0, failN = r.failed || 0;
+    showToast(`已重命名 ${okN} 个` + (failN ? `，失败 ${failN} 个` : ''), failN ? 'warning' : 'success');
+    if (failN && r.failures?.length) console.warn('[badname] 失败明细:', r.failures);
+    await bnScan();
+  } catch (e) {
+    showToast('重命名失败: ' + e.message, 'error');
+  }
+}
+
   const exports = {
     toggleTheme, showSponsorModal, maybeShowSponsorReminder, showSponsorImgFull, showContactModal,
     showCleanupSummary, refreshCleanupSummary, filterTable, exportTableToCSV,
@@ -4850,6 +5110,8 @@ async function cleanAptCache() {
     loadDiskMounts, selectAllDisk, updateDiskSelectInfo,
     confirmDeleteVol02, doDeleteVol02,
     switchInnerTab, loadDockerVolumes,
+    beScan, beStop, beToggleAll, beFixSelected,
+    bnScan, bnStop, bnToggleAll, bnFixSelected,
     selectAllDockerVol, updateDockerSelectInfo,
     confirmDeleteDocker, doDeleteDocker,
     hideDockerVolDeleteModal,

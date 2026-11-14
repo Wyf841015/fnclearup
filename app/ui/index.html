@@ -238,6 +238,8 @@
           <button type="button" class="inner-tab-btn" data-inner-tab="samename" onclick="switchInnerTab('samename')" title="不同目录下的同名文件"><span><i data-lucide="copy-x"></i></span><span>重名</span></button>
           <button type="button" class="inner-tab-btn" data-inner-tab="emptydirs" onclick="switchInnerTab('emptydirs')" title="空文件夹, 可递归清理"><span><i data-lucide="inbox"></i></span><span>空目录</span></button>
           <button type="button" class="inner-tab-btn" data-inner-tab="largefiles" onclick="switchInnerTab('largefiles')" title="按大小/阈值找出占空间的大文件"><span><i data-lucide="hard-drive"></i></span><span>大文件</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="badext" onclick="switchInnerTab('badext')" title="扩展名与实际内容不符（如 .jpg 实为 PNG），只读文件头 32 字节"><span><i data-lucide="file-warning"></i></span><span>扩展名</span></button>
+          <button type="button" class="inner-tab-btn" data-inner-tab="badname" onclick="switchInnerTab('badname')" title="不规范文件名（Windows 保留字符/控制字符/保留名/零宽字符），SMB 共享会打不开"><span><i data-lucide="type"></i></span><span>文件名</span></button>
         </div>
 
         <div class="inner-panel active" data-inner-panel="duplicates">
@@ -505,6 +507,54 @@
         <div id="bigfiles-list"></div>
       </div>
         </div>
+          <div class="inner-panel" data-inner-panel="badext">
+            <div class="kpi-row">
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-warning"></i></div><div class="kpi-body"><div class="kpi-label">扩展名不符</div><div class="kpi-value" id="be-mismatch">-</div></div></div>
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="file-question"></i></div><div class="kpi-body"><div class="kpi-label">缺扩展名</div><div class="kpi-value" id="be-noext">-</div></div></div>
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="help-circle"></i></div><div class="kpi-body"><div class="kpi-label">无法识别</div><div class="kpi-value" id="be-unknown">-</div></div></div>
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="scan-line"></i></div><div class="kpi-body"><div class="kpi-label">已扫描</div><div class="kpi-value" id="be-scanned">-</div></div></div>
+            </div>
+            <div class="card">
+              <div class="section-header">
+                <h2><span><i data-lucide="file-warning"></i></span><span>扩展名与内容不符</span></h2>
+                <div class="section-actions">
+                  <div class="dup-path-list" id="bePathList" style="flex:1 1 260px;min-width:0"></div>
+                  <button type="button" class="btn btn-outline" onclick="showDupBrowseModal('badext')">📁 添加目录</button>
+                  <button type="button" class="btn btn-primary" onclick="beScan()" id="beBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
+                  <button type="button" class="btn btn-ghost" onclick="beStop()" id="beStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+                  <button type="button" class="btn btn-outline" onclick="beFixSelected()" id="beFixBtn" disabled title="按识别出的真实类型改名（只改扩展名，不动内容）"><span>✏️</span><span>修正扩展名</span></button>
+                </div>
+              </div>
+              <div id="be-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
+                只读文件头 32 字节判定真实类型，不读全文件、不解码，10 万文件也是秒级。
+              </div>
+              <div id="be-list"></div>
+            </div>
+          </div>
+          <div class="inner-panel" data-inner-panel="badname">
+            <div class="kpi-row">
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-octagon"></i></div><div class="kpi-body"><div class="kpi-label">严重</div><div class="kpi-value" id="bn-high">-</div></div></div>
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="alert-triangle"></i></div><div class="kpi-body"><div class="kpi-label">警告</div><div class="kpi-value" id="bn-medium">-</div></div></div>
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="info"></i></div><div class="kpi-body"><div class="kpi-label">提示</div><div class="kpi-value" id="bn-low">-</div></div></div>
+              <div class="kpi-card"><div class="kpi-icon"><i data-lucide="scan-line"></i></div><div class="kpi-body"><div class="kpi-label">已扫描</div><div class="kpi-value" id="bn-scanned">-</div></div></div>
+            </div>
+            <div class="card">
+              <div class="section-header">
+                <h2><span><i data-lucide="type"></i></span><span>不规范文件名</span></h2>
+                <div class="section-actions">
+                  <div class="dup-path-list" id="bnPathList" style="flex:1 1 260px;min-width:0"></div>
+                  <button type="button" class="btn btn-outline" onclick="showDupBrowseModal('badname')">📁 添加目录</button>
+                  <button type="button" class="btn btn-primary" onclick="bnScan()" id="bnBtn"><span><i data-lucide="search"></i></span><span>扫描</span></button>
+                  <button type="button" class="btn btn-ghost" onclick="bnStop()" id="bnStopBtn" style="display:none"><span>⏹</span><span>停止</span></button>
+                  <button type="button" class="btn btn-outline" onclick="bnFixSelected()" id="bnFixBtn" disabled title="按建议名重命名（只改名，不动内容、不移动目录）"><span>✏️</span><span>重命名</span></button>
+                </div>
+              </div>
+              <div id="bn-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
+                Windows 保留字符 &lt; &gt; : " | ? * 和保留名（CON/PRN/COM1…）在 SMB 共享里会打不开。
+              </div>
+              <div id="bn-list"></div>
+            </div>
+          </div>
       </div>
   <!-- Tab: 相似图片/视频检测 (P0-2) -->
     

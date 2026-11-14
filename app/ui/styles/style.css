@@ -993,3 +993,45 @@ body.theme-dark .dup-badge-hardlink,
 body.theme-midnight .dup-badge-hardlink {
   background: color-mix(in srgb, var(--color-cyan) 24%, transparent);
 }
+
+/* ── Bad Extensions / Bad Names 表格 ──
+   这两个面板的行数可能上千（扩展名不符/文件名不规范），
+   需要横向滚动 + 长路径省略，否则会把卡片撑破。 */
+.dup-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  margin-top: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.dup-table-wrap .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.dup-table-wrap .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-card-bg);
+  white-space: nowrap;
+}
+.dup-table-wrap .data-table td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+/* 路径/文件名列：占满剩余宽度并截断，鼠标悬停看完整内容（title 属性） */
+.dup-file-path-ellipsis {
+  display: block;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+/* 窄屏：路径列收窄，避免只有文件名可见 */
+@media (max-width: 768px) {
+  .dup-file-path-ellipsis { max-width: 150px; }
+  .dup-table-wrap .data-table { font-size: 12px; }
+}

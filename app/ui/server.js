@@ -25,6 +25,8 @@ import { handleGetExcludeRules, handleSaveExcludeRules } from './api/dup.js';
 import { handleSimDupScan, handleSimDupStatus, handleSimDupStop, handleSimDupThumb, setSimDupPaths } from './api/simdup.js';
 import { handleBrokenScan, handleBrokenStatus, handleBrokenStop, setBrokenPaths } from './api/broken.js';
 import { handleNamematchScan, handleNamematchStatus, handleNamematchStop, setNamematchPaths } from './api/namematch.js';
+import { handleBadExtScan, handleBadExtStatus, handleBadExtStop, handleBadExtFix, setBadExtPaths } from './api/badext.js';
+import { handleBadNameScan, handleBadNameStatus, handleBadNameStop, handleBadNameFix, setBadNamePaths } from './api/badname.js';
 import { handleDockerStopped, handleDockerStoppedRemove, handleDockerBuildCache, handleDockerBuildCachePrune } from './api/docker_cleanup.js';
 import { handleListUsers, handleDeleteUsers } from './api/users.js';
 
@@ -59,6 +61,10 @@ setBrokenPaths(DUP_STATE_DIR, BROKEN_SCAN_SCRIPT);
 // Init same-name conflict detection
 const NM_SCAN_SCRIPT = join(TARGET_DIR, 'namematch_scan.js');
 setNamematchPaths(DUP_STATE_DIR, NM_SCAN_SCRIPT);
+const BADEXT_SCAN_SCRIPT = join(TARGET_DIR, 'badext_scan.js');
+const BADNAME_SCAN_SCRIPT = join(TARGET_DIR, 'badname_scan.js');
+setBadExtPaths(DUP_STATE_DIR, BADEXT_SCAN_SCRIPT);
+setBadNamePaths(DUP_STATE_DIR, BADNAME_SCAN_SCRIPT);
 
 // GET /api/browse?path=/vol2
 function handleBrowse(req, res) {
@@ -299,6 +305,14 @@ async function handle(req, res) {
       if (method === 'POST' && path === '/api/namematch/scan') { await handleNamematchScan(req, res); return; }
       if (method === 'GET' && path === '/api/namematch/status') { handleNamematchStatus(req, res); return; }
       if (method === 'POST' && path === '/api/namematch/stop') { handleNamematchStop(req, res); return; }
+      if (method === 'POST' && path === '/api/badext/scan') { await handleBadExtScan(req, res); return; }
+      if (method === 'GET' && path === '/api/badext/status') { handleBadExtStatus(req, res); return; }
+      if (method === 'POST' && path === '/api/badext/stop') { handleBadExtStop(req, res); return; }
+      if (method === 'POST' && path === '/api/badext/fix') { await handleBadExtFix(req, res); return; }
+      if (method === 'POST' && path === '/api/badname/scan') { await handleBadNameScan(req, res); return; }
+      if (method === 'GET' && path === '/api/badname/status') { handleBadNameStatus(req, res); return; }
+      if (method === 'POST' && path === '/api/badname/stop') { handleBadNameStop(req, res); return; }
+      if (method === 'POST' && path === '/api/badname/fix') { await handleBadNameFix(req, res); return; }
       // Docker cleanup (stopped containers + build cache)
       if (method === 'GET' && path === '/api/docker/stopped') { await handleDockerStopped(req, res); return; }
       if (method === 'POST' && path === '/api/docker/stopped/remove') { await handleDockerStoppedRemove(req, res); return; }
