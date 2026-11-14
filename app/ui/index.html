@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles/style.css?v=7">
+  <link rel="stylesheet" href="styles/style.css?v=9">
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
   <title>清理精灵-FnOS系统清理工具</title>
 </head>
@@ -524,6 +524,7 @@
                   <button type="button" class="btn btn-outline" onclick="beFixSelected()" id="beFixBtn" disabled title="按识别出的真实类型改名（只改扩展名，不动内容）"><span>✏️</span><span>修正扩展名</span></button>
                 </div>
               </div>
+              <div class="scan-path-label"><span>已选路径</span><span class="scan-path-count" id="badextPathCount">0</span><span>个</span></div>
               <div class="dup-path-list scan-path-row" id="badextPathList"></div>
               <div id="be-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
                 只读文件头 32 字节判定真实类型，不读全文件、不解码，10 万文件也是秒级。
@@ -548,6 +549,7 @@
                   <button type="button" class="btn btn-outline" onclick="bnFixSelected()" id="bnFixBtn" disabled title="按建议名重命名（只改名，不动内容、不移动目录）"><span>✏️</span><span>重命名</span></button>
                 </div>
               </div>
+              <div class="scan-path-label"><span>已选路径</span><span class="scan-path-count" id="badnamePathCount">0</span><span>个</span></div>
               <div class="dup-path-list scan-path-row" id="badnamePathList"></div>
               <div id="bn-status" class="select-info" style="color:var(--color-text-secondary);font-size:13px;margin-top:6px">
                 Windows 保留字符 &lt; &gt; : " | ? * 和保留名（CON/PRN/COM1…）在 SMB 共享里会打不开。
@@ -1226,6 +1228,6 @@
   <!-- ?v= 缓存戳：server.js 对静态资源发 Cache-Control: immutable(7 天)，
        改 JS 必须同时改这个戳，否则浏览器一直用旧的 main.js（表现为「新功能没反应」） -->
   <script src="motion.js?v=20261026a"></script>
-  <script src="main.js?v=20261027c"></script>
+  <script src="main.js?v=20261030a"></script>
 </body>
 </html>

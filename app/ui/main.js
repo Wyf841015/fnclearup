@@ -3009,6 +3009,9 @@ function renderDupPaths(tab) {
   const container = document.getElementById(tab + 'PathList');
   if (!container) return;
   const paths = DupState[tab]?.paths || [];
+  // 「已选路径 N 个」的计数（只有带小标题的面板才有这个元素）
+  const counter = document.getElementById(tab + 'PathCount');
+  if (counter) counter.textContent = String(paths.length);
   if (paths.length === 0) {
     container.innerHTML = '<span class="dup-path-empty">尚未添加目录，请点击"添加目录"选择</span>';
     return;

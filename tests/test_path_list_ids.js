@@ -141,3 +141,33 @@ test('.scan-path-row 的关键约束都在 CSS 里', () => {
   assert.ok(parseInt(mw[1], 10) <= 210, `标签文字 max-width 应 <=210px（实际 ${mw && mw[1]}px），否则一行放不下第二个`);
 });
 
+test('JS 缓存版本号必须存在（改了 main.js 不推进版本号，浏览器不加载新代码）', () => {
+  // style.css / main.js / motion.js 都靠 ?v=N 做缓存控制。
+  // 改文件不推版本号 → 服务端是新代码，浏览器跑的是缓存里的旧版本，
+  // 表现为「明明改了、测试也过了，界面上就是不生效」。这个坑踩过两次
+  // （一次 style.css 的 scan-path-row，一次 main.js 的 PathCount）。
+  const rules = [
+    { name: 'main.js', re: /src="main\.js\?v=([0-9a-zA-Z]+)"/, minLen: 8 },
+    { name: 'motion.js', re: /src="motion\.js\?v=([0-9a-zA-Z]+)"/, minLen: 8 },
+    { name: 'style.css', re: /href="styles\/style\.css\?v=(\d+)"/, minLen: 1 },
+  ];
+  for (const r of rules) {
+    const m = HTML.match(r.re);
+    assert.ok(m, `${r.name} 引用缺少 ?v= 版本号，浏览器会一直用旧缓存`);
+    assert.ok(m[1].length >= r.minLen, `${r.name} 的版本号 "${m[1]}" 格式可疑`);
+  }
+});
+
+test('renderDupPaths 会同步「已选路径 N 个」的计数', () => {
+  // 有标签却显示「已选路径 0 个」是真实发生过的 bug（版本号没推，旧
+  // main.js 里没有更新计数的代码）。
+  const fnStart = MAIN.indexOf('function renderDupPaths(tab)');
+  assert.ok(fnStart > 0, '未找到 renderDupPaths');
+  const fnEnd = MAIN.indexOf('\n}', fnStart);
+  const fnBody = MAIN.slice(fnStart, fnEnd);
+  assert.ok(fnBody.includes("tab + 'PathCount'"),
+    'renderDupPaths 里没有更新 PathCount，小标题会一直显示 0');
+  assert.ok(/counter\.textContent\s*=\s*String\(paths\.length\)/.test(fnBody),
+    'renderDupPaths 没有把 paths.length 写进 counter');
+});
+

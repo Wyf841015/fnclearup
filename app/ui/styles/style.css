@@ -110,6 +110,18 @@ html.dark .container{position:relative;z-index:1}
 i[data-lucide]{width:1em;height:1em;flex-shrink:0;display:inline-block;vertical-align:-0.125em}
 .btn i[data-lucide],.tab-btn i[data-lucide],.inner-tab-btn i[data-lucide],.dup-inner-tab-btn i[data-lucide]{width:1.1em;height:1.1em}
 .kpi-icon i[data-lucide]{width:24px;height:24px}
+/* ── lucide 图标尺寸修正 ──
+   lucide.createIcons() 会把 <i data-lucide="x"> 整个替换成 <svg class="lucide">，
+   而上面三条规则只写 i[data-lucide]，替换后一个都匹配不到 ——
+   图标退回 lucide 自带的 width/height="24"，在 13px 字号的按钮里
+   接近两倍字高，把「扫描」按钮从 38px 撑到 47px，与同排的
+   outline 按钮高矮不齐。这里给替换后的 svg 补上等价规则。 */
+svg.lucide{width:1em;height:1em;flex-shrink:0;display:inline-block;vertical-align:-0.125em}
+.btn svg.lucide,.tab-btn svg.lucide,.inner-tab-btn svg.lucide,.dup-inner-tab-btn svg.lucide{width:1.1em;height:1.1em}
+.kpi-icon svg.lucide{width:24px;height:24px}
+/* 图标在按钮里不该参与撑高：统一成 flex 居中，去掉基线带来的额外行高 */
+.btn svg.lucide,.inner-tab-btn svg.lucide,.tab-btn svg.lucide{display:block}
+
 button i[data-lucide]{pointer-events:none}
 .container{max-width:1200px;margin:0 auto;padding:16px;min-width:0}
 
@@ -170,7 +182,12 @@ html.dark .sponsor-btn:hover{background:oklch(22% 0.008 250)}
 /* KPI */
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
 .tab-panel[data-panel="schedule"] .kpi-row,
-.inner-panel[data-inner-panel="largefiles"] .kpi-row{grid-template-columns:repeat(2,1fr)}
+.inner-panel[data-inner-panel="largefiles"] .kpi-row,
+/* 扩展名/文件名都是 4 个 KPI。kpi-row 用 auto-fit + minmax(180px,1fr)，
+   容器 696px 正好只放 3 列，4 个卡片会排成 3+1、第二行单卡留一大片
+   空白。跟 largefiles 一样固定 2×2，对称且卡片不至于被压到 160px。 */
+.inner-panel[data-inner-panel="badext"] .kpi-row,
+.inner-panel[data-inner-panel="badname"] .kpi-row{grid-template-columns:repeat(2,1fr)}
 /* 回收站 5 个 KPI: 原为硬编码 repeat(5,1fr), 移动端也强制 5 列 → 数值被截成
    "3._" 这样只剩一两个字符、标签完全消失、第 3 卡还被屏幕边缘裁掉。
    改用 auto-fit 自适应: 宽屏一行排开, 窄屏自动降到 3/2 列, 不依赖媒体查询
@@ -1042,7 +1059,7 @@ body.theme-midnight .dup-badge-hardlink {
    三个路径堆成三行把标题区撑到 94px，按钮则被挤在右下方悬空。
    拆成独立一行后路径区拿满宽度，一行能放多个标签。 */
 .scan-path-row {
-  margin-top: 10px;
+  margin-top: 6px;   /* 上面已有「已选路径」小标题，不用再留大间距 */
   flex: 0 0 auto;
   width: 100%;
   max-height: 76px;        /* 约两行高度，再多就滚动，避免把标题区无限撑高 */
@@ -1069,4 +1086,20 @@ body.theme-midnight .dup-badge-hardlink {
   .scan-path-row .dup-path-tag-text {
     max-width: 130px;      /* 窄屏下让标签更短，避免一条占满 */
   }
+}
+
+/* ── 扫描面板的「已选路径」标签 ──
+   蓝胶囊单看不知道是什么，给一行小标题说明。 */
+.scan-path-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.scan-path-label .scan-path-count {
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
 }
