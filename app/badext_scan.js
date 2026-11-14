@@ -221,6 +221,7 @@ async function main() {
   await sleep(POLL_MS);   // 让前端有一次机会看到 100%
   state.status = 'complete';
   state.progress.scanned = total;
+  state.stats.scanned = total;   // 前端 KPI/状态文案读的是 stats.scanned，不是 progress
   state.progress.currentFile = '';
   // 按类别+大小排序，界面默认看最大的
   state.items.sort((a, b) => (b.size || 0) - (a.size || 0));

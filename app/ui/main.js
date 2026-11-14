@@ -4531,7 +4531,7 @@ function init() {
   renderDupPaths('music');
   renderDupPaths('files');
     // 2026-10-01: 相似/异常/重名/大文件 与去重共用同一套路径列表组件
-    ['simdup','broken','name','bigfiles'].forEach(t => renderDupPaths(t));
+    ['simdup','broken','name','bigfiles','badext','badname'].forEach(t => renderDupPaths(t));
 
   // Export all functions to window for inline onclick and event delegation
 // ══════════════════════════ 内核清理 ══════════════════════════
@@ -4890,6 +4890,8 @@ async function beScan() {
     while (_beScanning) {
       await new Promise(res => setTimeout(res, 800));
       const s = await API.get('api/badext/status?job=' + encodeURIComponent(_beJob));
+      // 用户在这 800ms 里点了停止：不要再往下写状态，否则会把「已停止」覆盖成「扫描中」
+      if (!_beScanning) break;
       if (s.status === 'complete') {
         _beResult = s;
         if (status) status.textContent = `✅ 扫描 ${s.stats.scanned} 个文件：${s.stats.mismatch} 个扩展名不符、${s.stats.no_ext} 个缺扩展名、${s.stats.unknown} 个无法识别`;
@@ -5012,6 +5014,8 @@ async function bnScan() {
     while (_bnScanning) {
       await new Promise(res => setTimeout(res, 800));
       const s = await API.get('api/badname/status?job=' + encodeURIComponent(_bnJob));
+      // 同 beScan：停止后不要把「已停止」覆盖掉
+      if (!_bnScanning) break;
       if (s.status === 'complete') {
         _bnResult = s;
         if (status) status.textContent = `✅ 扫描 ${s.stats.scanned} 项：${s.stats.high} 个严重、${s.stats.medium} 个警告、${s.stats.low} 个提示`;

@@ -223,6 +223,7 @@ async function main() {
   await sleep(POLL_MS);
   state.status = 'complete';
   state.progress.scanned = total;
+  state.stats.scanned = total;   // 前端 KPI/状态文案读的是 stats.scanned
   state.progress.currentFile = '';
   // high 优先，其次按问题数量
   const rank = { high: 0, medium: 1, low: 2 };
