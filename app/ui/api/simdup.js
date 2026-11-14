@@ -12,7 +12,7 @@ import { existsSync, writeFileSync, mkdirSync, renameSync, readFileSync, statSyn
 import { randomUUID, createHash } from 'node:crypto';
 import { join, extname } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { sendJSON, parseBody, isSafePath, safeReadJSON } from '../lib/util.js';
+import { sendJSON, parseBody, isSafePath, safeReadJSON, spawnScanNode } from '../lib/util.js';
 import { getPkgVar } from '../lib/pkgvar.js';
 
 let SIM_STATE_DIR = '';
@@ -60,7 +60,7 @@ export async function handleSimDupScan(req, res) {
   renameSync(tmpInit, stateFile);
 
   if (existsSync(SIM_SCAN_SCRIPT)) {
-    const proc = spawn(process.execPath, [SIM_SCAN_SCRIPT, type, paths.join(','), jobId, SIM_STATE_DIR, String(threshold)], {
+    const proc = spawnScanNode(SIM_SCAN_SCRIPT, [type, paths.join(','), jobId, SIM_STATE_DIR, String(threshold)], {
       // imports inside the worker resolve relative to the worker file, not cwd
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },

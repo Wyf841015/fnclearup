@@ -10,7 +10,7 @@ import { existsSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { sendJSON, parseBody, isSafePath, safeReadJSON } from '../lib/util.js';
+import { sendJSON, parseBody, isSafePath, safeReadJSON, spawnScanNode } from '../lib/util.js';
 
 let BROKEN_STATE_DIR = '';
 let BROKEN_SCAN_SCRIPT = '';
@@ -50,7 +50,7 @@ export async function handleBrokenScan(req, res) {
   renameSync(tmp, stateFile);
 
   if (existsSync(BROKEN_SCAN_SCRIPT)) {
-    const proc = spawn(process.execPath, [BROKEN_SCAN_SCRIPT, paths.join(','), jobId, BROKEN_STATE_DIR, checkBroken ? '1' : '0'], {
+    const proc = spawnScanNode(BROKEN_SCAN_SCRIPT, [paths.join(','), jobId, BROKEN_STATE_DIR, checkBroken ? '1' : '0'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
     });

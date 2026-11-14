@@ -2731,33 +2731,35 @@ async function confirmDupDelete(){
   hideDupDeleteModal();
   try{
     let r;
-    if (mode === 'hardlink') {
+    if (mode === 'hardlink' || mode === 'reflink') {
       // For each selected file, find its group's KEEP file (files[0], decided by keepMode on backend).
-      // The hardlink keep must not be one of the selected files.
+      // The keep must not be one of the selected files.
       const byHash={};
       for(const g of DupState[tab].duplicates){ byHash[g.hash]=g; }
       const keepPathFor=new Map();
       for(const cb of cbs){
         const g=byHash[cb.dataset.hash];
         if(!g||!g.files||!g.files.length) continue;
-        // files[0] is the keep candidate; only link-remove the OTHER files
+        // files[0] is the keep candidate; only process the OTHER files
         const keep=g.files[0].path;
         if(!paths.includes(keep) && cb.dataset.path!==keep){ keepPathFor.set(cb.dataset.path, keep); }
       }
       const linkTargets=[...keepPathFor.keys()].filter(p=>paths.includes(p));
-      if(!linkTargets.length){ showToast('所选文件都需保留，无法硬链接去重','warning'); return; }
+      if(!linkTargets.length){ showToast('所选文件都需保留，无法'+(mode==='reflink'?'reflink':'硬链接')+'去重','warning'); return; }
       // Batch by keep to minimize API calls
       const byKeep=new Map();
       for(const p of linkTargets){ const k=keepPathFor.get(p); if(!byKeep.has(k))byKeep.set(k,[]); byKeep.get(k).push(p); }
-      r={deleted:0, linked:0, failed:[], skipped:0, emptyDirs:[]};
+      r={deleted:0, linked:0, reflinked:0, failed:[], skipped:0, emptyDirs:[]};
       for(const [keep,ps] of byKeep){
-        const sub=await API.post('api/dup/delete',{files:ps,mode:'hardlink',keep});
-        if(sub){ r.deleted+=sub.deleted||0; r.linked+=sub.linked?.length||0; if(sub.failed)r.failed.push(...sub.failed); r.emptyDirs.push(...(sub.emptyDirs||[])); }
+        const sub=await API.post('api/dup/delete',{files:ps,mode,keep});
+        if(sub){ r.deleted+=sub.deleted||0; r.linked+=sub.linked?.length||0; r.reflinked+=sub.reflinked?.length||0; if(sub.failed)r.failed.push(...sub.failed); r.emptyDirs.push(...(sub.emptyDirs||[])); }
       }
     } else {
       r=await API.post('api/dup/delete',{files:paths,mode});
     }
-    const msg=mode==='hardlink' ? `硬链接 ${r.linked||0} 个文件` : `已删除 ${r.deleted||0} 个文件`;
+    const msg = mode==='hardlink' ? `硬链接 ${r.linked||0} 个文件`
+              : mode==='reflink'  ? `reflink ${r.reflinked||0} 个文件`
+              : `已删除 ${r.deleted||0} 个文件`;
     if(r.blockedCount) showToast(msg+blockedNotice(r),'warning');
     if(r.failed&&r.failed.length) showToast(msg+'，失败 '+r.failed.length+' 个: '+r.failed.map(f=>f.reason).join('; '),'warning');
     else showToast(msg,'success');

@@ -1006,7 +1006,8 @@
       <div class="delete-mode-select">
         <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="trash" checked><span>放到回收站<small>文件移至卷回收站，可恢复</small></span></label>
         <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="permanent"><span>永久删除<small>直接删除文件，不可恢复</small></span></label>
-        <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="hardlink"><span>硬链接去重<small>删除重复数据块，保留文件链接到原文件即刻恢复同卷空间</small></span></label>
+        <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="hardlink"><span>硬链接去重<small>删除重复数据块，保留文件链接到原文件即刻恢复同卷空间；但改一个全改，备份只算一份</small></span></label>
+        <label class="delete-radio"><input type="radio" name="dupDeleteMode" value="reflink"><span>reflink 去重（推荐）<small>保留独立文件、只共享数据块，改一份不影响另一份；需 btrfs / XFS，不支持时报错不复制</small></span></label>
       </div>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" onclick="hideDupDeleteModal()">取消</button>

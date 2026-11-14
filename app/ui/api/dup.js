@@ -1,9 +1,9 @@
-import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, renameSync, cpSync, linkSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, renameSync, cpSync, linkSync, copyFileSync, chmodSync, utimesSync, constants as fsConstants } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, extname, basename, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, isDeletablePath, partitionDeletable, protectedReason, parseQuery, safeReadJSON } from '../lib/util.js';
+import { sendJSON, execCmd, parseBody, formatBytes, isSafePath, isDeletablePath, partitionDeletable, protectedReason, parseQuery, safeReadJSON, spawnScanNode } from '../lib/util.js';
 import { MUSIC_EXTS } from '../lib/config.js';
 import { moveToExtTrash } from '../lib/ext_trash.js';
 import { getPkgVar } from '../lib/pkgvar.js';
@@ -61,9 +61,10 @@ export async function handleDupScan(req, res) {
   renameSync(tmpInit, stateFile);
 
   if (existsSync(DUP_SCAN_SCRIPT)) {
-    const proc = spawn(process.execPath, [DUP_SCAN_SCRIPT, scanType, scanPaths.join(','), jobId, DUP_STATE_DIR, String(minSize), keepMode], {
-      stdio: 'ignore', detached: false, timeout: 3600000,
-    });
+    // P1-4: 降到 idle IO 级，不跟相册/转码抢盘（见 util.spawnScanNode）
+    const proc = spawnScanNode(DUP_SCAN_SCRIPT,
+      [scanType, scanPaths.join(','), jobId, DUP_STATE_DIR, String(minSize), keepMode],
+      { stdio: 'ignore', detached: false, timeout: 3600000 });
     const killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch { console.error('[dup.js]'); } }, 3660000);
     proc.on('exit', () => { clearTimeout(killTimer); dupJobs.delete(jobId); });
     proc.on('error', () => { clearTimeout(killTimer); dupJobs.delete(jobId); });
@@ -352,10 +353,11 @@ export async function handleDupDelete(req, res) {
   // 图标、依赖), 误删会导致对应应用无法启动。
   const { ok: files, blocked } = partitionDeletable(data.files || []);
   const skipped = (data.files || []).length - files.length;
-  const mode = data.mode || 'trash';   // trash | permanent | hardlink
-  const keep = data.keep || '';        // for hardlink mode: the file to KEEP (others become hard links to it)
+  const mode = data.mode || 'trash';   // trash | permanent | hardlink | reflink
+  const keep = data.keep || '';        // for hardlink/reflink mode: the file to KEEP
   let deleted = 0;
   const linked = [];
+  const reflinked = [];   // P1-3: reflink (FICLONE) 去重的文件
   const failed = [];
   const emptyDirs = [];   // P2-6: dirs that became empty after deletion (link scan notification)
 
@@ -389,6 +391,45 @@ export async function handleDupDelete(req, res) {
         linkSync(keep, tmpLink);            // shares data blocks
         renameSync(tmpLink, fp);            // 原子替换掉重复 inode
         linked.push(fp);
+      } else if (mode === 'reflink') {
+        // ── P1-3: reflink (FICLONE) 去重 ──
+        // 与 hardlink 的区别：reflink 每份副本有**独立 inode**，只共享数据块（COW）。
+        // 改其中一份不会影响另一份，备份工具会各算一份，权限也各自独立。
+        // 对照片/文档这类"删重复但想各自保留可编辑性"的场景，比 hardlink 更安全。
+        //
+        // 关键：必须用 COPYFILE_FICLONE_FORCE(4) 而不是 COPYFILE_FICLONE(2)。
+        // 后者在不支持 CoW 的文件系统上会**静默退化成真拷贝** —— 目标文件 2GB
+        // 就会瞬间占用 2GB 额外空间，可能直接把卷撑爆。FORCE 模式不支持就抛
+        // ENOTSUP/EOPNOTSUPP，宁可失败也不偷偷复制。
+        if (!keep || !existsSync(fp)) throw new Error('reflink 去重需要有效的原始文件');
+        if (!existsSync(keep)) throw new Error('原始文件不存在: ' + keep);
+        if (!isDeletablePath(keep)) throw new Error('原始文件路径不可操作：' + (protectedReason(keep) || '路径越界'));
+        if (fp === keep) continue;
+        const fpSt = statSync(fp), keepSt = statSync(keep);
+        if (fpSt.ino === keepSt.ino && fpSt.dev === keepSt.dev) throw new Error('文件已硬链接/同 inode，无需 reflink');
+        // reflink 只能在同一个文件系统内做（跨设备的 FICLONE 会 ENOTSUP）
+        if (fpSt.dev !== keepSt.dev) throw new Error('跨文件系统无法 reflink: ' + fp);
+        const tmpRef = fp + '.fnc-reflink-tmp';
+        try { unlinkSync(tmpRef); } catch { /* 残留清不掉下面会报错 */ }
+        try {
+          copyFileSync(keep, tmpRef, fsConstants.COPYFILE_FICLONE_FORCE);   // 失败即抛，绝不退化为复制
+          const newSt = statSync(tmpRef);
+          if (newSt.size !== fpSt.size) {
+            throw new Error(`reflink 后大小不一致: ${newSt.size} != ${fpSt.size}`);
+          }
+          // 保留原副本自己的权限与时间戳 —— reflink 会继承 keep 的属性，
+          // 直接改名会让用户看到"修改时间变成本组另一个文件的时间"。
+          try { chmodSync(tmpRef, fpSt.mode & 0o7777); } catch { /* 权限不可写时忽略 */ }
+          try { utimesSync(tmpRef, fpSt.atime, fpSt.mtime); } catch { /* 时间戳设置失败不影响数据正确性 */ }
+          renameSync(tmpRef, fp);            // 原子替换
+        } catch (e) {
+          try { if (existsSync(tmpRef)) unlinkSync(tmpRef); } catch { /* best effort */ }
+          if (e.code === 'ENOTSUP' || e.code === 'EOPNOTSUPP' || e.code === 'ENOSYS' || e.code === 'EXDEV') {
+            throw new Error('该文件系统不支持 reflink（需要 btrfs / XFS）：' + fp);
+          }
+          throw e;
+        }
+        reflinked.push(fp);
       } else {  // trash
         const m = fp.match(/^\/(?:mnt\/)?(vol\d+)\/(\d+)\/(.+)/);
         // 外接盘（/vol00 /vol01 …，多为 exFAT/NTFS）：没有 .@#local/trash，
@@ -422,8 +463,8 @@ export async function handleDupDelete(req, res) {
     } catch (e) { failed.push({ file: fp, reason: e.message }); }
   }
   sendJSON(res, 200, {
-    deleted, linked, failed, skipped,
-    total: deleted + linked.length, failures: failed.length,
+    deleted, linked, reflinked, failed, skipped,
+    total: deleted + linked.length + reflinked.length, failures: failed.length,
     // P0: 回传被拦截的路径与原因, 前端可提示「这 N 个因位于系统目录/回收站而跳过」
     blockedCount: blocked.length, blocked: blocked.slice(0, 50),
     emptyDirs: [...new Set(emptyDirs)].slice(0, 100),   // dedupe, cap

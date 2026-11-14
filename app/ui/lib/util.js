@@ -202,3 +202,49 @@ export function safeReadJSON(filePath) {
     return {};
   }
 }
+
+// ── P1-4: 扫描子进程的 idle IO 降级 ──
+// 全盘扫描（重复文件/相似图/坏文件/重名）会把 system page cache 里的热数据
+// 全部挤出去。NAS 上的表现：扫完后相册缩略图、视频转码、Emby 播放都变慢，
+// 要重新从盘上读一遍才恢复。
+// Node 没有 posix_fadvise() 接口，但这些扫描都是独立子进程，可以用
+// ionice -c3 把它降到 idle 级 —— 只有磁盘空闲时才抢 IO，正常业务优先。
+// 找不到 ionice 时自动退回普通 spawn，功能不受影响。
+let _ioniceBin = null;
+let _ioniceProbed = false;
+export function ionicePath() {
+  if (_ioniceProbed) return _ioniceBin;
+  _ioniceProbed = true;
+  for (const p of ['/usr/bin/ionice', '/bin/ionice', '/usr/sbin/ionice']) {
+    try { if (existsSync(p)) { _ioniceBin = p; break; } } catch { /* ignore */ }
+  }
+  return _ioniceBin;
+}
+
+/**
+ * 以 idle IO 优先级启动一个 Node 扫描子进程。
+ * 用法与 spawn(process.execPath, [script, ...args], opts) 一致。
+ * @param {string} script  脚本绝对路径
+ * @param {string[]} args  脚本参数
+ * @param {object} opts    spawn 选项
+ */
+export function spawnScanNode(script, args, opts = {}) {
+  const io = ionicePath();
+  const full = [script, ...args];
+  return io
+    ? spawn(io, ['-c', '3', process.execPath, ...full], opts)
+    : spawn(process.execPath, full, opts);
+}
+
+/** 当前进程/子进程是否真的降到了 idle 级（诊断用，读 /proc 判定） */
+export function ioniceStatus(pid) {
+  try {
+    const raw = readFileSync(`/proc/${pid || 'self'}/cmdline`, 'utf8');
+    const io = ionicePath();
+    if (!io) return { supported: false, idle: false, reason: '系统没有 ionice 命令' };
+    const isWrapped = raw.includes('ionice');
+    return { supported: true, idle: isWrapped, reason: isWrapped ? '已通过 ionice -c3 降级' : '未降级' };
+  } catch {
+    return { supported: !!ionicePath(), idle: false, reason: '无法读取进程信息' };
+  }
+}

@@ -10,7 +10,7 @@ import { existsSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { sendJSON, parseBody, isSafePath, safeReadJSON } from '../lib/util.js';
+import { sendJSON, parseBody, isSafePath, safeReadJSON, spawnScanNode } from '../lib/util.js';
 
 let NM_STATE_DIR = '';
 let NM_SCAN_SCRIPT = '';
@@ -48,7 +48,7 @@ export async function handleNamematchScan(req, res) {
   renameSync(tmp, stateFile);
 
   if (existsSync(NM_SCAN_SCRIPT)) {
-    const proc = spawn(process.execPath, [NM_SCAN_SCRIPT, paths.join(','), jobId, NM_STATE_DIR], {
+    const proc = spawnScanNode(NM_SCAN_SCRIPT, [paths.join(','), jobId, NM_STATE_DIR], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
     });
