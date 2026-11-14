@@ -1155,7 +1155,23 @@ function finishDupScan(tab, data) {
         +'<div class="dup-stat-label">预筛已排除</div></div>';
     }
   }
-  const stEl=$(ids.stats); if(stEl){stEl.style.display='';stEl.innerHTML='<div class="dup-stat-card"><div class="dup-stat-value">'+(stats.totalFiles||0)+'</div><div class="dup-stat-label">扫描文件</div></div><div class="dup-stat-card"><div class="dup-stat-value">'+totalGroups+'</div><div class="dup-stat-label">重复组</div></div><div class="dup-stat-card warning"><div class="dup-stat-value">'+(stats.duplicateFiles||0)+'</div><div class="dup-stat-label">重复文件</div></div><div class="dup-stat-card danger"><div class="dup-stat-value">'+(stats.wastedHuman||'0 B')+'</div><div class="dup-stat-label">浪费空间</div></div>'+_cacheStat;}
+  // ── P0-1/P0-2: 硬链接与快照挡住的字节 ──
+  // 「可释放空间」已经扣掉了两种情况：① 删掉后数据块仍被别的硬链接引用
+  // ② 快照副本与主卷共享 extent。这里把扣掉的量单独显示，否则用户看到
+  // 「重复文件 3 GB，可释放 0 B」会以为功能坏了。
+  var _blockedStat='';
+  var _hlBytes=stats.hardlinkBlockedBytes||0, _snBytes=stats.snapshotBlockedBytes||0;
+  if(_hlBytes>0){
+    _blockedStat+='<div class="dup-stat-card warning" title="这些副本与其它路径指向同一份数据（硬链接），删除后不会释放空间，已从可释放中扣除">'
+      +'<div class="dup-stat-value">-'+(stats.hardlinkBlockedHuman||'0 B')+'</div>'
+      +'<div class="dup-stat-label">硬链接共享 · 删了不省</div></div>';
+  }
+  if(_snBytes>0){
+    _blockedStat+='<div class="dup-stat-card warning" title="这些文件位于 btrfs 快照内，与主卷共享数据块，删除不会释放空间，已从可释放中扣除">'
+      +'<div class="dup-stat-value">-'+(stats.snapshotBlockedHuman||'0 B')+'</div>'
+      +'<div class="dup-stat-label">快照副本 · 删了不省</div></div>';
+  }
+  const stEl=$(ids.stats); if(stEl){stEl.style.display='';stEl.innerHTML='<div class="dup-stat-card"><div class="dup-stat-value">'+(stats.totalFiles||0)+'</div><div class="dup-stat-label">扫描文件</div></div><div class="dup-stat-card"><div class="dup-stat-value">'+totalGroups+'</div><div class="dup-stat-label">重复组</div></div><div class="dup-stat-card warning"><div class="dup-stat-value">'+(stats.duplicateFiles||0)+'</div><div class="dup-stat-label">重复文件</div></div><div class="dup-stat-card danger"><div class="dup-stat-value">'+(stats.wastedHuman||'0 B')+'</div><div class="dup-stat-label">可释放空间</div></div>'+_cacheStat+_blockedStat;}
   if(se)se.innerHTML='✅ 完成';
   renderDupList(tab, dups);
   $(ids.results)&&($(ids.results).style.display='');
@@ -1167,6 +1183,37 @@ function finishDupScan(tab, data) {
   var failed=data.failedFiles||[]; if(failed.length>0){showToast(failed.length+' 个文件哈希失败, 已跳过','warning');var fl=$(ids.currentFile);if(fl){var fhtml='<span style="color:var(--color-warning)">⚠️ '+failed.length+' 个文件哈希失败:</span><br>';for(var k=0;k<Math.min(failed.length,5);k++){fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">'+escHtml(failed[k].path)+': '+escHtml(failed[k].error)+'</span><br>';}if(failed.length>5)fhtml+='<span style="font-size:12px;color:var(--color-text-secondary)">... 还有 '+(failed.length-5)+' 个</span>';fl.innerHTML=fhtml;}}
 }
 
+// ── P0-1/P0-2: 重复组的「删了也不省」标记 ──
+// 后端已经把硬链接/快照副本从 wasted 中扣除，这里在组头上标出来，
+// 否则用户会疑惑「3 个副本为什么只显示 1 份可释放」。
+function _dupGroupBadges(group) {
+  var out = '';
+  if (group && group.hasSnapshot) {
+    var t = '本组含 btrfs 快照副本，与主卷共享数据块，删除不释放空间'
+      + (group.snapshotBlockedHuman ? '（已扣除 ' + group.snapshotBlockedHuman + '）' : '');
+    out += '<span class="dup-badge dup-badge-snapshot" title="' + escHtml(t) + '">快照</span>';
+  }
+  if (group && group.hasHardlink) {
+    var t2 = '本组含硬链接副本，数据块被多个路径共享，删除不释放空间'
+      + (group.hardlinkBlockedHuman ? '（已扣除 ' + group.hardlinkBlockedHuman + '）' : '');
+    out += '<span class="dup-badge dup-badge-hardlink" title="' + escHtml(t2) + '">硬链接</span>';
+  }
+  return out;
+}
+
+// 单个文件行的标记：这个副本删了到底省不省空间
+function _dupFileBadge(file) {
+  if (!file) return '';
+  if (file.snapshot) {
+    return '<span class="dup-badge dup-badge-snapshot" title="位于 btrfs 快照内，与主卷共享数据块，删除不释放空间">快照</span>';
+  }
+  if (file.shared) {
+    var nl = file.nlink ? '（nlink=' + file.nlink + '）' : '';
+    return '<span class="dup-badge dup-badge-hardlink" title="与其它路径指向同一份数据' + escHtml(nl) + '，删除不释放空间">共享</span>';
+  }
+  return '';
+}
+
 function renderDupList(tab, duplicates) {
   const ids = getDupIds(tab); const container = $(ids.dupList);
   if(!container) return; container.innerHTML='';
@@ -1174,7 +1221,7 @@ function renderDupList(tab, duplicates) {
   duplicates.forEach((group, gi) => {
     const div = document.createElement('div'); div.className='dup-group';
     const hdr = document.createElement('div'); hdr.className='dup-group-header open';
-    hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span></div><span class="dup-toggle">▼</span>';
+    hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span>'+_dupGroupBadges(group)+'</div><span class="dup-toggle">▼</span>';
     const body = document.createElement('div'); body.className='dup-group-body open';
     hdr.classList.add('open');
     // Per-group delete button
@@ -1215,7 +1262,21 @@ function renderDupList(tab, duplicates) {
       const sizeSpan = document.createElement('span'); sizeSpan.className='dup-file-size'; sizeSpan.textContent=' ('+file.sizeHuman+')';
       label.textContent=' '+file.path; label.prepend(cb);
       const tag = document.createElement('span'); tag.className='dup-file-tag'; tag.textContent=isFirst?'原始文件':'重复文件';
-      item.appendChild(label); item.appendChild(sizeSpan); item.appendChild(tag); body.appendChild(item);
+      item.appendChild(label); item.appendChild(sizeSpan); item.appendChild(tag);
+      // P0-1/P0-2: 标记"删了也不省空间"的副本，并且不预勾选它们 ——
+      // 勾上再删只会白跑一趟 IO，df 不会有任何变化。
+      var _fb = _dupFileBadge(file);
+      if (_fb) {
+        var _fbEl = document.createElement('span');
+        _fbEl.innerHTML = _fb;
+        item.appendChild(_fbEl.firstChild);
+        if (cb.checked) { cb.checked = false; selCount--; selSize -= file.size; }
+        cb.disabled = true;
+        cb.title = file.snapshot ? '快照副本：删除不释放空间' : '硬链接共享：删除不释放空间';
+        tag.textContent = file.snapshot ? '快照副本' : '共享副本';
+        item.classList.add('dup-file-noshare');
+      }
+      body.appendChild(item);
     });
     div.appendChild(hdr); div.appendChild(body); container.appendChild(div);
   });
@@ -1252,7 +1313,7 @@ function loadMoreDupResults(tab) {
       // Same rendering as renderDupList but using container.appendChild
       var div = document.createElement('div'); div.className='dup-group';
       var hdr = document.createElement('div'); hdr.className='dup-group-header open';
-      hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span></div><span class="dup-toggle">▼</span>';
+      hdr.innerHTML='<div class="dup-info"><span class="dup-file-name" title="'+escHtml(group.files[0].path)+'">'+escHtml(group.files[0].name||group.files[0].path)+'</span><span class="dup-count">'+group.count+' 个</span><span class="dup-wasted">浪费 '+group.wastedHuman+'</span>'+_dupGroupBadges(group)+'</div><span class="dup-toggle">▼</span>';
       var body = document.createElement('div'); body.className='dup-group-body open';
       hdr.classList.add('open');
       (function(t, b){

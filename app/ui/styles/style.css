@@ -952,3 +952,44 @@ html.dark .tab-panel[data-panel="schedule"] .kpi-card:nth-child(4) .kpi-icon{bac
   color: var(--color-text-secondary); cursor: pointer;
 }
 .kernel-ack input { margin-top: 3px; }
+
+/* ── P0-1/P0-2: 硬链接 / 快照副本标记 ──
+   这两个标记告诉用户"这个副本删了也不释放空间"，与普通重复文件区分开。 */
+.dup-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: var(--radius-full, 999px);
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 500;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: help;
+}
+.dup-badge-snapshot {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
+}
+.dup-badge-hardlink {
+  background: color-mix(in srgb, var(--color-cyan) 15%, transparent);
+  color: var(--color-cyan);
+  border: 1px solid color-mix(in srgb, var(--color-cyan) 32%, transparent);
+}
+/* 删了也不省空间的行：整行降透明度 + 复选框禁用，避免用户误勾 */
+.dup-file-noshare {
+  opacity: 0.62;
+}
+.dup-file-noshare .dup-file-cb {
+  cursor: not-allowed;
+}
+/* 深色主题下提高可读性 */
+body.theme-dark .dup-badge-snapshot,
+body.theme-midnight .dup-badge-snapshot {
+  background: color-mix(in srgb, var(--color-warning) 26%, transparent);
+}
+body.theme-dark .dup-badge-hardlink,
+body.theme-midnight .dup-badge-hardlink {
+  background: color-mix(in srgb, var(--color-cyan) 24%, transparent);
+}

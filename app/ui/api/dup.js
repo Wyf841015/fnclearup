@@ -280,9 +280,48 @@ export function handleDupStatus(req, res) {
       id: raw.id, scanType: raw.scanType, status: raw.status, progress: raw.progress, rootPaths: raw.rootPaths,
       duplicates: page.map(g => ({
         hash: g.hash, count: g.count, wasted: g.wasted, wastedHuman: formatBytes(g.wasted),
-        files: g.files.map(f => ({ path: f.path, name: basename(f.path), size: f.size, sizeHuman: formatBytes(f.size), ext: f.ext, id3: f.id3 })),
+        // P0-1/P0-2: 透传硬链接/快照信息，供前端解释"可释放为什么比文件总大小少"，
+        // 并逐条标记哪些副本删了也不省空间（不应被勾选删除）
+        reclaimableFiles: g.reclaimableFiles === undefined ? g.count - 1 : g.reclaimableFiles,
+        hardlinkBlocked: g.hardlinkBlocked || 0,
+        hardlinkBlockedHuman: formatBytes(g.hardlinkBlocked || 0),
+        snapshotBlocked: g.snapshotBlocked || 0,
+        snapshotBlockedHuman: formatBytes(g.snapshotBlocked || 0),
+        hasSnapshot: !!g.hasSnapshot,
+        hasHardlink: !!g.hasHardlink,
+        fileMeta: Array.isArray(g.fileMeta) ? g.fileMeta : null,
+        files: g.files.map(f => ({
+          path: f.path, name: basename(f.path), size: f.size, sizeHuman: formatBytes(f.size),
+          ext: f.ext, id3: f.id3,
+          // 单文件级的硬链接/快照标记（老状态文件没有 fileMeta 时为 null）
+          nlink: (() => {
+            const m = Array.isArray(g.fileMeta) ? g.fileMeta.find(x => x && x.path === f.path) : null;
+            return m ? m.nlink : null;
+          })(),
+          shared: (() => {
+            const m = Array.isArray(g.fileMeta) ? g.fileMeta.find(x => x && x.path === f.path) : null;
+            return m ? !!m.shared : false;
+          })(),
+          snapshot: (() => {
+            const m = Array.isArray(g.fileMeta) ? g.fileMeta.find(x => x && x.path === f.path) : null;
+            return m ? !!m.snapshot : false;
+          })(),
+        })),
       })),
-      stats: { totalFiles: stats.totalFiles || 0, duplicateGroups: stats.duplicateGroups || 0, duplicateFiles: stats.duplicateFiles || 0, wastedBytes: stats.wastedBytes || 0, wastedHuman: formatBytes(stats.wastedBytes || 0) },
+      stats: {
+        totalFiles: stats.totalFiles || 0,
+        duplicateGroups: stats.duplicateGroups || 0,
+        duplicateFiles: stats.duplicateFiles || 0,
+        wastedBytes: stats.wastedBytes || 0,
+        wastedHuman: formatBytes(stats.wastedBytes || 0),
+        // P0-1/P0-2: 被硬链接/快照挡住、无法通过删除释放的字节数
+        hardlinkBlockedBytes: stats.hardlinkBlockedBytes || 0,
+        hardlinkBlockedHuman: formatBytes(stats.hardlinkBlockedBytes || 0),
+        snapshotBlockedBytes: stats.snapshotBlockedBytes || 0,
+        snapshotBlockedHuman: formatBytes(stats.snapshotBlockedBytes || 0),
+        hardlinkedFiles: stats.hardlinkedFiles || 0,
+        snapshotFiles: stats.snapshotFiles || 0,
+      },
       error: raw.error, startTime: raw.startTime, failedFiles: raw.failedFiles || [],
       pagination: { total, start, limit, hasMore: start + limit < total },
     };
